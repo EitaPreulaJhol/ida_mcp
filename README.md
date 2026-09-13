@@ -161,6 +161,97 @@ MCP client -> HTTP POST /mcp -> request handler
 
 The handler parses `?unsafe=` / `?profile=` / `?ext=` per request (thread-local, no races), dispatches JSON-RPC `tools/list` and `tools/call` against the registry, and marshals IDA-touching calls onto the main thread with a timeout that can cancel stuck operations.
 
+## Agent skills
+`/ida` is the orchestrator (connect → `survey_binary()` triage → escalate `triage → readonly → full → unsafe → dbg` → route). After triage, load exactly one domain skill below (progressive disclosure). Full catalog with ceilings: `skills/INDEX.md` (generic) / `.pi/skills/INDEX.md` (pi). Both trees ship the same 62 domain skills + `ida` (`skills/` for Claude Code/Cursor/Copilot, `.pi/skills/` for Pi Agent).
+
+### Reverse engineering & triage
+| Skill | What it does |
+|-------|--------------|
+| `generic-re` | General-purpose binary analysis — functionality, architecture, behavior |
+| `reverse-engineering` | Binary analysis, decompilation, control/data flow, reconstruction |
+| `ctf` | CTF reverse engineering — find the flag fast |
+| `firmware-re` | Firmware / embedded / blobs, unknown arch, hardware interfaces |
+| `protocol-analysis` | Network protocols, packet structures, state machines |
+| `crypto-analysis` | Crypto identification — algorithms, constants, math ops |
+| `ai-features` | Semantic search, similarity detection, auto-documentation |
+| `code-quality-metrics` | Complexity, maintainability, and security metrics |
+| `ida-scripting` | Write and execute IDAPython scripts (full API reference) |
+
+### Vulnerability discovery & exploitation
+| Skill | What it does |
+|-------|--------------|
+| `vuln-audit` | Security audit — overflows, format strings, integer issues, memory safety |
+| `0day-find` | Novel 0day classes — allocator bugs, compiler-induced bugs, SIMD/JIT, ASLR/kASLR bypass |
+| `code-vulnerability-analysis` | Source-level 0day discovery & exploit development |
+| `memory-corruption` | UAF/OOB + PAC/ASLR/CFI/CET bypass, binary exploitation |
+| `rce-detection` | RCE vectors — command injection, deserialization, template/eval injection |
+| `race-condition` | TOCTOU, double-fetch, thread-safety races |
+| `crypto-vuln` | Crypto implementation bugs — weak algorithms, side-channels, padding oracles, RNG failures |
+| `lpe-detection` | LPE enumeration — kernel exploits, services, SUID/GUID, path hijack, cron |
+| `rop-builder` | ROP chain construction — gadgets, ASLR/DEP bypass |
+| `shellcode-generator` | Position-independent shellcode (Linux/Windows) |
+| `auto-exploit` / `automated-exploit-gen` | Automatic exploit generation from vuln analysis |
+| `core-vulnerability-pipeline` | Shared pipeline — discovery, FP filtering, exploit generation |
+| `triage-validation` | 7-Question Gate + pre-submit gates before reporting (run BEFORE `report-writing`) |
+| `report-writing` | H1/Bugcrowd/Intigriti/Immunefi reports — tone, CVSS 3.1, impact-first |
+| `deobfuscation` | String decryption, CFF removal, opaque predicates, MBA, anti-disassembly |
+| `vm-obfuscation-detection` | VM/packer detection — VMProtect, Themida, UPX, CFF |
+| `smart-patch-ida` | Natural-language patching — read, assemble, write, verify |
+| `modify` | Explore → plan → patch → save loop |
+
+### Malware
+| Skill | What it does |
+|-------|--------------|
+| `malware-analysis` | Windows PE — kill chain, IOC extraction, MITRE ATT&CK |
+| `linux-malware` | ELF — packing, toolchain ID, persistence, C2, rootkits, miners, Go/Rust/Mirai |
+| `mobile-malware-analysis` | Android/iOS malware behavior analysis |
+
+### Kernel & drivers
+| Skill | What it does |
+|-------|--------------|
+| `driver-analysis` | Windows drivers — DriverEntry, dispatch table, IOCTL audit |
+| `kernel-mode-analysis` | Kernel driver vulns — IOCTL handlers, dangerous APIs, primitives |
+| `kernel-exploit` | Kernel exploitation — drivers, syscalls, privesc |
+| `linux-driver-exploit` | Linux kmod — ioctl bugs, heap overflow, cred escalation |
+| `windows-driver-exploit` | Windows kmod — IOCTL bugs, pool overflow, token theft |
+| `macos-driver-exploit` | macOS kext — IOKit bugs, heap overflow, task credentials |
+
+### Mobile & apps
+| Skill | What it does |
+|-------|--------------|
+| `apk-analysis` | APK RE — structure, strings, native libs, manifest |
+| `android-exploit` | Android native/IPC exploitation |
+| `ios-exploit` | iOS IPA/kernel/sandbox escape |
+| `mobile-pentest` | Mobile pentest — ADB/SSH automation, device control |
+| `ssl-pinning-bypass` | SSL pinning detection and bypass |
+| `app-shielding-bypass` | Root/JB detection, anti-debug, obfuscation bypass |
+| `owasp-mobile-top10` | OWASP Mobile Top 10 2024 |
+| `cloud-mobile-security` | Mobile backends — Firebase, AWS, Azure, GCP misconfigs |
+
+### Web, smart contract & bounty
+| Skill | What it does |
+|-------|--------------|
+| `web-app-security` | OWASP web apps — auth, input validation, API security |
+| `owasp-web-top10` | OWASP Web Top 10 (A01–A10) patterns and remediation |
+| `web-csharp-php-vuln` | PHP/C# scanner — POP chains, RCE, SQLi, XSS, SSRF, IDOR |
+| `web2-recon` | Subdomain enum → live hosts → URL crawl → JS secrets → fuzzing |
+| `web2-vuln-classes` | 20 web2 bug classes + bypass tables + paid examples |
+| `bug-bounty` / `bb-methodology` | Master bounty workflow / 5-phase orchestrator — start here when lost |
+| `web3-audit` | Solidity/Rust DeFi audit — 10 bug classes, Foundry PoC, Immunefi examples |
+| `web3-vuln` | Smart contracts, bridges, NFTs/tokens, reentrancy, MEV/flash loans |
+| `meme-coin-audit` | Token/rug-pull diligence — honeypots, mint/freeze authority, LP drains |
+
+### Infra, ICS & cross-cutting
+| Skill | What it does |
+|-------|--------------|
+| `container-escape` | Docker/K8s/runtime escapes, namespace bypass |
+| `vm-escape` | Hypervisor escapes, device emulation, cross-VM side-channels |
+| `iot-vuln` | IoT — firmware extraction, RTOS, protocols, update mechanisms |
+| `scada-vuln` | ICS/SCADA — Modbus, DNP3, IEC 104, PLC logic manipulation |
+| `security-arsenal` | Payloads, bypass tables, wordlists, reject/chain tables — what (not) to submit |
+| `prompt-injection` | Embedded prompt-injection in binaries/apps/docs — hijack markers, Unicode evasion |
+| `collaborative-analysis` | Team workflows — share findings, merge analysis, reports |
+
 ## Layout
 | Path | Purpose |
 |------|---------|
@@ -173,10 +264,10 @@ The handler parses `?unsafe=` / `?profile=` / `?ext=` per request (thread-local,
 | `ida_mcp/compat.py` | IDA 8.3 to 9.x API shims |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |
 | `ida_mcp/zeromcp/` | Vendored stdlib MCP transport |
-| `skills/ida/` | Generic agent skill (`/ida`): connect -> triage -> escalate methodology + 62-skill routing table |
-| `skills/<slug>/` (62) + `skills/INDEX.md` | Domain skills mirror (RE, vuln audit, exploit, mobile/web, obfuscation), IDA-native throughout |
+| `skills/ida/` | Generic agent skill (`/ida`): connect -> triage -> escalate methodology + routing table for the 62 domain skills |
+| `skills/<slug>/` (62 domain + `ida`) + `skills/INDEX.md` | Generic domain skills (RE, vuln audit, exploit, malware, kernel/drivers, mobile, web/web3, ICS/infra), IDA-native throughout; ceilings in `INDEX.md` |
 | `.pi/skills/ida/SKILL.md` | Pi Agent skill (`/ida`): lazy triage -> readonly -> full -> unsafe -> debugger methodology + `/skill:<slug>` routing, auto-loaded by pi |
-| `.pi/skills/<slug>/` (62) + `.pi/skills/INDEX.md` | Pi domain skills (same content, progressive disclosure) |
+| `.pi/skills/<slug>/` (same 62 domain + `ida`) + `.pi/skills/INDEX.md` | Pi domain skills (same content as `skills/`, pi-formatted frontmatter, progressive disclosure) |
 | `.pi/extensions/ida-mcp.ts` | Pi Agent extension: MCP bridge, `/ida` command, `ida_profile` / `ida_status` tools, footer status indicator |
 | `tests/` | Standalone test scripts (run outside IDA with stubbed IDA modules) |
 
@@ -186,6 +277,7 @@ This repo includes a ready-to-use skill and extension for the [Pi Agent](https:/
 | Path | What it provides |
 |------|------------------|
 | `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (188) -> full (224) -> unsafe (+writes) -> dbg (+19 debugger tools)` only as needed |
+| `.pi/skills/<slug>/` (62 domain skills) + `.pi/skills/INDEX.md` | Domain skills invoked as `/skill:<slug>` after triage — RE, vuln/exploit, malware, kernel/drivers, mobile, web/web3/bounty, ICS/infra (see Agent skills above for the full list) |
 | `.pi/extensions/ida-mcp.ts` | Extension bridge: proxies the plugin's Streamable-HTTP server (`http://127.0.0.1:13337/mcp`) into pi tools with lazy loading, `/ida [status\|triage\|readonly\|full\|unsafe\|dbg\|tools]` command, `ida_profile` / `ida_status` management tools, and a live `IDA:online/offline` footer indicator (polling + session-event refresh) |
 
 - Endpoint ladder mirrors `INSTALL.md`: `?profile=triage` (default) -> `?profile=readonly` -> full -> `?unsafe=true` -> `?unsafe=true&ext=dbg`.
