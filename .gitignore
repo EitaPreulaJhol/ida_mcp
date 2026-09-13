@@ -1,1 +1,45 @@
+# Python bytecode / caches
 __pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs
+.venv/
+venv/
+.env/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# IDA artifacts (never commit databases)
+*.idb
+*.i64
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.dmp
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.orig
