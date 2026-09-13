@@ -28,7 +28,7 @@ Thumbs.db
 *.swp
 *~
 
-# IDA artifacts (never commit databases)
+# IDA artifacts
 *.idb
 *.i64
 *.id0

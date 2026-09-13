@@ -1,6 +1,6 @@
 ---
-name: ida-connect
-description: Connect to IDA Pro through the ida_mcp plugin and reverse engineer the open binary with lazy-loaded tools. Use this whenever the user wants to analyze, decompile, trace, annotate, debug, or signature-scan a binary currently open in IDA Pro, or says "/ida-connect". Starts with a 16-tool triage profile and escalates (readonly, full, unsafe, debugger) only as needed.
+name: ida
+description: Connect to IDA Pro through the ida_mcp plugin and reverse engineer the open binary with lazy-loaded tools. Use this whenever the user wants to analyze, decompile, trace, annotate, debug, or signature-scan a binary currently open in IDA Pro, or says "/ida". Starts with a 16-tool triage profile and escalates (readonly, full, unsafe, debugger) only as needed.
 license: MIT
 compatibility: any MCP client + IDA Pro 8.3+ with the ida_mcp plugin
 metadata:
@@ -19,10 +19,83 @@ on-task.
 
 ## Trigger
 
-Activate when the user types `/ida-connect`, mentions analyzing a binary in
+Activate when the user types `/ida`, mentions analyzing a binary in
 IDA Pro, or asks about a binary/driver that is open in IDA. Ask ONE
 clarifying question only if it is unclear whether write tools (`?unsafe=true`)
 are available — otherwise assume read-only and escalate later.
+
+## Domain skill routing (62 skills, lazy-load one on demand)
+
+`/ida` is the orchestrator: connect → triage → route. After `survey_binary()`,
+load EXACTLY ONE domain skill below (progressive disclosure — never preload bodies).
+Full catalog: `skills/INDEX.md`.
+
+| Task | Load | Ceiling |
+|---|---|---|
+| General RE / understand a binary | `generic-re` or `reverse-engineering` | unsafe |
+| CTF / find the flag fast | `ctf` | unsafe |
+| Firmware / embedded / blobs | `firmware-re` | readonly |
+| Protocol / packet / state machine | `protocol-analysis` | readonly |
+| Crypto primitives / constants / side-channels | `crypto-analysis` | readonly |
+| APK / dex / manifest + native libs | `apk-analysis` | readonly |
+| Semantic search / similarity / auto-docs | `ai-features` | readonly |
+| Complexity / maintainability metrics | `code-quality-metrics` | readonly |
+| Security audit (overflows, fmt-str, int, UAF) | `vuln-audit` | readonly |
+| 0day / novel-class hunting | `0day-find` (+ shared doctrine inline) | dbg |
+| Source-level 0day + exploit dev | `code-vulnerability-analysis` | readonly |
+| Memory corruption + PAC/ASLR/CFI/CET bypass | `memory-corruption` | dbg |
+| RCE / injection / deserialization / SSTI | `rce-detection` | readonly |
+| Race / TOCTOU / double-fetch | `race-condition` | dbg |
+| Crypto implementation bugs | `crypto-vuln` | readonly |
+| LPE / privesc enumeration | `lpe-detection` | readonly |
+| Validate BEFORE reporting (7-question gate) | `triage-validation` | readonly |
+| Write the report (H1/BC/Immunefi tone, CVSS) | `report-writing` | readonly |
+| Windows PE malware (kill chain, IOC, ATT&CK) | `malware-analysis` | readonly |
+| ELF malware (pack, persist, C2, rootkit) | `linux-malware` | readonly |
+| Android/iOS malware behavior | `mobile-malware-analysis` | readonly |
+| Windows driver (DriverEntry, IOCTL) | `driver-analysis` | dbg |
+| Kernel driver vuln analysis (IOCTL, primitives) | `kernel-mode-analysis` | dbg |
+| Kernel exploitation / syscalls / privesc | `kernel-exploit` | dbg |
+| Linux kmod ioctl / cred escalation | `linux-driver-exploit` | dbg |
+| Windows kmod pool overflow / token theft | `windows-driver-exploit` | dbg |
+| macOS kext / IOKit | `macos-driver-exploit` | dbg |
+| Android native/IPC exploitation | `android-exploit` | dbg |
+| iOS IPA/kernel/sandbox escape | `ios-exploit` | dbg |
+| ROP chain construction | `rop-builder` | dbg |
+| Shellcode generation (x86/x64, PIC) | `shellcode-generator` | dbg |
+| Auto exploit from vuln analysis | `auto-exploit` or `automated-exploit-gen` | dbg |
+| Deobfuscate first (strings→CFF→MBA→VM) | `deobfuscation` (has `references/ida/*`) | unsafe |
+| VM/packer/CFF detection | `vm-obfuscation-detection` | unsafe |
+| Natural-language patch (read→assemble→verify) | `smart-patch-ida` | unsafe |
+| Explore→plan→patch→save loop | `modify` | unsafe |
+| IDAPython automation | `ida-scripting` (has `references/api-reference.md`) | unsafe |
+| Mobile pentest (ADB/SSH/device) | `mobile-pentest` | readonly |
+| SSL pinning detect+bypass | `ssl-pinning-bypass` | readonly |
+| Root/JB/anti-debug/shielding bypass | `app-shielding-bypass` | readonly |
+| OWASP Mobile Top 10 2024 | `owasp-mobile-top10` | readonly |
+| OWASP Web Top 10 (A01–A10) | `web-app-security` / `owasp-web-top10` | readonly |
+| PHP/C# web scanner (POP, SQLi, XSS, SSRF) | `web-csharp-php-vuln` | readonly |
+| Web2 bug classes (20 classes + bypasses) | `web2-vuln-classes` | readonly |
+| Web2 recon (subdomains→JS secrets) | `web2-recon` | readonly |
+| Solidity/Rust DeFi audit | `web3-audit` | readonly |
+| Web3/bridge/NFT/reentrancy/MEV | `web3-vuln` | readonly |
+| Token / rug-pull diligence | `meme-coin-audit` | readonly |
+| Cloud mobile backends (Firebase/AWS/GCP) | `cloud-mobile-security` | readonly |
+| Container / K8s escape | `container-escape` | readonly |
+| Hypervisor / guest-to-host escape | `vm-escape` | readonly |
+| IoT / RTOS / firmware protocols | `iot-vuln` | readonly |
+| ICS/SCADA (Modbus/DNP3/PLC) | `scada-vuln` | readonly |
+| Bug-bounty master workflow | `bug-bounty` or `bb-methodology` | readonly |
+| Payloads / bypass tables / reject-list | `security-arsenal` | readonly |
+| Prompt-injection in binaries/docs | `prompt-injection` | readonly |
+| Team merge / shared findings | `collaborative-analysis` | readonly |
+| Shared vuln pipeline (dedup, FP filter) | `core-vulnerability-pipeline` | readonly |
+
+Rules: one domain skill per task; re-triage (`survey_binary`) before switching skills;
+shared `doctrine` / `bypass-protocol` / `rce-poc-verification` are already expanded inline
+inside each skill that declares them — follow the inline copy, there is nothing else to load.
+All domain skills use native ida_mcp tools only (`execute_script`, `set_name`,
+`get_xrefs_to`, `decompile_function`, …) — no translation needed.
 
 ## Endpoint ladder (escalate top-down, stop at the first that suffices)
 

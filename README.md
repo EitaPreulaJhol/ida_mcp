@@ -25,7 +25,7 @@ It is built specifically for reverse-engineering workflows: read-first, lazy too
 By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires.
 
 ## Tool surface
-The plugin exposes ~240 tools across ~20 modules:
+The plugin exposes 243 tools across 22 modules:
 
 | Area | Examples |
 |------|----------|
@@ -48,6 +48,100 @@ The plugin exposes ~240 tools across ~20 modules:
 | Hooks (tracers) | `install_hook`, `install_hexrays_hook`, `install_idb_hook`, `get_hook_info` |
 
 All addresses accept hex (`0x401000`), decimal, or symbol names.
+
+## Tool inventory
+
+Every registered tool, grouped by module (names match `tools/list` exactly).
+
+### `api_analysis` (16)
+
+`basic_blocks`, `disasm`, `find_bytes`, `get_bytes`, `get_callees`, `get_callers`, `get_string`, `get_xrefs_to`, `int_convert`, `list_exports`, `list_imports`, `list_strings`, `lookup_funcs`, `rename_function`, `set_comment`, `xref_query`
+
+### `api_comments` (10)
+
+`add_bookmark`, `delete_bookmark`, `delete_comment`, `get_all_comments`, `get_bookmarks`, `get_comment`, `get_extra_comments`, `get_repeatable_comment`, `set_extra_comment`, `set_repeatable_comment`
+
+### `api_composite` (7)
+
+`analyze_component`, `analyze_function`, `callgraph`, `diff_before_after`, `func_profile`, `survey_binary`, `trace_data_flow`
+
+### `api_debug` (19)
+
+`dbg_add_bp`, `dbg_bps`, `dbg_continue`, `dbg_delete_bp`, `dbg_exit`, `dbg_get_threads`, `dbg_gpregs`, `dbg_read`, `dbg_regs`, `dbg_regs_named`, `dbg_run_to`, `dbg_set_bp_condition`, `dbg_stacktrace`, `dbg_start`, `dbg_status`, `dbg_step_into`, `dbg_step_over`, `dbg_toggle_bp`, `dbg_write`
+
+### `api_entries` (8)
+
+`add_entry_point`, `get_entry_forwarders`, `get_entry_point_at`, `get_entry_point_by_name`, `get_entry_point_by_ordinal`, `get_entry_point_count`, `get_entry_points`, `rename_entry_point`
+
+### `api_functions` (25)
+
+`create_function`, `delete_function`, `func_count`, `get_function_args_size`, `get_function_bounds`, `get_function_comment`, `get_function_edges`, `get_function_end`, `get_function_flags`, `get_function_frame_size`, `get_function_instructions_count`, `get_function_signature`, `get_function_size`, `get_function_start`, `get_function_type`, `get_functions_in_range`, `get_local_variables`, `get_next_function`, `get_register_variables`, `is_function_library`, `is_function_noreturn`, `is_function_thunk`, `list_funcs`, `set_function_comment`, `set_function_name`
+
+### `api_hexrays` (4)
+
+`force_recompile`, `get_basic_blocks`, `get_flowchart`, `get_microcode`
+
+### `api_hooks` (5)
+
+`get_hook_info`, `install_hexrays_hook`, `install_hook`, `install_idb_hook`, `remove_hooks`
+
+### `api_info` (18)
+
+`get_analysis_prompt`, `get_analysis_status`, `get_architecture_info`, `get_base_address`, `get_binary_info`, `get_compiler_info`, `get_current_binary_name`, `get_hexrays_version`, `get_image_size`, `get_input_file_md5`, `get_input_file_path`, `get_input_file_sha256`, `get_problems`, `get_processor_info`, `get_version_info`, `idb_meta`, `idb_save`, `wait_for_analysis`
+
+### `api_instructions` (16)
+
+`breaks_flow`, `get_instruction`, `get_instruction_bytes`, `get_instruction_size`, `get_instructions`, `get_instructions_in_range`, `get_mnemonic`, `get_operand`, `get_operand_info`, `get_operands`, `get_operands_count`, `is_call_instruction`, `is_conditional_jump`, `is_indirect_jump`, `is_jump_instruction`, `is_ret_instruction`
+
+### `api_memory` (19)
+
+`get_byte`, `get_cstring`, `get_data_flags`, `get_data_size`, `get_disassembly_text`, `get_double`, `get_dword`, `get_float`, `get_global_value`, `get_heads`, `get_int`, `get_next_addr`, `get_next_head`, `get_prev_addr`, `get_prev_head`, `get_qword`, `get_word`, `is_code`, `is_data`
+
+### `api_modify` (8)
+
+`get_original_bytes`, `list_patches`, `make_data`, `patch_asm`, `patch_bytes`, `rename_address`, `revert_patch`, `undefine`
+
+### `api_names` (12)
+
+`delete_name`, `demangle_name`, `force_name`, `get_all_names`, `get_demangled_name`, `get_name`, `is_name_public`, `is_name_weak`, `make_name_non_public`, `make_name_public`, `set_name`, `validate_name`
+
+### `api_python` (2)
+
+`py_eval`, `py_exec_file`
+
+### `api_query` (6)
+
+`entity_query`, `func_query`, `get_local_variable_by_name`, `get_local_variable_references`, `imports_query`, `list_globals`
+
+### `api_search` (7)
+
+`find_bytes_between`, `find_immediate_between`, `find_regex`, `find_text_between`, `search_bytes`, `search_immediate_value`, `search_text`
+
+### `api_segments` (13)
+
+`get_code_segments`, `get_data_segments`, `get_segment_at`, `get_segment_bitness`, `get_segment_by_name`, `get_segment_class`, `get_segment_comment`, `get_segment_count`, `get_segment_end`, `get_segment_permissions`, `get_segment_size`, `get_segment_start`, `get_segments`
+
+### `api_sigmaker` (6)
+
+`apply_flirt_signatures`, `find_xref_signatures`, `list_flirt_signatures`, `make_signature`, `make_signature_for_function`, `make_signature_for_range`
+
+### `api_strings` (8)
+
+`get_ascii_strings`, `get_string_at`, `get_string_count`, `get_strings`, `get_strings_by_length`, `get_strings_in_range`, `get_unicode_strings`, `search_strings`
+
+### `api_typeinfo` (10)
+
+`declare_type`, `enum_upsert`, `get_type_at`, `get_type_by_name`, `infer_types`, `read_struct`, `search_structs`, `set_type`, `type_inspect`, `type_query`
+
+### `api_xrefs` (15)
+
+`get_callee_count`, `get_caller_count`, `get_calls_from`, `get_calls_to`, `get_code_refs_from`, `get_code_refs_to`, `get_data_refs_from`, `get_data_refs_to`, `get_jumps_to`, `get_reads_of`, `get_writes_to`, `get_xref_count`, `get_xrefs`, `get_xrefs_from`, `xrefs_to_field`
+
+### `server` (9)
+
+`close_instance`, `decompile_function`, `execute_script`, `get_disassembly`, `get_functions`, `get_instance_info`, `list_instances`, `server_health`, `server_warmup`
+
+<!-- total: 243 tools -->
 
 ## How it works
 ```
@@ -79,8 +173,10 @@ The handler parses `?unsafe=` / `?profile=` / `?ext=` per request (thread-local,
 | `ida_mcp/compat.py` | IDA 8.3 to 9.x API shims |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |
 | `ida_mcp/zeromcp/` | Vendored stdlib MCP transport |
-| `skills/ida/` | Generic agent skill (`/ida-connect`): connect -> triage -> escalate methodology |
-| `.pi/skills/ida/SKILL.md` | Pi Agent skill (`/ida`): lazy triage -> readonly -> full -> unsafe -> debugger methodology, auto-loaded by pi |
+| `skills/ida/` | Generic agent skill (`/ida`): connect -> triage -> escalate methodology + 62-skill routing table |
+| `skills/<slug>/` (62) + `skills/INDEX.md` | Domain skills mirror (RE, vuln audit, exploit, mobile/web, obfuscation), IDA-native throughout |
+| `.pi/skills/ida/SKILL.md` | Pi Agent skill (`/ida`): lazy triage -> readonly -> full -> unsafe -> debugger methodology + `/skill:<slug>` routing, auto-loaded by pi |
+| `.pi/skills/<slug>/` (62) + `.pi/skills/INDEX.md` | Pi domain skills (same content, progressive disclosure) |
 | `.pi/extensions/ida-mcp.ts` | Pi Agent extension: MCP bridge, `/ida` command, `ida_profile` / `ida_status` tools, footer status indicator |
 | `tests/` | Standalone test scripts (run outside IDA with stubbed IDA modules) |
 

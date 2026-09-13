@@ -24,6 +24,80 @@ IDA Pro, or asks about a binary/driver that is open in IDA. Ask ONE
 clarifying question only if it is unclear whether write tools (`?unsafe=true`)
 are available — otherwise assume read-only and escalate later.
 
+## Domain skill routing (62 skills, lazy-load one on demand)
+
+`/ida` is the orchestrator: connect → triage → route. After `survey_binary()`,
+load EXACTLY ONE domain skill below with `/skill:<slug>` (progressive disclosure —
+never preload bodies). Full catalog: `skills/INDEX.md` (generic) / `.pi/skills/INDEX.md` (pi).
+
+| Task | Load | Ceiling |
+|---|---|---|
+| General RE / understand a binary | `/skill:generic-re` or `/skill:reverse-engineering` | unsafe |
+| CTF / find the flag fast | `/skill:ctf` | unsafe |
+| Firmware / embedded / blobs | `/skill:firmware-re` | readonly |
+| Protocol / packet / state machine | `/skill:protocol-analysis` | readonly |
+| Crypto primitives / constants / side-channels | `/skill:crypto-analysis` | readonly |
+| APK / dex / manifest + native libs | `/skill:apk-analysis` | readonly |
+| Semantic search / similarity / auto-docs | `/skill:ai-features` | readonly |
+| Complexity / maintainability metrics | `/skill:code-quality-metrics` | readonly |
+| Security audit (overflows, fmt-str, int, UAF) | `/skill:vuln-audit` | readonly |
+| 0day / novel-class hunting | `/skill:0day-find` (+ shared doctrine inline) | dbg |
+| Source-level 0day + exploit dev | `/skill:code-vulnerability-analysis` | readonly |
+| Memory corruption + PAC/ASLR/CFI/CET bypass | `/skill:memory-corruption` | dbg |
+| RCE / injection / deserialization / SSTI | `/skill:rce-detection` | readonly |
+| Race / TOCTOU / double-fetch | `/skill:race-condition` | dbg |
+| Crypto implementation bugs | `/skill:crypto-vuln` | readonly |
+| LPE / privesc enumeration | `/skill:lpe-detection` | readonly |
+| Validate BEFORE reporting (7-question gate) | `/skill:triage-validation` | readonly |
+| Write the report (H1/BC/Immunefi tone, CVSS) | `/skill:report-writing` | readonly |
+| Windows PE malware (kill chain, IOC, ATT&CK) | `/skill:malware-analysis` | readonly |
+| ELF malware (pack, persist, C2, rootkit) | `/skill:linux-malware` | readonly |
+| Android/iOS malware behavior | `/skill:mobile-malware-analysis` | readonly |
+| Windows driver (DriverEntry, IOCTL) | `/skill:driver-analysis` | dbg |
+| Kernel driver vuln analysis (IOCTL, primitives) | `/skill:kernel-mode-analysis` | dbg |
+| Kernel exploitation / syscalls / privesc | `/skill:kernel-exploit` | dbg |
+| Linux kmod ioctl / cred escalation | `/skill:linux-driver-exploit` | dbg |
+| Windows kmod pool overflow / token theft | `/skill:windows-driver-exploit` | dbg |
+| macOS kext / IOKit | `/skill:macos-driver-exploit` | dbg |
+| Android native/IPC exploitation | `/skill:android-exploit` | dbg |
+| iOS IPA/kernel/sandbox escape | `/skill:ios-exploit` | dbg |
+| ROP chain construction | `/skill:rop-builder` | dbg |
+| Shellcode generation (x86/x64, PIC) | `/skill:shellcode-generator` | dbg |
+| Auto exploit from vuln analysis | `/skill:auto-exploit` or `/skill:automated-exploit-gen` | dbg |
+| Deobfuscate first (strings→CFF→MBA→VM) | `/skill:deobfuscation` (has `references/ida/*`) | unsafe |
+| VM/packer/CFF detection | `/skill:vm-obfuscation-detection` | unsafe |
+| Natural-language patch (read→assemble→verify) | `/skill:smart-patch-ida` | unsafe |
+| Explore→plan→patch→save loop | `/skill:modify` | unsafe |
+| IDAPython automation | `/skill:ida-scripting` (has `references/api-reference.md`) | unsafe |
+| Mobile pentest (ADB/SSH/device) | `/skill:mobile-pentest` | readonly |
+| SSL pinning detect+bypass | `/skill:ssl-pinning-bypass` | readonly |
+| Root/JB/anti-debug/shielding bypass | `/skill:app-shielding-bypass` | readonly |
+| OWASP Mobile Top 10 2024 | `/skill:owasp-mobile-top10` | readonly |
+| OWASP Web Top 10 (A01–A10) | `/skill:owasp-web-top10` | readonly |
+| Web app / API (auth, input, framework) | `/skill:web-app-security` | readonly |
+| PHP/C# web scanner (POP, SQLi, XSS, SSRF) | `/skill:web-csharp-php-vuln` | readonly |
+| Web2 bug classes (20 classes + bypasses) | `/skill:web2-vuln-classes` | readonly |
+| Web2 recon (subdomains→JS secrets) | `/skill:web2-recon` | readonly |
+| Solidity/Rust DeFi audit | `/skill:web3-audit` | readonly |
+| Web3/bridge/NFT/reentrancy/MEV | `/skill:web3-vuln` | readonly |
+| Token / rug-pull diligence | `/skill:meme-coin-audit` | readonly |
+| Cloud mobile backends (Firebase/AWS/GCP) | `/skill:cloud-mobile-security` | readonly |
+| Container / K8s escape | `/skill:container-escape` | readonly |
+| Hypervisor / guest-to-host escape | `/skill:vm-escape` | readonly |
+| IoT / RTOS / firmware protocols | `/skill:iot-vuln` | readonly |
+| ICS/SCADA (Modbus/DNP3/PLC) | `/skill:scada-vuln` | readonly |
+| Bug-bounty master workflow | `/skill:bug-bounty` or `/skill:bb-methodology` | readonly |
+| Payloads / bypass tables / reject-list | `/skill:security-arsenal` | readonly |
+| Prompt-injection in binaries/docs | `/skill:prompt-injection` | readonly |
+| Team merge / shared findings | `/skill:collaborative-analysis` | readonly |
+| Shared vuln pipeline (dedup, FP filter) | `/skill:core-vulnerability-pipeline` | readonly |
+
+Rules: one domain skill per task; re-triage (`survey_binary`) before switching skills;
+shared `doctrine` / `bypass-protocol` / `rce-poc-verification` are already expanded inline
+inside each skill that declares them — follow the inline copy, there is nothing else to load.
+All domain skills use native ida_mcp tools only (`execute_script`, `set_name`,
+`get_xrefs_to`, `decompile_function`, …) — no translation needed.
+
 ## Endpoint ladder (escalate top-down, stop at the first that suffices)
 
 | Step | Endpoint suffix | Tools visible | Use when |
