@@ -248,7 +248,7 @@ src = src.replace(
 )
 src = src.replace(
     "from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,\n"
-    "                   CancelledError, IDASyncError)",
+    "                   update_wait_box, CancelledError, IDASyncError)",
     "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
@@ -256,6 +256,7 @@ src = src.replace(
     "    return deco\n"
     "get_tool_deadline = lambda: None\n"
     "def check_cancelled(): return None\n"
+    "def update_wait_box(t): return None\n"
     "class CancelledError(Exception): pass\n"
     "class IDASyncError(Exception): pass",
 )

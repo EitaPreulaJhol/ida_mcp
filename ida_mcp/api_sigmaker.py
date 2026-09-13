@@ -11,6 +11,7 @@ Generating ``.sig``/``.pat`` files via ``sigmake`` remains out of scope.
 """
 import json
 import os
+import time
 
 import ida_auto
 import ida_bytes
@@ -20,7 +21,7 @@ import idaapi
 import idautils
 
 from .rpc import tool, unsafe
-from .sync import (idasync, tool_timeout, check_cancelled,
+from .sync import (idasync, tool_timeout, check_cancelled, update_wait_box,
                    CancelledError, IDASyncError)
 from .api_analysis import parse_addr, read_bytes_bss_safe
 from .compat import inf_get_max_ea, inf_get_min_ea
@@ -171,9 +172,39 @@ def _check_format(fmt: str) -> str | None:
 # ===========================================================================
 
 
-@tool
 @idasync
 @tool_timeout(120.0)
+def _fetch_one_signature(query: str, max_length: int, wildcard_operands: bool,
+                         fmt: str, progress: str = "") -> dict:
+    """Single-address signature hop (bounded main-thread hold)."""
+    ida_auto.auto_wait()
+    if progress:
+        update_wait_box(f"make_signature {progress}")
+    try:
+        ea = parse_addr(query)
+    except ValueError:
+        return {"query": query, "addr": None, "signature": None,
+                "format": fmt, "error": f"Unknown address or name: {query}"}
+    try:
+        sig, unique, _end, err = _make_unique(ea, max_length, bool(wildcard_operands))
+    except Exception as e:
+        return {"query": query, "addr": hex(ea), "signature": None,
+                "format": fmt, "error": str(e)}
+    if sig is None:
+        return {"query": query, "addr": hex(ea), "signature": None,
+                "format": fmt, "unique": False, "error": err}
+    rendered = _render(sig, fmt)
+    rendered.update({"query": query, "addr": hex(ea),
+                     "format": fmt, "unique": unique})
+    if err:
+        rendered["error"] = err
+    return rendered
+
+
+_SIG_BUDGET_SEC = 120.0
+
+
+@tool
 def make_signature(addresses: str, format: str = "ida",
                    wildcard_operands: bool = True,
                    max_length: int = 1000) -> str:
@@ -182,42 +213,74 @@ def make_signature(addresses: str, format: str = "ida",
     ``addresses`` is comma-separated. Walks instructions wildcarding operand
     bytes (``ida``/``x64dbg`` share the ``??`` syntax; ``mask``/``bitmask``
     add explicit masks). ``max_length`` caps the walk (clamped to 10000).
+
+    Two-phase: each address is collected in its own bounded main-thread hop
+    so the UI breathes between addresses; JSON rendering runs on the HTTP
+    worker thread under a 120 s budget.
     """
-    ida_auto.auto_wait()
     fmt = _check_format(format)
     if fmt is None:
         return json.dumps({"error": f"Unknown format {format!r} (use ida/x64dbg/mask/bitmask)"})
     max_length = max(1, min(int(max_length), 10000))
+    queries = _split_addrs(addresses)
     results: list[dict] = []
-    for query in _split_addrs(addresses):
-        try:
-            ea = parse_addr(query)
-        except ValueError:
+    start = time.monotonic()
+    for i, query in enumerate(queries):
+        if time.monotonic() - start >= _SIG_BUDGET_SEC:
             results.append({"query": query, "addr": None, "signature": None,
-                            "format": fmt, "error": f"Unknown address or name: {query}"})
+                            "format": fmt,
+                            "error": f"Tool budget exceeded ({_SIG_BUDGET_SEC:.0f}s); "
+                                     "retry with fewer addresses"})
             continue
-        try:
-            sig, unique, _end, err = _make_unique(ea, max_length, bool(wildcard_operands))
-        except Exception as e:
-            results.append({"query": query, "addr": hex(ea), "signature": None,
-                            "format": fmt, "error": str(e)})
-            continue
-        if sig is None:
-            results.append({"query": query, "addr": hex(ea), "signature": None,
-                            "format": fmt, "unique": False, "error": err})
-            continue
-        rendered = _render(sig, fmt)
-        rendered.update({"query": query, "addr": hex(ea),
-                         "format": fmt, "unique": unique})
-        if err:
-            rendered["error"] = err
-        results.append(rendered)
+        label = f"{i + 1}/{len(queries)}" if len(queries) > 1 else ""
+        results.append(_fetch_one_signature(query, max_length,
+                                            bool(wildcard_operands), fmt,
+                                            progress=label))
     return json.dumps({"results": results}, indent=2)
 
 
-@tool
 @idasync
 @tool_timeout(120.0)
+def _fetch_function_signature(query: str, max_length: int,
+                              wildcard_operands: bool, fmt: str,
+                              progress: str = "") -> dict:
+    """Single-function signature hop (bounded main-thread hold)."""
+    ida_auto.auto_wait()
+    if progress:
+        update_wait_box(f"make_signature {progress}")
+    try:
+        ea = parse_addr(query)
+    except ValueError:
+        return {"query": query, "addr": None, "name": None,
+                "signature": None, "format": fmt,
+                "error": f"Unknown address or name: {query}"}
+    func = ida_funcs.get_func(ea)
+    if not func:
+        return {"query": query, "addr": hex(ea), "name": None,
+                "signature": None, "format": fmt,
+                "error": f"No function at {hex(ea)}"}
+    try:
+        sig, unique, _end, err = _make_unique(func.start_ea, max_length,
+                                              bool(wildcard_operands))
+    except Exception as e:
+        return {"query": query, "addr": hex(func.start_ea),
+                "name": ida_funcs.get_func_name(func.start_ea) or None,
+                "signature": None, "format": fmt, "error": str(e)}
+    if sig is None:
+        return {"query": query, "addr": hex(func.start_ea),
+                "name": ida_funcs.get_func_name(func.start_ea) or None,
+                "signature": None, "format": fmt, "unique": False,
+                "error": err}
+    rendered = _render(sig, fmt)
+    rendered.update({"query": query, "addr": hex(func.start_ea),
+                     "name": ida_funcs.get_func_name(func.start_ea) or None,
+                     "format": fmt, "unique": unique})
+    if err:
+        rendered["error"] = err
+    return rendered
+
+
+@tool
 def make_signature_for_function(addresses: str, format: str = "ida",
                                 wildcard_operands: bool = True,
                                 max_length: int = 1000) -> str:
@@ -225,48 +288,27 @@ def make_signature_for_function(addresses: str, format: str = "ida",
 
     Resolves each address/name to its function, then signatures the start.
     Same formats and semantics as ``make_signature``.
+
+    Two-phase: one bounded main-thread hop per address (see make_signature).
     """
-    ida_auto.auto_wait()
     fmt = _check_format(format)
     if fmt is None:
         return json.dumps({"error": f"Unknown format {format!r} (use ida/x64dbg/mask/bitmask)"})
     max_length = max(1, min(int(max_length), 10000))
+    queries = _split_addrs(addresses)
     results: list[dict] = []
-    for query in _split_addrs(addresses):
-        try:
-            ea = parse_addr(query)
-        except ValueError:
+    start = time.monotonic()
+    for i, query in enumerate(queries):
+        if time.monotonic() - start >= _SIG_BUDGET_SEC:
             results.append({"query": query, "addr": None, "name": None,
                             "signature": None, "format": fmt,
-                            "error": f"Unknown address or name: {query}"})
+                            "error": f"Tool budget exceeded ({_SIG_BUDGET_SEC:.0f}s); "
+                                     "retry with fewer addresses"})
             continue
-        func = ida_funcs.get_func(ea)
-        if not func:
-            results.append({"query": query, "addr": hex(ea), "name": None,
-                            "signature": None, "format": fmt,
-                            "error": f"No function at {hex(ea)}"})
-            continue
-        try:
-            sig, unique, _end, err = _make_unique(func.start_ea, max_length,
-                                                 bool(wildcard_operands))
-        except Exception as e:
-            results.append({"query": query, "addr": hex(func.start_ea),
-                            "name": ida_funcs.get_func_name(func.start_ea) or None,
-                            "signature": None, "format": fmt, "error": str(e)})
-            continue
-        if sig is None:
-            results.append({"query": query, "addr": hex(func.start_ea),
-                            "name": ida_funcs.get_func_name(func.start_ea) or None,
-                            "signature": None, "format": fmt, "unique": False,
-                            "error": err})
-            continue
-        rendered = _render(sig, fmt)
-        rendered.update({"query": query, "addr": hex(func.start_ea),
-                         "name": ida_funcs.get_func_name(func.start_ea) or None,
-                         "format": fmt, "unique": unique})
-        if err:
-            rendered["error"] = err
-        results.append(rendered)
+        label = f"{i + 1}/{len(queries)}" if len(queries) > 1 else ""
+        results.append(_fetch_function_signature(query, max_length,
+                                                 bool(wildcard_operands), fmt,
+                                                 progress=label))
     return json.dumps({"results": results}, indent=2)
 
 
@@ -320,51 +362,71 @@ def make_signature_for_range(start: str, end: str, format: str = "ida",
     return json.dumps(rendered, indent=2)
 
 
-@tool
 @idasync
 @tool_timeout(180.0)
+def _fetch_xref_signatures(query: str, top: int, max_length: int,
+                           fmt: str, progress: str = "") -> dict:
+    """Single-address xref-signature hop (bounded main-thread hold)."""
+    ida_auto.auto_wait()
+    if progress:
+        update_wait_box(f"find_xref_signatures {progress}")
+    try:
+        ea = parse_addr(query)
+    except ValueError:
+        return {"query": query, "addr": None, "signatures": None,
+                "error": f"Unknown address or name: {query}"}
+    try:
+        sites = [x.frm for x in idautils.XrefsTo(ea, 0) if x.iscode][:50]
+    except Exception as e:
+        return {"query": query, "addr": hex(ea), "signatures": None,
+                "error": str(e)}
+    sigs: list[dict] = []
+    for site in sites:
+        try:
+            sig, unique, _end, _err = _make_unique(site, max_length, True)
+        except Exception:
+            continue
+        if sig is None or not unique:
+            continue
+        rendered = _render(sig, fmt)
+        sigs.append({"xref_addr": hex(site),
+                     "signature": rendered["signature"],
+                     "length": len(sig)})
+    sigs.sort(key=lambda s: s["length"])
+    return {"query": query, "addr": hex(ea),
+            "signatures": sigs[:top], "total_xrefs": len(sites)}
+
+
+_XREF_BUDGET_SEC = 180.0
+
+
+@tool
 def find_xref_signatures(addresses: str, format: str = "ida",
                          top: int = 5, max_length: int = 250) -> str:
     """Signatures for code sites referencing each address (for data/string refs).
 
     Generates a unique signature at every code xref source, returns the
     shortest ``top`` per address. At most 50 xref sites per address are tried.
+
+    Two-phase: one bounded main-thread hop per address (see make_signature).
     """
-    ida_auto.auto_wait()
     fmt = _check_format(format)
     if fmt is None:
         return json.dumps({"error": f"Unknown format {format!r} (use ida/x64dbg/mask/bitmask)"})
     top = max(1, min(int(top), 50))
     max_length = max(1, min(int(max_length), 10000))
+    queries = _split_addrs(addresses)
     results: list[dict] = []
-    for query in _split_addrs(addresses):
-        try:
-            ea = parse_addr(query)
-        except ValueError:
+    start = time.monotonic()
+    for i, query in enumerate(queries):
+        if time.monotonic() - start >= _XREF_BUDGET_SEC:
             results.append({"query": query, "addr": None, "signatures": None,
-                            "error": f"Unknown address or name: {query}"})
+                            "error": f"Tool budget exceeded ({_XREF_BUDGET_SEC:.0f}s); "
+                                     "retry with fewer addresses"})
             continue
-        try:
-            sites = [x.frm for x in idautils.XrefsTo(ea, 0) if x.iscode][:50]
-        except Exception as e:
-            results.append({"query": query, "addr": hex(ea), "signatures": None,
-                            "error": str(e)})
-            continue
-        sigs: list[dict] = []
-        for site in sites:
-            try:
-                sig, unique, _end, _err = _make_unique(site, max_length, True)
-            except Exception:
-                continue
-            if sig is None or not unique:
-                continue
-            rendered = _render(sig, fmt)
-            sigs.append({"xref_addr": hex(site),
-                         "signature": rendered["signature"],
-                         "length": len(sig)})
-        sigs.sort(key=lambda s: s["length"])
-        results.append({"query": query, "addr": hex(ea),
-                        "signatures": sigs[:top], "total_xrefs": len(sites)})
+        label = f"{i + 1}/{len(queries)}" if len(queries) > 1 else ""
+        results.append(_fetch_xref_signatures(query, top, max_length, fmt,
+                                              progress=label))
     return json.dumps({"results": results}, indent=2)
 
 

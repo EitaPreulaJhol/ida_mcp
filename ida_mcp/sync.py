@@ -238,12 +238,21 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
         _sync_state.pre_call_batch = old_batch
         wait_shown = _show_tool_wait_box(ff.__name__)
         completed = False
+        t0 = time.monotonic()
         try:
             res_container.put(ff())
             completed = True
         except Exception as x:  # noqa: BLE001 - capture, never re-raise here
             res_container.put(x)
         finally:
+            # Telemetry for two-phase targeting: how long each tool held
+            # the IDA main thread (the serial resource behind UI freezes).
+            try:
+                hold_ms = (time.monotonic() - t0) * 1000.0
+            except Exception:
+                hold_ms = -1.0
+            logger.debug("[MCP] tool %s held main thread %.1fms",
+                          ff.__name__, hold_ms)
             if wait_shown:
                 _hide_tool_wait_box()
             if not (completed and keep_batch):

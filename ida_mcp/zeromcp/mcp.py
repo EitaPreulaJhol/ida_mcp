@@ -851,6 +851,7 @@ class McpServer:
         if gate is not None:
             gate_acquired = gate.acquire(blocking=False)
             if not gate_acquired:
+                logger.debug("[MCP] tools/call %s rejected: server busy", name)
                 return {
                     "content": [{
                         "type": "text",

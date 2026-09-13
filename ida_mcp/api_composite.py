@@ -27,7 +27,7 @@ import idc
 
 from .rpc import tool, unsafe
 from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,
-                   CancelledError, IDASyncError)
+                   update_wait_box, CancelledError, IDASyncError)
 from .api_analysis import parse_addr
 from .compat import inf_is_64bit, is_loaded as _is_loaded
 
@@ -592,9 +592,90 @@ def trace_data_flow(address: str, direction: str = "forward", max_depth: int = 5
     return json.dumps(out, indent=2)
 
 
-@tool
 @idasync
 @tool_timeout(120.0)
+def _fetch_callgraph_root(root: str, max_depth: int, max_nodes: int,
+                          max_edges: int, max_edges_per_func: int,
+                          progress: str = "") -> dict:
+    """Single-root call-graph collection (one bounded main-thread hop)."""
+    ida_auto.auto_wait()
+    if progress:
+        update_wait_box(f"callgraph {progress}")
+    try:
+        ea = parse_addr(root)
+    except ValueError:
+        return {"root": root, "error": "Function not found", "nodes": [], "edges": []}
+    if not ida_funcs.get_func(ea):
+        return {"root": root, "error": "Function not found", "nodes": [], "edges": []}
+
+    nodes: dict[str, dict] = {}
+    edges: list[dict] = []
+    visited: set[int] = set()
+    truncated = False
+    limit_reason: str | None = None
+    per_func_capped = False
+    visit_count = [0]
+
+    def traverse(addr: int, depth: int) -> None:
+        nonlocal truncated, limit_reason, per_func_capped
+        if truncated or depth > max_depth or addr in visited:
+            return
+        if len(nodes) >= max_nodes:
+            truncated = True
+            limit_reason = "nodes"
+            return
+        visit_count[0] += 1
+        if visit_count[0] % 64 == 0:
+            check_cancelled()
+        visited.add(addr)
+        f = ida_funcs.get_func(addr)
+        if not f:
+            return
+        nodes[hex(addr)] = {
+            "addr": hex(addr),
+            "name": ida_funcs.get_func_name(f.start_ea) or "",
+            "depth": depth,
+        }
+        added = 0
+        for item_ea in idautils.FuncItems(f.start_ea):
+            if truncated:
+                break
+            for ref in idautils.CodeRefsFrom(item_ea, 0):
+                if truncated:
+                    break
+                if added >= max_edges_per_func:
+                    per_func_capped = True
+                    break
+                callee = ida_funcs.get_func(ref)
+                if not callee:
+                    continue
+                if len(edges) >= max_edges:
+                    truncated = True
+                    limit_reason = "edges"
+                    break
+                edges.append({"from": hex(addr), "to": hex(callee.start_ea)})
+                added += 1
+                traverse(callee.start_ea, depth + 1)
+
+    try:
+        traverse(ea, 0)
+    except (CancelledError, IDASyncError):
+        truncated = True
+        limit_reason = "cancelled"
+    return {
+        "root": root,
+        "nodes": list(nodes.values()),
+        "edges": edges,
+        "truncated": truncated,
+        "limit_reason": limit_reason,
+        "per_func_capped": per_func_capped,
+    }
+
+
+_CALLGRAPH_BUDGET_SEC = 120.0
+
+
+@tool
 def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
               max_edges: int = 5000, max_edges_per_func: int = 200) -> str:
     """Build a bounded call graph from root functions.
@@ -603,101 +684,43 @@ def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
     Limits (clamped to the official maxima): depth, 100k nodes, 200k edges,
     5k edges per function. Returns per-root ``{nodes, edges}`` with depth
     annotations plus truncation flags.
+
+    Two-phase: each root is collected in its own bounded main-thread hop
+    (_fetch_callgraph_root) so the UI breathes between roots; JSON
+    rendering runs here on the HTTP worker thread. A 120 s worker-side
+    budget bounds the whole call (previously the single-hop timeout).
     """
-    ida_auto.auto_wait()
     max_depth = max(0, int(max_depth))
     max_nodes = min(max(int(max_nodes), 1), 100000)
     max_edges = min(max(int(max_edges), 1), 200000)
     max_edges_per_func = min(max(int(max_edges_per_func), 1), 5000)
 
+    names = _normalize_addr_list(roots)
     graphs: list[dict] = []
-    for root in _normalize_addr_list(roots):
-        try:
-            ea = parse_addr(root)
-        except ValueError:
-            graphs.append({"root": root, "error": "Function not found", "nodes": [], "edges": []})
+    start = time.monotonic()
+    for i, root in enumerate(names):
+        if time.monotonic() - start >= _CALLGRAPH_BUDGET_SEC:
+            graphs.append({"root": root, "error":
+                           f"Tool budget exceeded ({_CALLGRAPH_BUDGET_SEC:.0f}s); "
+                           "retry with fewer roots",
+                           "nodes": [], "edges": []})
             continue
-        if not ida_funcs.get_func(ea):
-            graphs.append({"root": root, "error": "Function not found", "nodes": [], "edges": []})
-            continue
-
-        nodes: dict[str, dict] = {}
-        edges: list[dict] = []
-        visited: set[int] = set()
-        truncated = False
-        limit_reason: str | None = None
-        per_func_capped = False
-        visit_count = [0]
-
-        def traverse(addr: int, depth: int) -> None:
-            nonlocal truncated, limit_reason, per_func_capped
-            if truncated or depth > max_depth or addr in visited:
-                return
-            if len(nodes) >= max_nodes:
-                truncated = True
-                limit_reason = "nodes"
-                return
-            visit_count[0] += 1
-            if visit_count[0] % 64 == 0:
-                check_cancelled()
-            visited.add(addr)
-            f = ida_funcs.get_func(addr)
-            if not f:
-                return
-            nodes[hex(addr)] = {
-                "addr": hex(addr),
-                "name": ida_funcs.get_func_name(f.start_ea) or "",
-                "depth": depth,
-            }
-            added = 0
-            for item_ea in idautils.FuncItems(f.start_ea):
-                if truncated:
-                    break
-                for ref in idautils.CodeRefsFrom(item_ea, 0):
-                    if truncated:
-                        break
-                    if added >= max_edges_per_func:
-                        per_func_capped = True
-                        break
-                    callee = ida_funcs.get_func(ref)
-                    if not callee:
-                        continue
-                    if len(edges) >= max_edges:
-                        truncated = True
-                        limit_reason = "edges"
-                        break
-                    edges.append({"from": hex(addr), "to": hex(callee.start_ea)})
-                    added += 1
-                    traverse(callee.start_ea, depth + 1)
-
-        try:
-            traverse(ea, 0)
-        except (CancelledError, IDASyncError):
-            truncated = True
-            limit_reason = "cancelled"
-        graphs.append({
-            "root": root,
-            "nodes": list(nodes.values()),
-            "edges": edges,
-            "truncated": truncated,
-            "limit_reason": limit_reason,
-            "per_func_capped": per_func_capped,
-        })
+        label = f"{i + 1}/{len(names)}" if len(names) > 1 else ""
+        graphs.append(_fetch_callgraph_root(root, max_depth, max_nodes,
+                                            max_edges, max_edges_per_func,
+                                            progress=label))
     return json.dumps({"graphs": graphs}, indent=2)
 
 
-@tool
 @idasync
 @tool_timeout(120.0)
-def survey_binary(detail_level: str = "standard") -> str:
-    """Complete binary triage in one call — use as the FIRST tool when starting analysis.
+def _fetch_survey_raw(detail_level: str) -> dict:
+    """Main-thread collection half of survey_binary (IDA SDK only).
 
-    Returns metadata (path, arch, base, hashes), statistics, segments, entry
-    points plus, unless ``detail_level='minimal'``: top-15 strings/functions
-    by xref count (with thunk/wrapper/leaf/dispatcher/complex classification),
-    imports by category (crypto/network/file_io/process/registry/other) and a
-    call-graph summary. Do not call ``list_funcs``/``list_imports`` separately
-    for triage — this covers them.
+    Must stay free of disk I/O and heavy pure-Python work: file hashing,
+    import categorization and JSON rendering run on the HTTP worker thread
+    in survey_binary(). Returns a plain dict (not JSON); keys starting with
+    ``_`` are private and consumed by the outer tool.
     """
     ida_auto.auto_wait()
     minimal = detail_level == "minimal"
@@ -718,15 +741,10 @@ def survey_binary(detail_level: str = "standard") -> str:
         module = ida_nalt.get_root_filename() or ""
     except Exception:
         module = ""
+    # NOTE: file hashing is deferred to the worker thread (survey_binary).
+    # Reading + hashing a large binary is pure I/O with zero IDA calls and
+    # must not hold the main thread (UI freeze).
     md5 = sha256 = "unavailable"
-    if input_path:
-        try:
-            with open(input_path, "rb") as f:
-                data = f.read()
-            md5 = hashlib.md5(data).hexdigest()
-            sha256 = hashlib.sha256(data).hexdigest()
-        except Exception:
-            pass
     try:
         base = idaapi.get_imagebase()
     except Exception:
@@ -881,10 +899,9 @@ def survey_binary(detail_level: str = "standard") -> str:
             })
         result["interesting_functions"] = interesting
 
-        categories: dict[str, list[dict]] = {
-            "crypto": [], "network": [], "file_io": [],
-            "process": [], "registry": [], "other": [],
-        }
+        # Raw import rows only; the regex categorization is pure Python and
+        # runs on the worker thread (survey_binary) to free the main thread.
+        imports_raw: list[tuple[str, list[tuple[int, str]]]] = []
         try:
             nimps = ida_nalt.get_import_module_qty()
             for i in range(nimps):
@@ -896,16 +913,10 @@ def survey_binary(detail_level: str = "standard") -> str:
                     return True
 
                 ida_nalt.enum_import_names(i, _cb)
-                for ea, sym in collected:
-                    cat = "other"
-                    for cname, rx in _IMPORT_CATEGORIES:
-                        if rx.search(sym):
-                            cat = cname
-                            break
-                    categories[cat].append({"addr": hex(ea), "name": sym, "module": mod_name})
+                imports_raw.append((mod_name, collected))
         except Exception:
             pass
-        result["imports_by_category"] = categories
+        result["_imports_raw"] = imports_raw
 
         total_edges = 0
         roots: list[str] = []
@@ -953,7 +964,67 @@ def survey_binary(detail_level: str = "standard") -> str:
             f"Binary has {len(all_func_eas)} functions; "
             f"xref analysis was limited to the first {_MAX_FUNC_ITER} for performance."
         )
-    return json.dumps(result, indent=2)
+    result["_input_path"] = input_path
+    return result
+
+
+def _hash_file_chunked(path: str) -> tuple[str, str] | None:
+    """MD5 + SHA-256 of ``path`` in 1 MiB chunks (worker thread, no IDA)."""
+    try:
+        h_md5, h_sha = hashlib.md5(), hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h_md5.update(chunk)
+                h_sha.update(chunk)
+        return h_md5.hexdigest(), h_sha.hexdigest()
+    except Exception:
+        return None
+
+
+def _categorize_imports(
+    imports_raw: list[tuple[str, list[tuple[int, str]]]],
+) -> dict[str, list[dict]]:
+    """Bucket raw import rows into categories (worker thread, pure Python)."""
+    categories: dict[str, list[dict]] = {
+        "crypto": [], "network": [], "file_io": [],
+        "process": [], "registry": [], "other": [],
+    }
+    for mod_name, collected in imports_raw:
+        for ea, sym in collected:
+            cat = "other"
+            for cname, rx in _IMPORT_CATEGORIES:
+                if rx.search(sym):
+                    cat = cname
+                    break
+            categories[cat].append({"addr": hex(ea), "name": sym, "module": mod_name})
+    return categories
+
+
+@tool
+def survey_binary(detail_level: str = "standard") -> str:
+    """Complete binary triage in one call — use as the FIRST tool when starting analysis.
+
+    Returns metadata (path, arch, base, hashes), statistics, segments, entry
+    points plus, unless ``detail_level='minimal'``: top-15 strings/functions
+    by xref count (with thunk/wrapper/leaf/dispatcher/complex classification),
+    imports by category (crypto/network/file_io/process/registry/other) and a
+    call-graph summary. Do not call ``list_funcs``/``list_imports`` separately
+    for triage — this covers them.
+
+    Two-phase: IDA SDK collection runs on the main thread
+    (_fetch_survey_raw); file hashing, import categorization and JSON
+    rendering run here on the HTTP worker thread so the UI stays free.
+    """
+    data = _fetch_survey_raw(detail_level)
+    input_path = data.pop("_input_path", "")
+    imports_raw = data.pop("_imports_raw", None)
+    if input_path:
+        hashes = _hash_file_chunked(input_path)
+        if hashes is not None:
+            data["metadata"]["md5"], data["metadata"]["sha256"] = hashes
+    if imports_raw is not None:
+        data["imports_by_category"] = _categorize_imports(imports_raw)
+    return json.dumps(data, indent=2)
 
 
 __all__ = [
