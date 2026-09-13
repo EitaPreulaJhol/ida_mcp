@@ -247,13 +247,17 @@ src = src.replace(
     "tool = lambda f: f\nunsafe = lambda f: f",
 )
 src = src.replace(
-    "from .sync import idasync, tool_timeout, get_tool_deadline",
+    "from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,\n"
+    "                   CancelledError, IDASyncError)",
     "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
     "    return deco\n"
-    "get_tool_deadline = lambda: None",
+    "get_tool_deadline = lambda: None\n"
+    "def check_cancelled(): return None\n"
+    "class CancelledError(Exception): pass\n"
+    "class IDASyncError(Exception): pass",
 )
 src = src.replace(
     "from .api_analysis import parse_addr",

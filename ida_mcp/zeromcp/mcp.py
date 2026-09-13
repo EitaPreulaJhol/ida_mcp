@@ -32,6 +32,39 @@ from .jsonrpc import (
 
 logger = logging.getLogger(__name__)
 
+# Errors raised when the peer goes away mid-request (client timeout,
+# tab closed, agent cancelled). The slow-tool path hits this often:
+# dispatch blocks in execute_sync while the client gives up, then
+# wfile.write raises. These must never bubble to socketserver (which
+# logs "Exception occurred during processing of request" with traceback).
+_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionResetError,
+                      ConnectionAbortedError, OSError)
+
+
+class _DisconnectQuietMixin:
+    """ Silence client-disconnect noise, keep real bugs loud.
+
+    NOTE: socketserver calls ``server.handle_error``, NOT
+    ``handler.handle_error`` -- an override on the handler is dead code.
+    This mixin must be applied to the HTTP server classes used in
+    ``McpServer.serve``.
+    """
+
+    def handle_error(self, request, client_address) -> None:  # noqa: ANN001, ANN202
+        exc = sys.exc_info()[1]
+        if exc is not None and isinstance(exc, _DISCONNECT_ERRORS):
+            logger.debug("[MCP] client disconnected %s: %s", client_address, exc)
+            return
+        super().handle_error(request, client_address)  # type: ignore[misc]
+
+
+class _McpThreadingHTTPServer(_DisconnectQuietMixin, ThreadingHTTPServer):
+    pass
+
+
+class _McpHTTPServer(_DisconnectQuietMixin, HTTPServer):
+    pass
+
 EXTERNAL_BASE_HEADER = "X-IDA-MCP-External-Base"
 
 
@@ -176,6 +209,15 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+    def _safe_send_error(self, *args, **kwargs) -> None:
+        """ send_error that never raises on a dead peer. """
+        try:
+            self.send_error(*args, **kwargs)
+        except _DISCONNECT_ERRORS:
+            logger.debug("[MCP] send_error suppressed (peer gone)")
+        except Exception:
+            logger.exception("[MCP] send_error failed")
+
     def _get_query_param(self, path: str, param: str, default: str = "") -> str:
         """Get a single query parameter value from the path."""
         return parse_qs(urlparse(path).query).get(param, [default])[0]
@@ -207,21 +249,24 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         """
         bound_host = self.server.server_address[0]
         if not _host_header_allowed_for_bind(bound_host, self.headers.get("Host")):
-            self.send_error(403, "Invalid Host")
+            self._safe_send_error(403, "Invalid Host")
             return False
         origin = self.headers.get("Origin", "")
         if origin and not self.mcp_server._origin_allowed(origin):
-            self.send_error(403, "Invalid Origin")
+            self._safe_send_error(403, "Invalid Origin")
             return False
         return True
 
     def do_OPTIONS(self):
         if not self._check_api_request():
             return
-        self.send_response(204)
-        self.send_cors_headers(preflight=True)
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+        try:
+            self.send_response(204)
+            self.send_cors_headers(preflight=True)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        except _DISCONNECT_ERRORS:
+            logger.debug("[MCP] OPTIONS reply suppressed (client gone)")
 
     def _parse_request_flags(self) -> None:
         """Parse per-request ?unsafe= / ?ext= / ?profile= into thread-locals."""
@@ -248,14 +293,14 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             except ValueError:
                 content_length = 0
             if content_length > self.mcp_server.post_body_limit:
-                self.send_error(
+                self._safe_send_error(
                     413,
                     f"Payload Too Large: exceeds {self.mcp_server.post_body_limit} bytes",
                 )
                 return None
             raw = self.rfile.read(content_length) if content_length > 0 else b""
         if len(raw) > self.mcp_server.post_body_limit:
-            self.send_error(
+            self._safe_send_error(
                 413,
                 f"Payload Too Large: exceeds {self.mcp_server.post_body_limit} bytes",
             )
@@ -294,7 +339,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 except zlib.error:
                     return zlib.decompress(data, -15)
         except Exception:
-            self.send_error(400, "Bad Content-Encoding")
+            self._safe_send_error(400, "Bad Content-Encoding")
             return None
         return data
 
@@ -307,7 +352,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         elif parsed.path == "/sse":
             self._handle_sse_post()
         else:
-            self.send_error(404)
+            self._safe_send_error(404)
 
     def _handle_mcp_post(self) -> None:
         self._parse_request_flags()
@@ -332,16 +377,25 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             mcp_session_id = sid
 
         def send(status: int, payload: Any) -> None:
-            data = json.dumps(payload).encode("utf-8") if payload is not None else b""
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            if mcp_session_id is not None:
-                self.send_header("Mcp-Session-Id", mcp_session_id)
-            self.send_cors_headers()
-            self.end_headers()
-            if data:
-                self.wfile.write(data)
+            # The client may have timed out while dispatch() was blocked
+            # on the IDA main thread. Every socket op below can then
+            # raise BrokenPipe/ConnectionReset -> swallow, never let it
+            # reach socketserver (which logs a traceback per request).
+            try:
+                data = json.dumps(payload).encode("utf-8") if payload is not None else b""
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                if mcp_session_id is not None:
+                    self.send_header("Mcp-Session-Id", mcp_session_id)
+                self.send_cors_headers()
+                self.end_headers()
+                if data:
+                    self.wfile.write(data)
+                    self.wfile.flush()
+            except _DISCONNECT_ERRORS:
+                logger.debug("[MCP] POST reply suppressed (client gone)")
+                return
 
         if response is None:
             send(202, None)
@@ -353,12 +407,12 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         query = parse_qs(urlparse(self.path).query)
         session_id = query.get("session", [None])[0]
         if session_id is None:
-            self.send_error(400, "Missing ?session for SSE POST")
+            self._safe_send_error(400, "Missing ?session for SSE POST")
             return
         with self.mcp_server._sse_lock:
             conn = self.mcp_server._sse_connections.get(session_id)
         if conn is None or not conn.alive:
-            self.send_error(400, f"No active SSE connection for session {session_id}")
+            self._safe_send_error(400, f"No active SSE connection for session {session_id}")
             return
         self._parse_request_flags()
         raw = self._read_body()
@@ -367,10 +421,14 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         response = self.mcp_server.registry.dispatch(raw if raw else b"{}")
         if response is not None:
             conn.send_event("message", response)
-        self.send_response(202)
-        self.send_header("Content-Length", "0")
-        self.send_cors_headers()
-        self.end_headers()
+        try:
+            self.send_response(202)
+            self.send_header("Content-Length", "0")
+            self.send_cors_headers()
+            self.end_headers()
+        except _DISCONNECT_ERRORS:
+            logger.debug("[MCP] SSE POST ack suppressed (client gone)")
+            return
 
     def do_GET(self):
         if not self._check_api_request():
@@ -385,14 +443,18 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_mcp_get(self) -> None:
         # Streamable HTTP SSE stream (server -> client notifications).
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.send_cors_headers()
-        self.end_headers()
-        self.wfile.write(b": connected\n\n")
-        self.wfile.flush()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "keep-alive")
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(b": connected\n\n")
+            self.wfile.flush()
+        except _DISCONNECT_ERRORS:
+            logger.debug("[MCP] GET /mcp headers suppressed (client gone)")
+            return
         sock = self.connection
         last_ping = time.monotonic()
         try:
@@ -469,27 +531,30 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         if not self._check_api_request():
             return
-        parsed = urlparse(self.path)
-        if parsed.path == "/sse":
-            query = parse_qs(parsed.query)
-            session_id = query.get("session", [None])[0]
-            if session_id is not None:
-                with self.mcp_server._sse_lock:
-                    conn = self.mcp_server._sse_connections.pop(session_id, None)
-                if conn is not None:
-                    conn.alive = False
+        try:
+            parsed = urlparse(self.path)
+            if parsed.path == "/sse":
+                query = parse_qs(parsed.query)
+                session_id = query.get("session", [None])[0]
+                if session_id is not None:
+                    with self.mcp_server._sse_lock:
+                        conn = self.mcp_server._sse_connections.pop(session_id, None)
+                    if conn is not None:
+                        conn.alive = False
+                self.send_response(200)
+                self.send_header("Content-Length", "0")
+                self.send_cors_headers()
+                self.end_headers()
+                return
+            if parsed.path != "/mcp":
+                self._safe_send_error(404)
+                return
             self.send_response(200)
             self.send_header("Content-Length", "0")
             self.send_cors_headers()
             self.end_headers()
-            return
-        if parsed.path != "/mcp":
-            self.send_error(404)
-            return
-        self.send_response(200)
-        self.send_header("Content-Length", "0")
-        self.send_cors_headers()
-        self.end_headers()
+        except _DISCONNECT_ERRORS:
+            logger.debug("[MCP] DELETE reply suppressed (client gone)")
 
 
 class McpServer:
@@ -515,6 +580,13 @@ class McpServer:
         self._sse_lock = threading.Lock()
         self.require_streamable_http_session = False
         self.unsafe_tools: set[str] = set()
+        # Concurrency gate: IDA tools run serialized on the main thread,
+        # so a second concurrent tools/call would only extend the UI
+        # freeze. Fail fast with a retryable isError instead of piling up
+        # execute_sync waiters. tools/list and ping stay ungated (no IDA).
+        # Set max_concurrent_tools to 0/None to disable (unbounded, legacy).
+        self._tool_gate: threading.Semaphore = threading.Semaphore(1)
+        self.max_concurrent_tools: int | None = 1
 
         self.registry = JsonRpcRegistry()
         self.registry.methods["ping"] = self._mcp_ping
@@ -549,9 +621,20 @@ class McpServer:
             logger.info("[MCP] Server already running")
             return
         assert issubclass(request_handler, McpHttpRequestHandler)
-        self._http_server = (ThreadingHTTPServer if background else HTTPServer)(
+        self._http_server = (_McpThreadingHTTPServer if background else _McpHTTPServer)(
             (host, port), request_handler, bind_and_activate=False
         )
+        # Client disconnects during slow tools used to leave zombie
+        # request threads that blocked stop() and piled up on the IDA
+        # main-thread queue. Daemonize them and bound the backlog.
+        try:
+            self._http_server.daemon_threads = True
+        except Exception:
+            pass
+        try:
+            self._http_server.request_queue_size = 32
+        except Exception:
+            pass
         import sys
         import socket
         if sys.platform == "win32":
@@ -763,6 +846,20 @@ class McpServer:
                 "content": [{"type": "text", "text": f"Tool '{name}' is not in profile '{_profile_name}'. {hint}"}],
                 "isError": True,
             }
+        gate = self._tool_gate if (self.max_concurrent_tools or 0) > 0 else None
+        gate_acquired = False
+        if gate is not None:
+            gate_acquired = gate.acquire(blocking=False)
+            if not gate_acquired:
+                return {
+                    "content": [{
+                        "type": "text",
+                        "text": (f"Server busy: another tool is running on the IDA main thread. "
+                                 f"Retry '{name}' shortly (sequential calls, no parallel fan-out).")
+                    }],
+                    "isError": True,
+                    "structuredContent": {"busy": True, "tool": name},
+                }
         request_id = get_current_request_id()
         if request_id is not None:
             register_pending_request(request_id)
@@ -788,6 +885,11 @@ class McpServer:
         finally:
             if request_id is not None:
                 unregister_pending_request(request_id)
+            if gate_acquired:
+                try:
+                    gate.release()
+                except Exception:
+                    pass
 
     def _mcp_notifications_initialized(self):
         return None

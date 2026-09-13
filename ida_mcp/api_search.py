@@ -14,6 +14,22 @@ import ida_search
 
 from .rpc import tool
 from .sync import idasync
+try:
+    from .sync import check_cancelled, tool_timeout, CancelledError, IDASyncError
+except ImportError:  # standalone harness without package context
+    def check_cancelled() -> None:
+        return None
+
+    def tool_timeout(seconds):
+        def deco(fn):
+            return fn
+        return deco
+
+    class CancelledError(Exception):
+        pass
+
+    class IDASyncError(Exception):
+        pass
 from .api_analysis import parse_addr
 
 
@@ -24,6 +40,7 @@ from .api_analysis import parse_addr
 
 @tool
 @idasync
+@tool_timeout(90.0)
 def search_bytes(pattern: str) -> str:
     """Search for byte sequences in the binary.
 
@@ -40,16 +57,25 @@ def search_bytes(pattern: str) -> str:
     norm = " ".join(pattern[i:i+2] for i in range(0, len(pattern), 2))
 
     matches: list[str] = []
-    ea = ida_bytes.find_bytes(norm, 0x00000000, range_end=0xFFFFFFFFFFFFFFFF)
-    while ea != ida_idaapi.BADADDR and len(matches) < 200:
-        matches.append(hex(ea))
-        ea = ida_bytes.find_bytes(norm, ea + 1, range_end=0xFFFFFFFFFFFFFFFF)
+    partial = False
+    try:
+        ea = ida_bytes.find_bytes(norm, 0x00000000, range_end=0xFFFFFFFFFFFFFFFF)
+        while ea != ida_idaapi.BADADDR and len(matches) < 200:
+            check_cancelled()
+            matches.append(hex(ea))
+            ea = ida_bytes.find_bytes(norm, ea + 1, range_end=0xFFFFFFFFFFFFFFFF)
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({"pattern": pattern, "matches": matches, "count": len(matches)}, indent=2)
+    out: dict = {"pattern": pattern, "matches": matches, "count": len(matches)}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
 @idasync
+@tool_timeout(90.0)
 def search_text(
     text: str,
     case_sensitive: bool = False,
@@ -61,17 +87,25 @@ def search_text(
     ida_auto.auto_wait()
     results: list[str] = []
     flags = 0 if case_sensitive else ida_search.SEARCH_CASE
+    partial = False
+    try:
+        ea = ida_search.find_text(0, 0, 0, text, flags)
+        while ea != ida_idaapi.BADADDR and len(results) < 200:
+            check_cancelled()
+            results.append(hex(ea))
+            ea = ida_search.find_text(ea + 1, 0, 0, text, flags)
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    ea = ida_search.find_text(0, 0, 0, text, flags)
-    while ea != ida_idaapi.BADADDR and len(results) < 200:
-        results.append(hex(ea))
-        ea = ida_search.find_text(ea + 1, 0, 0, text, flags)
-
-    return json.dumps({"text": text, "matches": results, "count": len(results)}, indent=2)
+    out: dict = {"text": text, "matches": results, "count": len(results)}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
 @idasync
+@tool_timeout(90.0)
 def search_immediate_value(value: int) -> str:
     """Search for immediate values in instructions.
 
@@ -85,16 +119,25 @@ def search_immediate_value(value: int) -> str:
     except (ValueError, TypeError):
         return json.dumps({"error": f"Invalid immediate value: {value}"})
 
-    ea = ida_search.find_imm(0, ida_search.SEARCH_DOWN, value)
-    while ea != ida_idaapi.BADADDR and len(results) < 200:
-        results.append(hex(ea))
-        ea = ida_search.find_imm(ea + 1, ida_search.SEARCH_DOWN, value)
+    partial = False
+    try:
+        ea = ida_search.find_imm(0, ida_search.SEARCH_DOWN, value)
+        while ea != ida_idaapi.BADADDR and len(results) < 200:
+            check_cancelled()
+            results.append(hex(ea))
+            ea = ida_search.find_imm(ea + 1, ida_search.SEARCH_DOWN, value)
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({"value": value, "matches": results, "count": len(results)}, indent=2)
+    out: dict = {"value": value, "matches": results, "count": len(results)}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
 @idasync
+@tool_timeout(90.0)
 def find_regex(
     pattern: str,
     limit: int = 30,
@@ -112,15 +155,24 @@ def find_regex(
         return json.dumps({"error": f"Invalid regex: {e}"})
 
     results: list[dict] = []
+    partial = False
     import idautils
-    for si in idautils.Strings():
-        value = str(si)
-        if regex.search(value):
-            results.append({"addr": hex(si.ea), "value": value, "length": si.length})
-            if len(results) >= limit:
-                break
+    try:
+        for i, si in enumerate(idautils.Strings()):
+            if i % 16 == 0:
+                check_cancelled()
+            value = str(si)
+            if regex.search(value):
+                results.append({"addr": hex(si.ea), "value": value, "length": si.length})
+                if len(results) >= limit:
+                    break
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({"pattern": pattern, "matches": results, "count": len(results)}, indent=2)
+    out: dict = {"pattern": pattern, "matches": results, "count": len(results)}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
@@ -146,15 +198,24 @@ def find_bytes_between(
     norm = " ".join(pattern[i:i+2] for i in range(0, len(pattern), 2))
 
     results: list[str] = []
+    partial = False
     ea = start_ea
-    while ea < end_ea and len(results) < 200:
-        ea = ida_bytes.find_bytes(norm, ea, range_end=end_ea)
-        if ea == ida_idaapi.BADADDR or ea >= end_ea:
-            break
-        results.append(hex(ea))
-        ea += 1
+    try:
+        while ea < end_ea and len(results) < 200:
+            check_cancelled()
+            ea = ida_bytes.find_bytes(norm, ea, range_end=end_ea)
+            if ea == ida_idaapi.BADADDR or ea >= end_ea:
+                break
+            results.append(hex(ea))
+            ea += 1
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({"pattern": pattern, "start": hex(start_ea), "end": hex(end_ea), "matches": results, "count": len(results)}, indent=2)
+    out_b: dict = {"pattern": pattern, "start": hex(start_ea), "end": hex(end_ea),
+                 "matches": results, "count": len(results)}
+    if partial:
+        out_b["partial"] = True
+    return json.dumps(out_b, indent=2)
 
 
 @tool
@@ -178,15 +239,24 @@ def find_text_between(
 
     flags = 0 if case_sensitive else ida_search.SEARCH_CASE
     results: list[str] = []
+    partial = False
     ea = start_ea
-    while ea < end_ea and len(results) < 200:
-        ea = ida_search.find_text(ea, 0, 0, text, flags)
-        if ea == ida_idaapi.BADADDR or ea >= end_ea:
-            break
-        results.append(hex(ea))
-        ea += 1
+    try:
+        while ea < end_ea and len(results) < 200:
+            check_cancelled()
+            ea = ida_search.find_text(ea, 0, 0, text, flags)
+            if ea == ida_idaapi.BADADDR or ea >= end_ea:
+                break
+            results.append(hex(ea))
+            ea += 1
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({"text": text, "start": hex(start_ea), "end": hex(end_ea), "matches": results, "count": len(results)}, indent=2)
+    out_t: dict = {"text": text, "start": hex(start_ea), "end": hex(end_ea),
+                 "matches": results, "count": len(results)}
+    if partial:
+        out_t["partial"] = True
+    return json.dumps(out_t, indent=2)
 
 
 @tool
@@ -213,9 +283,18 @@ def find_immediate_between(
         return json.dumps({"error": f"Invalid immediate value: {value}"})
 
     results: list[str] = []
-    ea = ida_search.find_imm(start_ea, ida_search.SEARCH_DOWN, value)
-    while ea != ida_idaapi.BADADDR and ea < end_ea and len(results) < 200:
-        results.append(hex(ea))
-        ea = ida_search.find_imm(ea + 1, ida_search.SEARCH_DOWN, value)
+    partial = False
+    try:
+        ea = ida_search.find_imm(start_ea, ida_search.SEARCH_DOWN, value)
+        while ea != ida_idaapi.BADADDR and ea < end_ea and len(results) < 200:
+            check_cancelled()
+            results.append(hex(ea))
+            ea = ida_search.find_imm(ea + 1, ida_search.SEARCH_DOWN, value)
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({"value": value, "start": hex(start_ea), "end": hex(end_ea), "matches": results, "count": len(results)}, indent=2)
+    out_i: dict = {"value": value, "start": hex(start_ea), "end": hex(end_ea),
+                 "matches": results, "count": len(results)}
+    if partial:
+        out_i["partial"] = True
+    return json.dumps(out_i, indent=2)

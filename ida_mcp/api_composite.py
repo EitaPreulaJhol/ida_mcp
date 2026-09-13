@@ -26,7 +26,8 @@ import idautils
 import idc
 
 from .rpc import tool, unsafe
-from .sync import idasync, tool_timeout, get_tool_deadline
+from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,
+                   CancelledError, IDASyncError)
 from .api_analysis import parse_addr
 from .compat import inf_is_64bit, is_loaded as _is_loaded
 
@@ -528,56 +529,67 @@ def trace_data_flow(address: str, direction: str = "forward", max_depth: int = 5
     nodes: list[dict] = []
     edges: list[dict] = []
     depth_reached = 0
+    partial = False
     queue: deque = deque([(start_ea, 0)])
+    pops = 0
 
-    while queue and len(nodes) < _MAX_TRACE_NODES:
-        ea, depth = queue.popleft()
-        if depth > max_depth:
-            continue
-        depth_reached = max(depth_reached, depth)
-        func = ida_funcs.get_func(ea)
-        try:
-            insn_text = idc.GetDisasm(ea) if _is_loaded(ea) else None
-        except Exception:
-            insn_text = None
-        try:
-            name_at = idaapi.get_name(ea) or None
-        except Exception:
-            name_at = None
-        nodes.append({
-            "addr": hex(ea),
-            "func": ida_funcs.get_func_name(ea) if func else None,
-            "instruction": insn_text,
-            "type": "code" if func is not None or not _is_loaded(ea) else "data",
-            "name": name_at,
-            "depth": depth,
-        })
-        if depth >= max_depth:
-            continue
-        try:
-            xrefs = list(idautils.XrefsFrom(ea, 0) if direction == "forward" else idautils.XrefsTo(ea, 0))
-        except Exception:
-            continue
-        for xref in xrefs:
-            if len(edges) >= _MAX_TRACE_EDGES:
-                break
-            target = xref.to if direction == "forward" else xref.frm
-            xtype = "code" if xref.iscode else "data"
-            if direction == "forward":
-                edges.append({"from": hex(ea), "to": hex(target), "type": xtype})
-            else:
-                edges.append({"from": hex(target), "to": hex(ea), "type": xtype})
-            if target not in visited and len(nodes) + len(queue) < _MAX_TRACE_NODES:
-                visited.add(target)
-                queue.append((target, depth + 1))
+    try:
+        while queue and len(nodes) < _MAX_TRACE_NODES:
+            ea, depth = queue.popleft()
+            pops += 1
+            if pops % 32 == 0:
+                check_cancelled()
+            if depth > max_depth:
+                continue
+            depth_reached = max(depth_reached, depth)
+            func = ida_funcs.get_func(ea)
+            try:
+                insn_text = idc.GetDisasm(ea) if _is_loaded(ea) else None
+            except Exception:
+                insn_text = None
+            try:
+                name_at = idaapi.get_name(ea) or None
+            except Exception:
+                name_at = None
+            nodes.append({
+                "addr": hex(ea),
+                "func": ida_funcs.get_func_name(ea) if func else None,
+                "instruction": insn_text,
+                "type": "code" if func is not None or not _is_loaded(ea) else "data",
+                "name": name_at,
+                "depth": depth,
+            })
+            if depth >= max_depth:
+                continue
+            try:
+                xrefs = list(idautils.XrefsFrom(ea, 0) if direction == "forward" else idautils.XrefsTo(ea, 0))
+            except Exception:
+                continue
+            for xref in xrefs:
+                if len(edges) >= _MAX_TRACE_EDGES:
+                    break
+                target = xref.to if direction == "forward" else xref.frm
+                xtype = "code" if xref.iscode else "data"
+                if direction == "forward":
+                    edges.append({"from": hex(ea), "to": hex(target), "type": xtype})
+                else:
+                    edges.append({"from": hex(target), "to": hex(ea), "type": xtype})
+                if target not in visited and len(nodes) + len(queue) < _MAX_TRACE_NODES:
+                    visited.add(target)
+                    queue.append((target, depth + 1))
+    except (CancelledError, IDASyncError):
+        partial = True
 
-    return json.dumps({
+    out: dict = {
         "start": hex(start_ea),
         "direction": direction,
         "depth_reached": depth_reached,
         "nodes": nodes,
         "edges": edges,
-    }, indent=2)
+    }
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
@@ -615,6 +627,7 @@ def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
         truncated = False
         limit_reason: str | None = None
         per_func_capped = False
+        visit_count = [0]
 
         def traverse(addr: int, depth: int) -> None:
             nonlocal truncated, limit_reason, per_func_capped
@@ -624,6 +637,9 @@ def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
                 truncated = True
                 limit_reason = "nodes"
                 return
+            visit_count[0] += 1
+            if visit_count[0] % 64 == 0:
+                check_cancelled()
             visited.add(addr)
             f = ida_funcs.get_func(addr)
             if not f:
@@ -654,7 +670,11 @@ def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
                     added += 1
                     traverse(callee.start_ea, depth + 1)
 
-        traverse(ea, 0)
+        try:
+            traverse(ea, 0)
+        except (CancelledError, IDASyncError):
+            truncated = True
+            limit_reason = "cancelled"
         graphs.append({
             "root": root,
             "nodes": list(nodes.values()),
@@ -796,10 +816,16 @@ def survey_binary(detail_level: str = "standard") -> str:
         scored: list[tuple[int, int, str]] = []
         strings_partial = False
         deadline = get_tool_deadline()
-        for ea, s in str_cache:
+        for i, (ea, s) in enumerate(str_cache):
             if deadline is not None and time.monotonic() >= deadline:
                 strings_partial = True
                 break
+            if i % 64 == 0:
+                try:
+                    check_cancelled()
+                except (CancelledError, IDASyncError):
+                    strings_partial = True
+                    break
             try:
                 n = sum(1 for _ in idautils.XrefsTo(ea, 0))
             except Exception:
@@ -813,8 +839,15 @@ def survey_binary(detail_level: str = "standard") -> str:
         if strings_partial:
             result["interesting_strings_partial"] = True
 
+        survey_cancelled = False
         candidates: list[tuple[int, int, str, int]] = []
-        for ea in func_eas:
+        for i, ea in enumerate(func_eas):
+            if i % 64 == 0:
+                try:
+                    check_cancelled()
+                except (CancelledError, IDASyncError):
+                    survey_cancelled = True
+                    break
             func = ida_funcs.get_func(ea)
             if not func or (func.flags & idaapi.FUNC_LIB):
                 continue
@@ -877,7 +910,13 @@ def survey_binary(detail_level: str = "standard") -> str:
         total_edges = 0
         roots: list[str] = []
         leaves = 0
-        for ea in func_eas:
+        for i, ea in enumerate(func_eas):
+            if i % 64 == 0:
+                try:
+                    check_cancelled()
+                except (CancelledError, IDASyncError):
+                    survey_cancelled = True
+                    break
             has_callers = has_callees = False
             try:
                 for xref in idautils.XrefsTo(ea, 0):
@@ -906,6 +945,8 @@ def survey_binary(detail_level: str = "standard") -> str:
             "root_functions": roots[:100],
             "leaf_functions_count": leaves,
         }
+        if survey_cancelled:
+            result["partial"] = True
 
     if truncated:
         result["_note"] = (

@@ -47,7 +47,7 @@ except Exception:
         f"{traceback.format_exc()}\n"
     )
 
-from .sync import idasync
+from .sync import idasync, idasync_read, check_cancelled, get_tool_deadline
 from .rpc import MCP_SERVER, tool, unsafe
 
 __all__ = [
@@ -57,6 +57,9 @@ __all__ = [
     "server",
     "plugin",
     "idasync",
+    "idasync_read",
+    "check_cancelled",
+    "get_tool_deadline",
     "MCP_SERVER",
     "tool",
     "unsafe",

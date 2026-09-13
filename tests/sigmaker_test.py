@@ -140,12 +140,16 @@ PKG = os.path.join(HERE, "..", "ida_mcp")
 src = open(os.path.join(PKG, "api_sigmaker.py")).read()
 src = src.replace("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f")
 src = src.replace(
-    "from .sync import idasync, tool_timeout",
+    "from .sync import (idasync, tool_timeout, check_cancelled,\n"
+    "                   CancelledError, IDASyncError)",
     "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
-    "    return deco",
+    "    return deco\n"
+    "def check_cancelled(): return None\n"
+    "class CancelledError(Exception): pass\n"
+    "class IDASyncError(Exception): pass",
 )
 src = src.replace(
     "from .api_analysis import parse_addr, read_bytes_bss_safe",

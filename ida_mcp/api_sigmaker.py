@@ -20,7 +20,8 @@ import idaapi
 import idautils
 
 from .rpc import tool, unsafe
-from .sync import idasync, tool_timeout
+from .sync import (idasync, tool_timeout, check_cancelled,
+                   CancelledError, IDASyncError)
 from .api_analysis import parse_addr, read_bytes_bss_safe
 from .compat import inf_get_max_ea, inf_get_min_ea
 
@@ -127,7 +128,16 @@ def _make_unique(start_ea: int, max_length: int,
     """Returns (sig|None, unique, end_ea, error|None)."""
     sig: list = []
     ea = start_ea
+    steps = 0
     while len(sig) < max_length:
+        steps += 1
+        if steps % 8 == 0:
+            try:
+                check_cancelled()
+            except (CancelledError, IDASyncError):
+                if not sig:
+                    return None, False, start_ea, "Cancelled (no signature built yet)"
+                return sig, False, ea, "Cancelled: signature is partial, uniqueness unverified"
         part = _insn_sig_bytes(ea, wildcard_operands)
         if part is None:
             break

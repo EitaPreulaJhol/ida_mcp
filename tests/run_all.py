@@ -38,6 +38,8 @@ TESTS = [
     "hooks_test.py",
     "sigmaker_test.py",
     "transport_test.py",
+    "disconnect_test.py",
+    "gate_test.py",
 ]
 
 

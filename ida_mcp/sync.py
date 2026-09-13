@@ -103,8 +103,116 @@ def get_tool_deadline() -> float | None:
     return getattr(_deadline_state, "deadline", None)
 
 
-def _sync_wrapper(ff, keep_batch: bool = False):
-    """Run ``ff`` on the IDA main thread in write mode.
+def _show_tool_wait_box(tool_name: str) -> bool:
+    """Show a cancellable wait box for a tool running on the main thread.
+
+    Without this, a slow tool inside execute_sync looks like a UI freeze
+    with no Cancel option. show_wait_box pumps UI messages so IDA stays
+    responsive and the user can abort (SDK calls polling user_cancelled
+    / the sync timeout timer then unwind the tool). Best-effort: never
+    raises, even outside the GUI or when another box is already shown.
+    Returns True if a box was shown (caller must hide it).
+    """
+    show = getattr(ida_kernwin, "show_wait_box", None)
+    if not callable(show):
+        return False
+    try:
+        # Skip when headless/batch: a modal box has nowhere to pump.
+        is_idaq = getattr(ida_kernwin, "is_idaq", None)
+        if callable(is_idaq) and not is_idaq():
+            return False
+    except Exception:
+        pass
+    try:
+        show(f"[ida-mcp] {tool_name} running... (Cancel aborts)")
+        return True
+    except Exception:
+        return False
+
+
+def _hide_tool_wait_box() -> None:
+    hide = getattr(ida_kernwin, "hide_wait_box", None)
+    if not callable(hide):
+        return
+    try:
+        hide()
+    except Exception:
+        pass
+
+
+def _resolve_sync_mode(explicit) -> int:
+    """Resolve the execute_sync mode, tolerating stubbed IDA modules.
+
+    Test harnesses stub ``idaapi`` with only ``MFF_WRITE``; fall back to it
+    when ``MFF_READ`` is unavailable so ``idasync_read`` still works there.
+    """
+    if explicit is not None:
+        return explicit
+    return getattr(idaapi, "MFF_WRITE", 2)
+
+
+def check_cancelled() -> None:
+    """Raise if the current tool should abort (poll from long loops).
+
+    Checks, in order: request-level cancellation
+    (``notifications/cancelled``), the per-tool deadline, and IDA's
+    cancellable-flag (set by the wait-box Cancel button or the sync
+    timeout timer). Call every N iterations in any loop that can walk a
+    whole binary; on timeout/cancel the caller should return partial
+    results (see ``survey_binary``) or let it propagate (mapped to a
+    clean JSON-RPC error, never a hang). No-op outside a tool body.
+    Best-effort: never raises for missing IDA APIs, only for real cancel.
+    """
+    try:
+        from .zeromcp.jsonrpc import get_current_cancel_event
+    except ImportError:
+        get_current_cancel_event = None  # type: ignore[assignment]
+    if get_current_cancel_event is not None:
+        try:
+            event = get_current_cancel_event()
+        except Exception:
+            event = None
+        if event is not None:
+            try:
+                is_set = event.is_set()
+            except Exception:
+                is_set = False
+            if is_set:
+                raise CancelledError("Request was cancelled")
+    try:
+        deadline = getattr(_deadline_state, "deadline", None)
+    except Exception:
+        deadline = None
+    if deadline is not None:
+        try:
+            expired = time.monotonic() >= deadline
+        except Exception:
+            expired = False
+        if expired:
+            raise IDASyncError(f"Tool timed out after {_get_tool_timeout_seconds():.2f}s")
+    try:
+        user_cancelled = getattr(ida_kernwin, "user_cancelled", None)
+        if callable(user_cancelled) and bool(user_cancelled()):
+            raise CancelledError("Cancelled by user")
+    except (CancelledError, RequestCancelledError):
+        raise
+    except Exception:
+        pass
+
+
+def update_wait_box(text: str) -> None:
+    """Refresh the tool wait-box label (progress heartbeat). Best-effort."""
+    replace = getattr(ida_kernwin, "replace_wait_box", None)
+    if not callable(replace):
+        return
+    try:
+        replace(f"[ida-mcp] {text}")
+    except Exception:
+        pass
+
+
+def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
+    """Run ``ff`` on the IDA main thread (default write mode).
 
     Uses a result container so the callable can never raise out of
     ``execute_sync`` (which would deadlock the main thread).
@@ -128,6 +236,7 @@ def _sync_wrapper(ff, keep_batch: bool = False):
         old_batch = idc.batch(1)
         prev_pre_call = getattr(_sync_state, "pre_call_batch", None)
         _sync_state.pre_call_batch = old_batch
+        wait_shown = _show_tool_wait_box(ff.__name__)
         completed = False
         try:
             res_container.put(ff())
@@ -135,6 +244,8 @@ def _sync_wrapper(ff, keep_batch: bool = False):
         except Exception as x:  # noqa: BLE001 - capture, never re-raise here
             res_container.put(x)
         finally:
+            if wait_shown:
+                _hide_tool_wait_box()
             if not (completed and keep_batch):
                 try:
                     idc.batch(old_batch)
@@ -150,14 +261,14 @@ def _sync_wrapper(ff, keep_batch: bool = False):
             except queue.Empty:
                 pass
 
-    idaapi.execute_sync(runned, idaapi.MFF_WRITE)
+    idaapi.execute_sync(runned, _resolve_sync_mode(mode))
     res = res_container.get()
     if isinstance(res, Exception):
         raise res
     return res
 
 
-def sync_wrapper(ff, timeout_override=None, keep_batch=False):
+def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None):
     """Wrapper to enable timeout and cancellation during IDA synchronization."""
     from .zeromcp.jsonrpc import get_current_cancel_event
 
@@ -219,17 +330,12 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False):
                 ida_kernwin.clr_cancelled()
 
         timed_ff.__name__ = ff.__name__
-        return _sync_wrapper(timed_ff, keep_batch=keep_batch)
-    return _sync_wrapper(ff, keep_batch=keep_batch)
+        return _sync_wrapper(timed_ff, keep_batch=keep_batch, mode=mode)
+    return _sync_wrapper(ff, keep_batch=keep_batch, mode=mode)
 
 
-def idasync(f):
-    """Run the function on the IDA main thread in write mode.
-
-    Unified decorator for all IDA synchronization. Read-only operations may
-    still require write access (e.g. decompilation), so a single decorator is
-    used.
-    """
+def _idasync_with_mode(f, mode):
+    """Shared body for @idasync (write) and @idasync_read (read)."""
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
@@ -237,9 +343,30 @@ def idasync(f):
         ff.__name__ = f.__name__
         timeout_override = _normalize_timeout(getattr(f, "__ida_mcp_timeout_sec__", None))
         keep_batch = bool(getattr(f, "__ida_mcp_keep_batch__", False))
-        return sync_wrapper(ff, timeout_override, keep_batch=keep_batch)
+        return sync_wrapper(ff, timeout_override, keep_batch=keep_batch,
+                            mode=mode)
 
     return wrapper
+
+
+def idasync(f):
+    """Run the function on the IDA main thread in write mode.
+
+    Default for all tools. Read-only tools may use @idasync_read, but
+    anything touching Hex-Rays/decompilation must stay on WRITE.
+    """
+    return _idasync_with_mode(f, getattr(idaapi, "MFF_WRITE", 2))
+
+
+def idasync_read(f):
+    """Run the function on the IDA main thread in read (shared) mode.
+
+    For pure read-only tools (listings, queries). Never use for tools that
+    mutate the IDB, call the decompiler, or change types/names/comments.
+    Falls back to WRITE when the IDA version lacks MFF_READ.
+    """
+    return _idasync_with_mode(
+        f, getattr(idaapi, "MFF_READ", getattr(idaapi, "MFF_WRITE", 2)))
 
 
 def tool_timeout(seconds: float):

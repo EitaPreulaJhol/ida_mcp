@@ -17,7 +17,8 @@ import idaapi
 import idautils
 
 from .rpc import tool
-from .sync import idasync, tool_timeout
+from .sync import (idasync, tool_timeout, check_cancelled,
+                   CancelledError, IDASyncError)
 from .api_analysis import parse_addr, _cap_lines
 
 
@@ -112,6 +113,7 @@ def get_microcode(address: str) -> str:
 
 @tool
 @idasync
+@tool_timeout(90.0)
 def get_flowchart(address: str) -> str:
     """Get the full control-flow graph (bounds + successors/predecessors + sizes).
 
@@ -127,8 +129,11 @@ def get_flowchart(address: str) -> str:
         return json.dumps({"error": f"No function at {address}"})
     blocks: list[dict] = []
     truncated = False
+    partial = False
     try:
-        for block in idaapi.FlowChart(func):
+        for i, block in enumerate(idaapi.FlowChart(func)):
+            if i % 128 == 0:
+                check_cancelled()
             if len(blocks) >= 2000:
                 truncated = True
                 break
@@ -145,14 +150,20 @@ def get_flowchart(address: str) -> str:
                 "successors": [hex(s.start_ea) for s in block.succs()],
                 "predecessors": [hex(p.start_ea) for p in block.preds()],
             })
+    except (CancelledError, IDASyncError):
+        partial = True
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"addr": hex(func.start_ea), "blocks": blocks,
-                       "count": len(blocks), "truncated": truncated}, indent=2)
+    out: dict = {"addr": hex(func.start_ea), "blocks": blocks,
+               "count": len(blocks), "truncated": truncated}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
 @idasync
+@tool_timeout(90.0)
 def get_basic_blocks(address: str) -> str:
     """Get basic blocks with their disassembled instructions.
 
@@ -168,8 +179,11 @@ def get_basic_blocks(address: str) -> str:
         return json.dumps({"error": f"No function at {address}"})
     blocks: list[dict] = []
     truncated = False
+    partial_bb = False
     try:
-        for block in idaapi.FlowChart(func):
+        for i, block in enumerate(idaapi.FlowChart(func)):
+            if i % 64 == 0:
+                check_cancelled()
             if len(blocks) >= 200:
                 truncated = True
                 break
@@ -188,10 +202,15 @@ def get_basic_blocks(address: str) -> str:
                 pass
             blocks.append({"start": hex(block.start_ea), "end": hex(block.end_ea),
                            "instructions": insns})
+    except (CancelledError, IDASyncError):
+        partial_bb = True
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"addr": hex(func.start_ea), "blocks": blocks,
-                       "count": len(blocks), "truncated": truncated}, indent=2)
+    out_bb: dict = {"addr": hex(func.start_ea), "blocks": blocks,
+                  "count": len(blocks), "truncated": truncated}
+    if partial_bb:
+        out_bb["partial"] = True
+    return json.dumps(out_bb, indent=2)
 
 
 @tool

@@ -103,12 +103,16 @@ PKG = os.path.join(HERE, "..", "ida_mcp")
 src = open(os.path.join(PKG, "api_hexrays.py")).read()
 src = src.replace("from .rpc import tool", "tool = lambda f: f")
 src = src.replace(
-    "from .sync import idasync, tool_timeout",
+    "from .sync import (idasync, tool_timeout, check_cancelled,\n"
+    "                   CancelledError, IDASyncError)",
     "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
-    "    return deco",
+    "    return deco\n"
+    "def check_cancelled(): return None\n"
+    "class CancelledError(Exception): pass\n"
+    "class IDASyncError(Exception): pass",
 )
 src = src.replace(
     "from .api_analysis import parse_addr, _cap_lines",

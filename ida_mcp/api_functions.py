@@ -44,21 +44,21 @@ def list_funcs(
     count = min(int(count), 1000)
     offset = max(int(offset), 0)
 
+    # Single pass: the old code walked Functions() twice (page + total),
+    # doubling main-thread hold time on large binaries.
     funcs: list[dict] = []
-    for i, ea in enumerate(idautils.Functions()):
-        if i < offset:
-            continue
-        if len(funcs) >= count:
-            break
-        name = ida_funcs.get_func_name(ea)
-        fn = ida_funcs.get_func(ea)
-        funcs.append({
-            "addr": hex(ea),
-            "name": name or "",
-            "size": fn.end_ea - fn.start_ea if fn else 0,
-        })
+    total = 0
+    for ea in idautils.Functions():
+        if total >= offset and len(funcs) < count:
+            name = ida_funcs.get_func_name(ea)
+            fn = ida_funcs.get_func(ea)
+            funcs.append({
+                "addr": hex(ea),
+                "name": name or "",
+                "size": fn.end_ea - fn.start_ea if fn else 0,
+            })
+        total += 1
 
-    total = len(list(idautils.Functions()))
     return json.dumps({"data": funcs, "total": total, "offset": offset, "count": len(funcs)}, indent=2)
 
 
