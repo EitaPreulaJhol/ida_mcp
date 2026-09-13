@@ -1,0 +1,34 @@
+# Minimal triage profile for ida_mcp
+#
+# A focused starter set for first-pass binary assessment: connect, survey,
+# enumerate, decompile, trace xrefs. Small enough to keep small models
+# on-task and to fit clients with low tool-slot caps.
+#
+# Use with: http://127.0.0.1:13337/mcp?profile=triage
+#
+# Escalate by reconnecting: ?profile=readonly, then no profile (full set),
+# then ?unsafe=true (writes), then ?unsafe=true&ext=dbg (debugger).
+
+# --- connect & survey ---
+server_health
+survey_binary
+get_binary_info
+
+# --- enumerate ---
+get_functions
+func_query
+lookup_funcs
+list_funcs
+list_imports
+list_exports
+list_strings
+
+# --- understand ---
+decompile_function
+analyze_function
+disasm
+
+# --- trace ---
+get_xrefs_to
+get_callees
+get_callers
