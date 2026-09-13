@@ -1,10 +1,10 @@
 ---
 name: ssl-pinning-bypass
-description: SSL certificate pinning detection and bypass for mobile apps Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "SSL certificate pinning detection and bypass for mobile apps Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?profile=readonly`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?profile=readonly"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

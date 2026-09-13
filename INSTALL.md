@@ -100,8 +100,8 @@ debugger tools (total 243, the full registry).
 Copy the repo's `.pi/` contents into your Pi folder, restart the agent then type `/ida`:
 
 ```bash
-cp -r .pi/skills/ida ~/.pi/skills/ida
-cp .pi/extensions/ida-mcp.ts ~/.pi/extensions/ida-mcp.ts
+cp -r .pi/skills/ida ~/.pi/agent/skills/ida
+cp .pi/extensions/ida-mcp.ts ~/.pi/agent/extensions/ida-mcp.ts
 ```
 
 The extension proxies the Streamable-HTTP server with lazy loading:
@@ -223,7 +223,7 @@ same methodology, different trigger word:
 
 | Agent | File | Install as |
 |---|---|---|
-| Pi | `.pi/skills/ida/SKILL.md` | Copy to `~/.pi/skills/ida/SKILL.md` (or copy the whole `.pi/` folder) - invoke with `/ida` |
+| Pi | `.pi/skills/ida/SKILL.md` | Copy to `~/.pi/agent/skills/ida/SKILL.md` (or copy the whole `.pi/` folder) - invoke with `/ida` |
 | Generic (Claude Code, Cursor, …) | `skills/ida/SKILL.md` | `~/.claude/skills/ida/SKILL.md` (personal) or `<repo>/.claude/skills/ida/SKILL.md` (shared); Cursor: import as rule/command or paste into Project Rules with the trigger "analyzing a binary in IDA"; Copilot: custom instruction; Cline/Roo: `.clinerules` / `.roo/rules/` - invoke with `/ida` |
 | Generic fallback | either file | Paste into the agent's system prompt or project instructions |
 

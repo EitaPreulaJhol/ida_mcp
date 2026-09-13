@@ -1,11 +1,11 @@
 ---
 name: ida
-description: Connect to IDA Pro through the ida_mcp plugin and reverse engineer the open binary with lazy-loaded tools. Use this whenever the user wants to analyze, decompile, trace, annotate, debug, or signature-scan a binary currently open in IDA Pro, or says "/ida". Starts with a 16-tool triage profile and escalates (readonly, full, unsafe, debugger) only as needed.
+description: "Connect to IDA Pro through the ida_mcp plugin and reverse engineer the open binary with lazy-loaded tools. Use this whenever the user wants to analyze, decompile, trace, annotate, debug, or signature-scan a binary currently open in IDA Pro, or says \"/ida\". Starts with a 16-tool triage profile and escalates (readonly, full, unsafe, debugger) only as needed."
 license: MIT
-compatibility: any MCP client + IDA Pro 8.3+ with the ida_mcp plugin
+compatibility: "any MCP client + IDA Pro 8.3+ with the ida_mcp plugin"
 metadata:
   audience: reverse-engineers
-  workflow: ida-pro-mcp-lazy
+  workflow: "ida-pro-mcp-lazy"
   domain: security
 ---
 

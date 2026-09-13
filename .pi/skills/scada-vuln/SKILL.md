@@ -1,10 +1,10 @@
 ---
 name: scada-vuln
-description: Industrial control system security — Modbus, DNP3, IEC 104, Ethernet/IP, PLC exploitation, control logic manipulation, sensor/actuator attacks, ICS protocol analysis Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "Industrial control system security — Modbus, DNP3, IEC 104, Ethernet/IP, PLC exploitation, control logic manipulation, sensor/actuator attacks, ICS protocol analysis Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?profile=readonly`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?profile=readonly"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

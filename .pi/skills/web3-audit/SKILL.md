@@ -1,10 +1,10 @@
 ---
 name: web3-audit
-description: Smart contract security audit — 10 DeFi bug classes (accounting desync, access control, incomplete path, off-by-one, oracle, ERC4626, reentrancy, flash loan, signature replay, proxy), pre-dive kill signals (TVL < $500K etc), Foundry PoC template, grep patterns for each class, and real Immunefi paid examples. Use for any Solidity/Rust contract audit or when deciding whether a DeFi target is worth hunting. Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "Smart contract security audit — 10 DeFi bug classes (accounting desync, access control, incomplete path, off-by-one, oracle, ERC4626, reentrancy, flash loan, signature replay, proxy), pre-dive kill signals (TVL < $500K etc), Foundry PoC template, grep patterns for each class, and real Immunefi paid examples. Use for any Solidity/Rust contract audit or when deciding whether a DeFi target is worth hunting. Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?profile=readonly`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?profile=readonly"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

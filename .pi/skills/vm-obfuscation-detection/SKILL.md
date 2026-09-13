@@ -1,10 +1,10 @@
 ---
 name: vm-obfuscation-detection
-description: Detect virtual machines, packers, and code obfuscation — VMProtect, Themida, UPX, control flow flattening Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "Detect virtual machines, packers, and code obfuscation — VMProtect, Themida, UPX, control flow flattening Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?unsafe=true`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?unsafe=true"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

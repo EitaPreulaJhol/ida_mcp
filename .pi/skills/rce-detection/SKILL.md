@@ -1,10 +1,10 @@
 ---
 name: rce-detection
-description: Remote Code Execution vulnerability detection — identify command injection, deserialization, template injection, and eval injection vectors Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "Remote Code Execution vulnerability detection — identify command injection, deserialization, template injection, and eval injection vectors Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?profile=readonly`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?profile=readonly"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

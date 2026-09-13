@@ -1,10 +1,10 @@
 ---
 name: shellcode-generator
-description: Generate shellcode automatically — Linux, Windows, position-independent Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "Generate shellcode automatically — Linux, Windows, position-independent Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?unsafe=true&ext=dbg`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?unsafe=true&ext=dbg"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

@@ -1,10 +1,10 @@
 ---
 name: deobfuscation
-description: Systematic binary deobfuscation — string decryption, control flow flattening (CFF) removal, opaque predicate elimination, mixed boolean-arithmetic (MBA) simplification, bogus control flow, instruction substitution reversal, dead code removal, and anti-disassembly fixes. Trigger: deobfuscate, unobfuscate, deobfuscation, CFF, flatten, opaque predicate, MBA, obfuscated, OLLVM, Tigress, VMProtect, string decryption, junk code, bogus control flow, instruction substitution, anti-disassembly Use with IDA Pro via ida_mcp (triage-first, escalate per ladder).
-compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
+description: "Systematic binary deobfuscation — string decryption, control flow flattening (CFF) removal, opaque predicate elimination, mixed boolean-arithmetic (MBA) simplification, bogus control flow, instruction substitution reversal, dead code removal, and anti-disassembly fixes. Trigger: deobfuscate, unobfuscate, deobfuscation, CFF, flatten, opaque predicate, MBA, obfuscated, OLLVM, Tigress, VMProtect, string decryption, junk code, bogus control flow, instruction substitution, anti-disassembly Use with IDA Pro via ida_mcp (triage-first, escalate per ladder)."
+compatibility: "IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)"
 metadata:
-  workflow: ida-pro-mcp-lazy
-  ceiling: `?unsafe=true`
+  workflow: "ida-pro-mcp-lazy"
+  ceiling: "?unsafe=true"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.
