@@ -13,8 +13,8 @@ signatures). Installation has two halves:
 > agent with the **`/ida` orchestrator skill** (`skills/ida/SKILL.md` for generic agents,
 > `.pi/skills/ida/SKILL.md` for Pi) **plus 62 domain skills**
 > (`skills/<slug>/` / `.pi/skills/<slug>/`, cataloged in `skills/INDEX.md` /
-> `.pi/skills/INDEX.md` — RE, vuln/exploit, malware, kernel/drivers, mobile,
-> web/web3/bounty, ICS/infra; see `README.md` → Agent skills for the full list):
+> `.pi/skills/INDEX.md` - RE, vuln/exploit, malware, kernel/drivers, mobile,
+> web/web3/bounty, ICS/infra; see `README.md` -> Agent skills for the full list):
 > the agent starts on a 16-tool **triage profile**, runs `survey_binary()`,
 > then escalates (`readonly` -> full -> `?unsafe=true` -> `?unsafe=true&ext=dbg`)
 > and routes to exactly one `/skill:<slug>` only when the task demands it.
@@ -108,7 +108,7 @@ cp -r .pi/skills/* ~/.pi/agent/skills/
 cp .pi/extensions/ida-mcp.ts ~/.pi/agent/extensions/ida-mcp.ts
 ```
 
-Verify with `ls ~/.pi/agent/skills/ | wc -l` (expect 63 dirs — `ida` + 62 domain — plus `INDEX.md`). After `/ida` triages with `survey_binary()`, invoke a domain skill as `/skill:<slug>` (e.g. `/skill:vuln-audit`, `/skill:deobfuscation`); ceilings per skill are listed in `.pi/skills/INDEX.md`.
+Verify with `ls ~/.pi/agent/skills/ | wc -l` (expect 63 dirs - `ida` + 62 domain - plus `INDEX.md`). After `/ida` triages with `survey_binary()`, invoke a domain skill as `/skill:<slug>` (e.g. `/skill:vuln-audit`, `/skill:deobfuscation`); ceilings per skill are listed in `.pi/skills/INDEX.md`.
 
 The extension proxies the Streamable-HTTP server with lazy loading:
 `/ida [status|triage|readonly|full|unsafe|dbg|tools]` switches ladder
@@ -233,7 +233,7 @@ same methodology and skill bodies, different frontmatter/trigger word:
 | Generic (Claude Code, Cursor, …) | `skills/ida/SKILL.md` (orchestrator) + `skills/<slug>/` (62 domain) + `skills/INDEX.md` (ceilings catalog) | `~/.claude/skills/ida/SKILL.md` (personal) or `<repo>/.claude/skills/ida/SKILL.md` (shared); copy domain skills the same way (`~/.claude/skills/<slug>/`); Cursor: import as rule/command or paste into Project Rules with the trigger "analyzing a binary in IDA"; Copilot: custom instruction; Cline/Roo: `.clinerules` / `.roo/rules/` - invoke with `/ida`, then route to one domain skill |
 | Generic fallback | either tree | Paste into the agent's system prompt or project instructions |
 
-Domain skill groups (full list in `README.md` → Agent skills, ceilings in `skills/INDEX.md` / `.pi/skills/INDEX.md`): RE & triage (`generic-re`, `reverse-engineering`, `ctf`, `firmware-re`, `protocol-analysis`, `crypto-analysis`, `ai-features`, `ida-scripting`), vuln/exploit (`vuln-audit`, `0day-find`, `memory-corruption`, `rce-detection`, `race-condition`, `rop-builder`, `shellcode-generator`, `auto-exploit`, `deobfuscation`, `smart-patch-ida`, `modify`, … + `triage-validation` before `report-writing`), malware (`malware-analysis`, `linux-malware`, `mobile-malware-analysis`), kernel/drivers (`driver-analysis`, `kernel-exploit`, `linux-driver-exploit`, `windows-driver-exploit`, `macos-driver-exploit`), mobile (`apk-analysis`, `android-exploit`, `ios-exploit`, `mobile-pentest`, `ssl-pinning-bypass`, `owasp-mobile-top10`), web/bounty/web3 (`web2-recon`, `web2-vuln-classes`, `bug-bounty`/`bb-methodology`, `web3-audit`, `web3-vuln`, `meme-coin-audit`), infra/ICS (`container-escape`, `vm-escape`, `iot-vuln`, `scada-vuln`, `security-arsenal`, `prompt-injection`, `collaborative-analysis`).
+Domain skill groups (full list in `README.md` -> Agent skills, ceilings in `skills/INDEX.md` / `.pi/skills/INDEX.md`): RE & triage (`generic-re`, `reverse-engineering`, `ctf`, `firmware-re`, `protocol-analysis`, `crypto-analysis`, `ai-features`, `ida-scripting`), vuln/exploit (`vuln-audit`, `0day-find`, `memory-corruption`, `rce-detection`, `race-condition`, `rop-builder`, `shellcode-generator`, `auto-exploit`, `deobfuscation`, `smart-patch-ida`, `modify`, … + `triage-validation` before `report-writing`), malware (`malware-analysis`, `linux-malware`, `mobile-malware-analysis`), kernel/drivers (`driver-analysis`, `kernel-exploit`, `linux-driver-exploit`, `windows-driver-exploit`, `macos-driver-exploit`), mobile (`apk-analysis`, `android-exploit`, `ios-exploit`, `mobile-pentest`, `ssl-pinning-bypass`, `owasp-mobile-top10`), web/bounty/web3 (`web2-recon`, `web2-vuln-classes`, `bug-bounty`/`bb-methodology`, `web3-audit`, `web3-vuln`, `meme-coin-audit`), infra/ICS (`container-escape`, `vm-escape`, `iot-vuln`, `scada-vuln`, `security-arsenal`, `prompt-injection`, `collaborative-analysis`).
 
 After installing, type **`/ida`** or just "analyze the binary open in IDA" and the agent will: check `server_health` -> run `survey_binary` -> work through the ladder, asking before crossing into `?unsafe=true` -> load exactly one domain skill for the task.
 
