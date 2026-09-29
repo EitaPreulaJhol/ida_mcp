@@ -4,7 +4,7 @@ description: Analyze code complexity, maintainability, and security issues Use w
 compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
 metadata:
   workflow: ida-pro-mcp-lazy
-  ceiling: `?profile=readonly`
+  ceiling: "`?profile=readonly`"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.

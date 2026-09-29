@@ -231,7 +231,15 @@ same methodology and skill bodies, different frontmatter/trigger word:
 |---|---|---|
 | Pi | `.pi/skills/ida/SKILL.md` (orchestrator) + `.pi/skills/<slug>/` (62 domain) + `.pi/skills/INDEX.md` (ceilings catalog) | Copy the whole `.pi/` folder, or `cp -r .pi/skills/* ~/.pi/agent/skills/` - invoke orchestrator with `/ida`, domain skills with `/skill:<slug>` (e.g. `/skill:reverse-engineering`, `/skill:memory-corruption`) |
 | Generic (Claude Code, Cursor, …) | `skills/ida/SKILL.md` (orchestrator) + `skills/<slug>/` (62 domain) + `skills/INDEX.md` (ceilings catalog) | `~/.claude/skills/ida/SKILL.md` (personal) or `<repo>/.claude/skills/ida/SKILL.md` (shared); copy domain skills the same way (`~/.claude/skills/<slug>/`); Cursor: import as rule/command or paste into Project Rules with the trigger "analyzing a binary in IDA"; Copilot: custom instruction; Cline/Roo: `.clinerules` / `.roo/rules/` - invoke with `/ida`, then route to one domain skill |
+| Cline CLI (`cline skill`) | `skills/` tree | `cline skill add <repo>/skills -a cline -g -y -s "*" --copy` - installs the orchestrator + all 62 domain skills into `~/.agents/skills/` (equally valid: `~/.cline/skills/`; both are Cline skill search paths), then `cline skill list -g` to verify, `cline skill remove -g -s "*"` to uninstall |
 | Generic fallback | either tree | Paste into the agent's system prompt or project instructions |
+
+> **Skill frontmatter must be strict YAML.** Cline (`parseAgentSkillMarkdown`)
+> and the `skills` CLI parse it with a strict YAML parser, so any value that
+> starts with a reserved character (backtick, `?`, `-`, …) or contains `": "`
+> must be quoted - e.g. ``ceiling: "?unsafe=true"``. An unquoted
+> ``ceiling: `?unsafe=true` `` makes the skill unloadable (skipped with a YAML
+> parse error) even though lenient clients tolerate it.
 
 Domain skill groups (full list in `README.md` -> Agent skills, ceilings in `skills/INDEX.md` / `.pi/skills/INDEX.md`): RE & triage (`generic-re`, `reverse-engineering`, `ctf`, `firmware-re`, `protocol-analysis`, `crypto-analysis`, `ai-features`, `ida-scripting`), vuln/exploit (`vuln-audit`, `0day-find`, `memory-corruption`, `rce-detection`, `race-condition`, `rop-builder`, `shellcode-generator`, `auto-exploit`, `deobfuscation`, `smart-patch-ida`, `modify`, … + `triage-validation` before `report-writing`), malware (`malware-analysis`, `linux-malware`, `mobile-malware-analysis`), kernel/drivers (`driver-analysis`, `kernel-exploit`, `linux-driver-exploit`, `windows-driver-exploit`, `macos-driver-exploit`), mobile (`apk-analysis`, `android-exploit`, `ios-exploit`, `mobile-pentest`, `ssl-pinning-bypass`, `owasp-mobile-top10`), web/bounty/web3 (`web2-recon`, `web2-vuln-classes`, `bug-bounty`/`bb-methodology`, `web3-audit`, `web3-vuln`, `meme-coin-audit`), infra/ICS (`container-escape`, `vm-escape`, `iot-vuln`, `scada-vuln`, `security-arsenal`, `prompt-injection`, `collaborative-analysis`).
 

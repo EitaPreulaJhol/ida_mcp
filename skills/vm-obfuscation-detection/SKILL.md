@@ -4,7 +4,7 @@ description: Detect virtual machines, packers, and code obfuscation — VMProtec
 compatibility: IDA Pro 8.3+ with the ida_mcp plugin (Hex-Rays for decompiler tools)
 metadata:
   workflow: ida-pro-mcp-lazy
-  ceiling: `?unsafe=true`
+  ceiling: "`?unsafe=true`"
 ---
 
 > **IDA-MCP adapter (read first).** This skill runs against the binary open in IDA Pro through ida_mcp.
