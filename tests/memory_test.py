@@ -134,6 +134,23 @@ print("get_bytes basic OK")
 assert "...." in r, f"expected ascii dots (non-printable): {r}"
 print("get_bytes ascii OK")
 
+# 2b) size quoted as a string (MCP clients do this despite the schema)
+setup()
+_fake_bytes_data[0x1000] = bytes(range(256))
+r = mod.get_bytes("0x1000", size="16")
+assert '"size": 16' in r, f"string size must be coerced: {r}"
+assert "00 01 02 03" in r, f"expected hex prefix: {r}"
+print("get_bytes string size OK")
+
+# 2c) unparsable / out-of-range sizes fall back to the default (64)
+r = mod.get_bytes("0x1000", size="bogus")
+assert '"size": 64' in r, f"unparsable size must default to 64: {r}"
+r = mod.get_bytes("0x1000", size="99999")
+assert '"size": 64' in r, f"oversized size must default to 64: {r}"
+r = mod.get_bytes("0x1000", size="-8")
+assert '"size": 64' in r, f"negative size must default to 64: {r}"
+print("get_bytes size fallbacks OK")
+
 # 3) unreachable address
 setup()
 r = mod.get_bytes("0xDEAD", size=8)

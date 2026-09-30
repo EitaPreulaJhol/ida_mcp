@@ -92,6 +92,8 @@ ida_typeinf.TINFO_DEFINITE = 1
 ida_typeinf.get_compiler_name = lambda cid: "gnu"
 ida_typeinf.get_abi_name = lambda: "SysV"
 ida_typeinf.guess_tinfo = lambda tif, ea: False
+# IDA 9.4 API: allocated ordinals + 1 (renamed from get_ordinal_qty)
+ida_typeinf.get_ordinal_limit = lambda ti=None: 3
 
 
 class FakeTif:
@@ -125,8 +127,76 @@ class FakeTif:
     def get_named_type(self, til, name, *args):
         return name == "Point"
 
+    def get_numbered_type(self, til, ordinal):
+        # Two numbered types (ordinals 1..2) in the stubbed type library
+        return 1 <= ordinal <= 2
+
+
+class FakeUdmMember:
+    """``udm_t`` shim: ``type`` is a plain tinfo_t, as on IDA 9."""
+
+    def __init__(self, name, offset_bits, mtype):
+        self.name = name
+        self.offset = offset_bits
+        self.type = mtype
+
+
+class FakeUdt:
+    """``udt_type_data_t`` shim filled in by ``FakeStructTif``."""
+
+    def __init__(self, members=None):
+        self._members = members or []
+
+    def __iter__(self):
+        return iter(self._members)
+
+
+class FakeArg:
+    def __init__(self, name, atype):
+        self.name = name
+        self.type = atype
+
+
+class FakeFtd:
+    """``func_type_data_t`` shim exposing the IDA 9.4 ``get_cc()`` only."""
+
+    def __init__(self, rettype=None, args=None):
+        self.rettype = rettype
+        self._args = args or []
+
+    def __iter__(self):
+        return iter(self._args)
+
+    def get_cc(self):
+        return 80  # CM_CC_SPECIAL, as reported for x64 stdlib functions
+
+
+class FakeStructTif(FakeTif):
+    """Struct whose members come from ``udm_t::type`` tinfo_t values."""
+
+    def is_struct(self):
+        return True
+
+    def get_udt_details(self, udt):
+        udt._members = [FakeUdmMember("DestinationString", 256, FakeTif())]
+        return True
+
+
+class FakeFuncTif(FakeTif):
+    """Function type exposing ``get_cc()`` instead of a ``cc`` attribute."""
+
+    def is_func(self):
+        return True
+
+    def get_func_details(self, ftd):
+        ftd.rettype = "int"
+        ftd._args = [FakeArg("param1", FakeTif())]
+        return True
+
 
 ida_typeinf.tinfo_t = FakeTif
+ida_typeinf.udt_type_data_t = FakeUdt
+ida_typeinf.func_type_data_t = FakeFtd
 ida_typeinf.get_idati = lambda: object()
 sys.modules["ida_typeinf"] = ida_typeinf
 
@@ -171,6 +241,8 @@ info = _load("info_types_info", "api_info.py", [
 tinfo = _load("info_types_tinfo", "api_typeinfo.py", [
     ("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f"),
     ("from .sync import idasync", "idasync = lambda f: f"),
+    ("from .compat import get_type_ordinal_limit",
+     "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)"),
     ("from .api_analysis import parse_addr",
      "def parse_addr(s):\n"
      "    s = str(s).strip()\n"
@@ -216,5 +288,30 @@ assert r["results"][0]["confidence"] == "low", r
 r = json.loads(tinfo.infer_types("bogus_name"))
 assert r["results"][0]["confidence"] == "none", r
 print("infer_types size-based OK")
+
+# --- type_query / search_structs: enumeration via get_ordinal_limit ---
+r = json.loads(tinfo.type_query(""))
+assert [e["ordinal"] for e in r] == [1, 2], r
+assert r[0]["name"] == "Point" and r[0]["declaration"] == "struct Point;", r
+r = json.loads(tinfo.type_query("poi"))
+assert len(r) == 2, r  # case-insensitive substring filter
+r = json.loads(tinfo.type_query("nope"))
+assert r == [], r
+print("type_query ordinal enumeration OK")
+
+r = json.loads(tinfo.search_structs(""))
+assert r == [], r  # FakeTif is neither struct nor union
+print("search_structs OK")
+
+# --- _format_tinfo: udm_t::type is a tinfo_t and cc comes from get_cc() ----
+info = tinfo._format_tinfo(FakeStructTif())
+assert info["members"] == [{"name": "DestinationString", "offset": 32,
+                            "size": 8, "type": "Point"}], info
+print("_format_tinfo struct members OK")
+
+info = tinfo._format_tinfo(FakeFuncTif())
+assert info["cc"] == 80 and info["return_type"] == "int", info
+assert info["arguments"] == [{"name": "param1", "type": "Point"}], info
+print("_format_tinfo function cc/args OK")
 
 print("ALL INFO/TYPES TESTS PASSED")

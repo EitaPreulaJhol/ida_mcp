@@ -22,6 +22,7 @@ sys.modules["idaapi"] = idaapi
 _names: dict[int, str] = {0x1000: "main", 0x2000: "_Z3foov", 0x3000: "sub_3000"}
 _public: set[int] = {0x1000}
 _weak: set[int] = set()
+_del_calls: list[str] = []
 
 
 def _fake_get_ea_name(ea):
@@ -46,8 +47,17 @@ def _fake_force_name(ea, name):
     return True
 
 
-def _fake_del_name(ea):
+def _fake_del_global_name(ea):
+    """Global name list. IDA 9.4 reports success even with nothing to delete."""
+    _del_calls.append("del_global_name")
     _names.pop(ea, None)
+    return True
+
+
+def _fake_del_local_name(ea):
+    """Function-local name list (unused by these tests)."""
+    _del_calls.append("del_local_name")
+    return False
 
 
 def _fake_demangle(name, *args):
@@ -60,7 +70,9 @@ ida_name = types.ModuleType("ida_name")
 ida_name.get_ea_name = _fake_get_ea_name
 ida_name.set_name = _fake_set_name
 ida_name.force_name = _fake_force_name
-ida_name.del_name = _fake_del_name
+# IDA 9.4 removed ida_name.del_name; only the two scoped deleters exist now.
+ida_name.del_global_name = _fake_del_global_name
+ida_name.del_local_name = _fake_del_local_name
 ida_name.demangle_name = _fake_demangle
 ida_name.is_public_name = lambda ea: ea in _public
 ida_name.is_weak_name = lambda ea: ea in _weak
@@ -96,7 +108,15 @@ src = src.replace(
     "    if s in table: return table[s]\n"
     "    raise ValueError(f'Unknown: {s}')",
 )
+# Exec the real compat shim with the stubbed ida_name above: api_names must
+# go through the same version-dispatch it uses in production (9.4 has no
+# ida_name.del_name, only del_global_name/del_local_name).
+compat = types.ModuleType("names_test_compat")
+exec(compile(open(os.path.join(PKG, "compat.py"), encoding="utf-8").read(),
+             "names_test_compat", "exec"), compat.__dict__)
+src = src.replace("from .compat import del_name", "del_name = _compat_del_name")
 mod = types.ModuleType("names_test")
+mod.__dict__["_compat_del_name"] = compat.del_name
 exec(compile(src, "names_test", "exec"), mod.__dict__)
 sys.modules["names_test"] = mod
 
@@ -162,9 +182,12 @@ r = json.loads(mod.force_name("0x3000", "main"))
 assert r["new_name"].startswith("main_"), r
 print("force_name variant OK")
 
+_del_calls.clear()
 r = json.loads(mod.delete_name("0x3000"))
 assert r["ok"] is True and r["old_name"] is not None, r
-assert 0x3000 not in _names
+assert 0x3000 not in _names, _names
+# compat.del_name must consult both scopes (9.4 split ida_name.del_name)
+assert set(_del_calls) == {"del_global_name", "del_local_name"}, _del_calls
 print("delete_name OK")
 
 # --- make public / non-public ---

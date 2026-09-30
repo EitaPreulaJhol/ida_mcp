@@ -15,6 +15,7 @@ import ida_typeinf
 from .rpc import tool, unsafe
 from .sync import idasync
 from .api_analysis import parse_addr
+from .compat import get_type_ordinal_limit
 
 
 # ---------------------------------------------------------------------------
@@ -51,15 +52,24 @@ def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
         if tif.get_udt_details(udt):
             for m in udt:
                 offset = m.offset // 8 if hasattr(m, 'offset') else m.soff
-                mtype = ida_typeinf.tinfo_t()
-                if m.type.get(mtype):
-                    mname = m.name if m.name else f"field_{hex(offset)}"
-                    members.append({
-                        "name": mname,
-                        "offset": offset,
-                        "size": mtype.get_size(),
-                        "type": mtype.get_type_name() or "<unnamed>",
-                    })
+                # udm_t::type is exposed as a tinfo_t on modern IDAPython (cf.
+                # skills/ida-scripting/references/api-reference.md, "Iterating
+                # members (IDA 9+)"); older bindings wrapped it behind a
+                # get(out) accessor, hence the defensive unwrap.
+                mtype = m.type
+                getter = getattr(mtype, "get", None)
+                if callable(getter):
+                    resolved = ida_typeinf.tinfo_t()
+                    if not getter(resolved):
+                        continue
+                    mtype = resolved
+                mname = m.name if m.name else f"field_{hex(offset)}"
+                members.append({
+                    "name": mname,
+                    "offset": offset,
+                    "size": mtype.get_size(),
+                    "type": mtype.get_type_name() or "<unnamed>",
+                })
         result["members"] = members
 
     if tif.is_enum():
@@ -84,7 +94,8 @@ def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
                 })
             result["return_type"] = str(ftd.rettype)
             result["arguments"] = args
-            result["cc"] = ftd.cc
+            # func_type_data_t::cc was replaced by get_cc() in IDA 9.4
+            result["cc"] = ftd.get_cc() if hasattr(ftd, "get_cc") else ftd.cc
 
     return result
 
@@ -106,11 +117,11 @@ def type_query(
     """
     ida_auto.auto_wait()
     results: list[dict] = []
-    idati = _get_idati()
-    til = ida_typeinf.get_idati()
+    til = _get_idati()
 
     # Enumerate ordinal-based types from the type library
-    for ordinal in range(1, ida_typeinf.get_ordinal_qty(til) + 1):
+    # (``get_ordinal_qty``/``get_ordinal_limit`` is an exclusive bound).
+    for ordinal in range(1, get_type_ordinal_limit(til)):
         tif = ida_typeinf.tinfo_t()
         if tif.get_numbered_type(til, ordinal):
             info = _format_tinfo(tif)
@@ -262,7 +273,7 @@ def search_structs(
     results: list[dict] = []
     til = _get_idati()
 
-    for ordinal in range(1, ida_typeinf.get_ordinal_qty(til) + 1):
+    for ordinal in range(1, get_type_ordinal_limit(til)):
         tif = ida_typeinf.tinfo_t()
         if tif.get_numbered_type(til, ordinal):
             if tif.is_struct() or tif.is_union():

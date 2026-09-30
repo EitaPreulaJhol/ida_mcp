@@ -91,9 +91,9 @@ def _list(query=""):
     return {t["name"] for t in resp["result"]["tools"]}
 
 
-def _call(name, query=""):
+def _call(name, query="", arguments=None):
     st, resp = _rpc("tools/call",
-                    {"name": name, "arguments": {}}, query)
+                    {"name": name, "arguments": arguments or {}}, query)
     assert st == 200, (name, query, st, resp)
     return resp["result"]
 
@@ -261,6 +261,35 @@ mcp._request_profile.current = (None, None)
 mcp._unsafe_per_thread.allowed = False
 assert {t["name"] for t in srv._mcp_tools_list()["tools"]} == {"plain_tool"}
 print("profile gating OK")
+
+# --- tools/call coerces stringified scalars to the annotated types ---
+# Registered here (not up top) because the gating assertions above compare
+# against an exact tool set.
+@srv.tool
+def num_tool(size: int = 64, ratio: float = 1.0, flag: bool = False, tag: str = "") -> str:
+    """Echoes the runtime types of its scalar arguments."""
+    return (f"size={type(size).__name__}:{size} ratio={type(ratio).__name__}:{ratio} "
+            f"flag={type(flag).__name__}:{flag} tag={type(tag).__name__}:{tag}")
+
+
+def _num_text(arguments):
+    return _call("num_tool", arguments=arguments)["content"][0]["text"]
+
+
+text = _num_text({"size": "16", "ratio": "2.5", "flag": "TRUE", "tag": "7"})
+assert "size=int:16" in text, text
+assert "ratio=float:2.5" in text, text
+assert "flag=bool:True" in text, text
+assert "tag=str:7" in text, text  # str parameters are never coerced
+print("tools/call scalar coercion OK")
+
+text = _num_text({"size": 8, "flag": False})
+assert "size=int:8" in text and "flag=bool:False" in text, text
+
+# unparsable strings stay strings, so the tool reports its own error
+text = _num_text({"size": "abc"})
+assert "size=str:abc" in text, text
+print("tools/call coercion leaves bad input alone OK")
 
 srv.stop()
 print("ALL TRANSPORT TESTS PASSED")

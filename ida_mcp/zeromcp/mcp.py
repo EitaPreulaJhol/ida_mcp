@@ -6,6 +6,7 @@ legacy SSE transport (GET /sse, POST /sse?session=) on top of
 ThreadingHTTPServer, so no external ASGI/uvicorn dependency is required.
 """
 import gzip
+import inspect
 import json
 import logging
 import select
@@ -557,6 +558,53 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             logger.debug("[MCP] DELETE reply suppressed (client gone)")
 
 
+# Agents routinely quote numbers ("64") even when the schema says
+# integer/boolean; the tool body then compares str with int and dies with
+# "TypeError: '<=' not supported between instances of 'str' and 'int'"
+# (cf. get_bytes/size). Normalize such scalars once, at the tools/call
+# boundary, using each tool's own annotations as the source of truth.
+_TRUE_LITERALS = frozenset({"true", "1", "yes", "y", "on"})
+_FALSE_LITERALS = frozenset({"false", "0", "no", "n", "off"})
+
+
+def _coerce_scalar(value, annotation):
+    """Coerce a stringified JSON scalar to ``annotation`` (int/float/bool).
+
+    Returns ``value`` untouched for non-strings, unsupported annotations and
+    unparsable text, so the tool keeps reporting its own error message.
+    """
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
+        if args:
+            annotation = args[0]
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if annotation is bool:
+        lowered = text.lower()
+        if lowered in _TRUE_LITERALS:
+            return True
+        if lowered in _FALSE_LITERALS:
+            return False
+        return value
+    if annotation is int:
+        try:
+            return int(text, 0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            num = float(text)
+        except (TypeError, ValueError):
+            return value
+        return int(num) if num.is_integer() else value
+    if annotation is float:
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
 class McpServer:
     def __init__(self, name: str, version: str = "1.0.0", *, extensions: dict | None = None):
         self.name = name
@@ -782,7 +830,6 @@ class McpServer:
         return None
 
     def _generate_tool_schema(self, func_name, func):
-        import inspect
         try:
             hints = get_type_hints(func, include_extras=True)
         except Exception:
@@ -821,6 +868,40 @@ class McpServer:
         if required:
             schema["inputSchema"]["required"] = required
         return schema
+
+    def _coerce_tool_arguments(self, name: str, arguments):
+        """Coerce stringified scalars in ``arguments`` to annotated types.
+
+        Best-effort and per-argument: values whose annotation is not
+        ``int``/``float``/``bool`` (or that cannot be parsed) are left alone,
+        and any introspection failure returns ``arguments`` unchanged.
+        """
+        if not isinstance(arguments, dict) or not arguments:
+            return arguments
+        func = self.tools.methods.get(name)
+        if func is None:
+            return arguments
+        try:
+            hints = get_type_hints(func, include_extras=True)
+            parameters = inspect.signature(func).parameters
+        except Exception:
+            return arguments
+        coerced = None
+        for pname, value in arguments.items():
+            if not isinstance(value, str):
+                continue
+            annotation = hints.get(pname)
+            if annotation is None:
+                param = parameters.get(pname)
+                annotation = getattr(param, "annotation", None)
+            if annotation is None:
+                continue
+            new_value = _coerce_scalar(value, annotation)
+            if new_value is not value:
+                if coerced is None:
+                    coerced = dict(arguments)
+                coerced[pname] = new_value
+        return coerced if coerced is not None else arguments
 
     def _mcp_tools_call(self, name, arguments=None, _meta=None):
         unsafe_allowed = getattr(_unsafe_per_thread, "allowed", False)
@@ -865,6 +946,7 @@ class McpServer:
         if request_id is not None:
             register_pending_request(request_id)
         try:
+            arguments = self._coerce_tool_arguments(name, arguments)
             tool_response = self.tools.dispatch({
                 "jsonrpc": "2.0",
                 "method": name,

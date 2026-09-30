@@ -84,6 +84,30 @@ def _limit_items(items: list, max_items: int) -> tuple[list, bool]:
     return items[:max_items], True
 
 
+def _as_int(value, default: int = 0) -> int:
+    """Best-effort ``int`` coercion for a JSON tool argument.
+
+    MCP clients regularly deliver numbers as strings (``"64"``) even when the
+    tool schema says ``integer``; comparing such a value against an int raises
+    ``TypeError: '<=' not supported between instances of 'str' and 'int'``
+    (cf. ``get_bytes``'s ``size``). Accepts ints, numeric strings (decimal,
+    ``0x``-prefixed, ``"64.0"``) and returns ``default`` for anything else.
+    """
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    try:
+        text = str(value).strip()
+        try:
+            return int(text, 0)
+        except ValueError:
+            num = float(text)
+            return int(num) if num.is_integer() else default
+    except (TypeError, ValueError):
+        return default
+
+
 def read_bytes_bss_safe(ea: int, size: int) -> bytes | None:
     """Read ``size`` bytes starting at ``ea``, substituting 0 for unloaded bytes.
 
@@ -299,7 +323,8 @@ def get_callers(address: str, limit: int = 50) -> str:
 def get_bytes(address: str, size: int = 64) -> str:
     """Read raw bytes at the given address and return as hex + ASCII dump.
 
-    ``size`` defaults to 64 and is capped at 4096.
+    ``size`` defaults to 64, is capped at 4096 and also accepts numeric
+    strings (clients sometimes quote it as ``"64"``).
     """
     ida_auto.auto_wait()
     try:
@@ -307,6 +332,7 @@ def get_bytes(address: str, size: int = 64) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
+    size = _as_int(size, 64)
     if size <= 0 or size > 4096:
         size = 64
 

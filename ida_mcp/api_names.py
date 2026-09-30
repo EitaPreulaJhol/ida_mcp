@@ -21,6 +21,7 @@ import idautils
 from .rpc import tool, unsafe
 from .sync import idasync
 from .api_analysis import parse_addr
+from .compat import del_name
 
 
 _VALID_NAME_RE = re.compile(r"^[A-Za-z_?$][\w?$@#]*$")
@@ -247,8 +248,10 @@ def force_name(address: str, name: str) -> str:
 @idasync
 @unsafe
 def delete_name(address: str) -> str:
-    """Delete the user-defined name at the given address.
+    """Delete the name at the given address (global- or function-scoped).
 
+    IDA 9.4 split ``ida_name.del_name`` into ``del_global_name`` /
+    ``del_local_name``; ``compat.del_name`` covers both (and pre-9.4 IDAs).
     **Unsafe** — requires ``?unsafe=true``.
     """
     ida_auto.auto_wait()
@@ -259,11 +262,11 @@ def delete_name(address: str) -> str:
 
     old_name = ida_name.get_ea_name(ea)
     try:
-        ida_name.del_name(ea)
+        ok = del_name(ea)
     except Exception as e:
         return json.dumps({"error": str(e)})
     return json.dumps({
-        "ok": True,
+        "ok": bool(ok),
         "addr": hex(ea),
         "old_name": old_name or None,
         "current_name": ida_name.get_ea_name(ea) or None,

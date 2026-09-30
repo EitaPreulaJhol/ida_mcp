@@ -7,6 +7,9 @@ IDA 8.3+ while using the IDA 9.x APIs when available:
 - ``ida_ida.inf_get_min_ea()`` / ``inf_get_max_ea()`` (replaced ``cvar.inf``)
 - ``ida_bytes.is_loaded`` (absent on very old versions)
 - entry-point enumeration (moved to ``ida_entry``)
+- ``ida_typeinf.get_ordinal_limit`` (IDA 9.4 renamed ``get_ordinal_qty``)
+- ``ida_name.del_global_name()`` / ``del_local_name()`` (IDA 9.4 removed
+  ``ida_name.del_name``)
 
 No ``ida_mcp`` imports here — only ``ida_*`` — so this module can be
 imported first and exec'd standalone in tests with stubbed IDA modules.
@@ -27,6 +30,16 @@ try:
     import ida_bytes
 except ImportError:
     ida_bytes = None
+
+try:
+    import ida_name
+except ImportError:
+    ida_name = None
+
+try:
+    import ida_typeinf
+except ImportError:
+    ida_typeinf = None
 
 try:
     import idaapi
@@ -209,6 +222,91 @@ def get_func_name(ea: int) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Names (ida_name.del_name was split in IDA 9.4)
+# ---------------------------------------------------------------------------
+
+def del_name(ea: int) -> bool:
+    """Delete the name at ``ea``, whatever its scope (global or local).
+
+    IDA 9.4 removed ``ida_name.del_name`` and exposed the two name lists it
+    used to dispatch to: ``del_global_name`` (global list) and
+    ``del_local_name`` (lists owned by the enclosing function). Both are
+    attempted because each is a no-op for names living in the other list, and
+    on 9.4 they report success even when there was nothing to delete — so
+    callers must read the name back to know what really happened (cf. the
+    ``delete_name`` tool). Older IDAs keep the single ``del_name`` call.
+    """
+    if ida_name is None:
+        return False
+    removed = False
+    for fn_name in ("del_global_name", "del_local_name"):
+        fn = getattr(ida_name, fn_name, None)
+        if not callable(fn):
+            continue
+        try:
+            if fn(ea):
+                removed = True
+        except Exception:
+            continue
+    if removed:
+        return True
+    legacy = getattr(ida_name, "del_name", None)
+    if callable(legacy):
+        try:
+            return bool(legacy(ea))
+        except Exception:
+            pass
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Type library ordinals (get_ordinal_qty was renamed in IDA 9.4)
+# ---------------------------------------------------------------------------
+
+# uint32(-1) is the "ordinals are not enabled for this til" sentinel; any
+# bound that large must never drive an enumeration loop.
+_ORDINAL_LIMIT_MAX = 0x1000000
+
+
+def get_type_ordinal_limit(til=None) -> int:
+    """Exclusive upper bound for enumerating ``til``'s type ordinals.
+
+    IDA 9.4 renamed ``ida_typeinf.get_ordinal_qty`` to ``get_ordinal_limit``
+    (allocated ordinals + 1) and added ``get_ordinal_count``. IDA's own
+    documentation for ``get_ordinal_limit`` says to enumerate with
+    ``for ( uint32 i = 1; i < limit; ++i )`` — hence the exclusive bound::
+
+        for ordinal in range(1, get_type_ordinal_limit(til)):
+            ...
+
+    Returns 0 when the til has no ordinals at all, so such loops do not run.
+    """
+    if ida_typeinf is None:
+        return 0
+    limit_fn = getattr(ida_typeinf, "get_ordinal_limit", None)
+    if callable(limit_fn):
+        try:
+            limit = int(limit_fn(til))
+        except Exception:
+            limit = 0
+        if 1 <= limit <= _ORDINAL_LIMIT_MAX:
+            return limit
+    count_fn = getattr(ida_typeinf, "get_ordinal_count", None)
+    if callable(count_fn):
+        try:
+            return int(count_fn(til)) + 1
+        except Exception:
+            pass
+    legacy = getattr(ida_typeinf, "get_ordinal_qty", None)
+    if callable(legacy):
+        try:
+            return int(legacy(til))
+        except Exception:
+            pass
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Entry points (moved to ida_entry on modern IDA)
 # ---------------------------------------------------------------------------
 
@@ -275,6 +373,8 @@ __all__ = [
     "get_imagebase",
     "is_loaded",
     "get_func_name",
+    "del_name",
+    "get_type_ordinal_limit",
     "get_entry_qty",
     "get_entry_ordinal",
     "get_entry",

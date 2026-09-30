@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 TESTS = [
     "discovery_test.py",
+    "compat_test.py",
     "api_test.py",
     "plugin_test.py",
     "server_test.py",
