@@ -12,6 +12,8 @@ import ida_segment
 from .rpc import tool
 from .sync import idasync
 from .api_analysis import parse_addr
+# aliased: this module's own ``get_segment_comment`` tool would shadow it
+from .compat import get_segment_comment as _compat_segment_comment
 
 
 def _seg_to_dict(seg) -> dict:
@@ -276,7 +278,7 @@ def get_segment_comment(address: str) -> str:
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
 
-    comment = ida_segment.get_segm_cmt(seg, False)
+    comment = _compat_segment_comment(seg, False)
     return json.dumps({
         "name": ida_segment.get_segm_name(seg),
         "comment": comment if comment else None,

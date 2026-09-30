@@ -14,8 +14,8 @@ import ida_typeinf
 
 from .rpc import tool, unsafe
 from .sync import idasync
-from .api_analysis import parse_addr
-from .compat import get_type_ordinal_limit
+from .api_analysis import parse_addr, type_label
+from .compat import get_func_cc, get_type_ordinal_limit
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +68,7 @@ def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
                     "name": mname,
                     "offset": offset,
                     "size": mtype.get_size(),
-                    "type": mtype.get_type_name() or "<unnamed>",
+                    "type": type_label(mtype),
                 })
         result["members"] = members
 
@@ -90,12 +90,11 @@ def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
             for a in ftd:
                 args.append({
                     "name": a.name,
-                    "type": a.type.get_type_name() if a.type.get_type_name() else "<unnamed>",
+                    "type": type_label(a.type),
                 })
             result["return_type"] = str(ftd.rettype)
             result["arguments"] = args
-            # func_type_data_t::cc was replaced by get_cc() in IDA 9.4
-            result["cc"] = ftd.get_cc() if hasattr(ftd, "get_cc") else ftd.cc
+            result["cc"] = get_func_cc(ftd)
 
     return result
 
@@ -174,7 +173,8 @@ def get_type_at(
     func = ida_funcs.get_func(ea)
     if func:
         tif = ida_typeinf.tinfo_t()
-        if ida_typeinf.guess_tinfo(tif, ea) or ida_typeinf.get_tinfo(tif, ea):
+        # get_tinfo lives in ida_nalt on modern IDA (ida_typeinf had a copy)
+        if ida_typeinf.guess_tinfo(tif, ea) or ida_nalt.get_tinfo(tif, ea):
             info = _format_tinfo(tif)
             result["type"] = info
         else:
@@ -182,7 +182,7 @@ def get_type_at(
     else:
         # Check for data type
         tif = ida_typeinf.tinfo_t()
-        if ida_typeinf.get_tinfo(tif, ea):
+        if ida_nalt.get_tinfo(tif, ea):
             info = _format_tinfo(tif)
             result["type"] = info
         else:

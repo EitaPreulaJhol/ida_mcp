@@ -421,5 +421,34 @@ r = mod.basic_blocks("0x9999")
 assert "No function" in r, f"expected no function: {r}"
 print("basic_blocks no function OK")
 
+# --- type_label (named types keep the name, anonymous get the declaration) ---
+
+
+class _NamedTif:
+    def get_type_name(self):
+        return "Point"
+
+    def dstr(self):
+        return "struct Point"
+
+
+class _AnonTif:
+    def get_type_name(self):
+        return None
+
+    def dstr(self):
+        return "unsigned int"
+
+
+class _BareTif:
+    def get_type_name(self):
+        return None
+
+
+assert mod.type_label(_NamedTif()) == "Point"
+assert mod.type_label(_AnonTif()) == "unsigned int"
+assert mod.type_label(_BareTif()) == "<unnamed>"
+print("type_label OK")
+
 
 print("\nALL ANALYSIS TESTS PASSED")

@@ -178,8 +178,19 @@ class FakeStructTif(FakeTif):
         return True
 
     def get_udt_details(self, udt):
-        udt._members = [FakeUdmMember("DestinationString", 256, FakeTif())]
+        udt._members = [FakeUdmMember("DestinationString", 256, FakeTif()),
+                        FakeUdmMember("arg_0", 512, FakeAnonTif())]
         return True
+
+
+class FakeAnonTif(FakeTif):
+    """Anonymous member type: no name, only a C declaration."""
+
+    def get_type_name(self):
+        return None
+
+    def dstr(self):
+        return "_QWORD"
 
 
 class FakeFuncTif(FakeTif):
@@ -241,14 +252,17 @@ info = _load("info_types_info", "api_info.py", [
 tinfo = _load("info_types_tinfo", "api_typeinfo.py", [
     ("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f"),
     ("from .sync import idasync", "idasync = lambda f: f"),
-    ("from .compat import get_type_ordinal_limit",
-     "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)"),
-    ("from .api_analysis import parse_addr",
+    ("from .compat import get_func_cc, get_type_ordinal_limit",
+     "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)\n"
+     "get_func_cc = lambda ftd: ftd.get_cc()"),
+    ("from .api_analysis import parse_addr, type_label",
      "def parse_addr(s):\n"
      "    s = str(s).strip()\n"
      "    if s.startswith('0x'): return int(s, 16)\n"
      "    try: return int(s)\n"
-     "    except ValueError: raise ValueError(f'Unknown: {s}')"),
+     "    except ValueError: raise ValueError(f'Unknown: {s}')\n"
+     "def type_label(tif):\n"
+     "    return tif.get_type_name() or tif.dstr() or '<unnamed>'"),
 ])
 
 # =========================================================================
@@ -306,12 +320,24 @@ print("search_structs OK")
 # --- _format_tinfo: udm_t::type is a tinfo_t and cc comes from get_cc() ----
 info = tinfo._format_tinfo(FakeStructTif())
 assert info["members"] == [{"name": "DestinationString", "offset": 32,
-                            "size": 8, "type": "Point"}], info
+                            "size": 8, "type": "Point"},
+                           {"name": "arg_0", "offset": 64, "size": 8,
+                            "type": "_QWORD"}], info
 print("_format_tinfo struct members OK")
 
 info = tinfo._format_tinfo(FakeFuncTif())
 assert info["cc"] == 80 and info["return_type"] == "int", info
 assert info["arguments"] == [{"name": "param1", "type": "Point"}], info
 print("_format_tinfo function cc/args OK")
+
+# --- get_type_at reads the type via ida_nalt.get_tinfo (9.4) --------------
+# (the stubs deliberately have no ida_typeinf.get_tinfo)
+ida_nalt.get_tinfo = lambda tif, ea: True
+r = json.loads(tinfo.get_type_at("0x1000"))
+assert r["type"] is not None and r["type"]["name"] == "Point", r
+ida_funcs.get_func = lambda ea: type("Fn", (), {"start_ea": 0x1000})()
+r = json.loads(tinfo.get_type_at("0x1000"))
+assert r["type"]["is_func"] is False, r  # FakeTif.is_func() is False
+print("get_type_at (ida_nalt.get_tinfo) OK")
 
 print("ALL INFO/TYPES TESTS PASSED")

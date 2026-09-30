@@ -8,7 +8,6 @@ import json
 
 import ida_auto
 import ida_bytes
-import ida_frame
 import ida_funcs
 import ida_gdl
 import ida_name
@@ -20,7 +19,9 @@ import idc
 
 from .rpc import tool, unsafe
 from .sync import idasync
-from .api_analysis import parse_addr
+from .api_analysis import parse_addr, type_label
+from .compat import (FUNC_STATIC, frame_soff, frame_udt_members, get_cc_name,
+                     get_func_cc, get_func_regvars, get_frame_tinfo, is_frame_arg)
 
 
 # ===========================================================================
@@ -143,7 +144,7 @@ def _get_function_signature_impl(address: str) -> str:
     for a in ftd:
         args.append(f"{a.type} {a.name if a.name else ''}")
     prototype += ", ".join(args) + ")"
-    cc_str = ida_typeinf.get_cc_name(ftd.cc)
+    cc_str = get_cc_name(get_func_cc(ftd))
 
     return json.dumps({
         "name": fn_name,
@@ -183,7 +184,7 @@ def _get_function_flags_impl(address: str) -> str:
         "is_library": bool(flags & ida_funcs.FUNC_LIB),
         "is_noreturn": bool(flags & ida_funcs.FUNC_NORET),
         "is_far": bool(flags & ida_funcs.FUNC_FAR),
-        "is_static": bool(flags & ida_funcs.FUNC_STATIC),
+        "is_static": bool(flags & FUNC_STATIC),
         "is_frame_pointer": bool(flags & ida_funcs.FUNC_FRAME),
         "is_bp_frame": bool(flags & ida_funcs.FUNC_BOTTOMBP),
         "is_hidden": bool(flags & ida_funcs.FUNC_HIDDEN),
@@ -328,15 +329,15 @@ def get_function_frame_size(address: str) -> str:
     if not func:
         return json.dumps({"error": f"No function at {address}"})
 
-    frame = ida_frame.get_frame(func)
-    if not frame:
+    if get_frame_tinfo(func) is None:
         return json.dumps({"error": "No frame for function"})
 
     return json.dumps({
         "name": ida_funcs.get_func_name(func.start_ea) or "",
-        "frame_size": frame.get_frame_size(),
-        "args_size": frame.get_args_size(),
-        "saved_regs_size": frame.get_saved_regs_size(),
+        # idc kept the classic frame-size wrappers (frame_t did not survive 9.4)
+        "frame_size": idc.get_frame_size(func.start_ea),
+        "args_size": idc.get_frame_args_size(func.start_ea),
+        "saved_regs_size": idc.get_frame_regs_size(func.start_ea),
     }, indent=2)
 
 
@@ -354,13 +355,12 @@ def get_function_args_size(address: str) -> str:
     if not func:
         return json.dumps({"error": f"No function at {address}"})
 
-    frame = ida_frame.get_frame(func)
-    if not frame:
+    if get_frame_tinfo(func) is None:
         return json.dumps({"error": "No frame for function"})
 
     return json.dumps({
         "name": ida_funcs.get_func_name(func.start_ea) or "",
-        "args_size": frame.get_args_size(),
+        "args_size": idc.get_frame_args_size(func.start_ea),
     })
 
 
@@ -369,34 +369,25 @@ def _collect_frame_vars(func) -> list[dict]:
 
     Shared by ``get_local_variables`` and ``api_query`` local-variable tools.
     Returns [] when the function has no frame.
+
+    IDA 9.4 replaced ``frame_t`` with the frame ``tinfo_t``, so members come
+    from ``get_func_frame``: ``offset`` is converted back to the classic
+    fp-relative soff (negative for locals, positive for arguments) and
+    ``type_info`` now carries the C declaration for anonymous types too.
     """
-    frame = ida_frame.get_frame(func)
-    if not frame:
+    tif = get_frame_tinfo(func)
+    if tif is None:
         return []
 
     variables: list[dict] = []
-    for i in range(frame.get_member_qty()):
-        member = frame.get_member(i)
-        if not member:
-            continue
-        name = ida_frame.get_member_name(member.id) or ""
-        soff = member.soff
-        size = member.get_size()
-        var_type = "local"
-        if soff > 0:
-            var_type = "argument"
-
-        tif = ida_typeinf.tinfo_t()
-        type_name = None
-        if ida_frame.get_member_type(member.id, tif):
-            type_name = tif.get_type_name() or None
-
+    for member in frame_udt_members(tif):
+        frameoff = member["offset"]  # frame-relative offset, in bytes
         variables.append({
-            "name": name,
-            "offset": soff,
-            "size": size,
-            "type": var_type,
-            "type_info": type_name,
+            "name": member["name"],
+            "offset": frame_soff(func, frameoff),
+            "size": member["size"],
+            "type": "argument" if is_frame_arg(func, frameoff) else "local",
+            "type_info": type_label(member["type"]) if member["type"] is not None else None,
         })
     return variables
 
@@ -419,7 +410,7 @@ def get_local_variables(address: str) -> str:
         return json.dumps({"error": f"No function at {address}"})
 
     variables = _collect_frame_vars(func)
-    if not variables and ida_frame.get_frame(func) is None:
+    if not variables and get_frame_tinfo(func) is None:
         return json.dumps({"vars": [], "message": "No frame for function"})
 
     return json.dumps({
@@ -432,7 +423,12 @@ def get_local_variables(address: str) -> str:
 @tool
 @idasync
 def get_register_variables(address: str) -> str:
-    """Get register variables (regvars) for a function."""
+    """Get register variables (regvars) for a function.
+
+    IDA 9.4 stores regvars in their own list (``get_func_regvars``) rather than
+    as frame members flagged ``FF_IVL``, so every entry reports the register and
+    the address range where the definition holds.
+    """
     ida_auto.auto_wait()
     try:
         ea = parse_addr(address)
@@ -443,25 +439,16 @@ def get_register_variables(address: str) -> str:
     if not func:
         return json.dumps({"error": f"No function at {address}"})
 
-    frame = ida_frame.get_frame(func)
-    if not frame:
-        return json.dumps({"regvars": [], "message": "No frame for function"})
-
     regvars: list[dict] = []
-    for i in range(frame.get_member_qty()):
-        member = frame.get_member(i)
-        if not member:
-            continue
-        # Regvars have flag bit 0x100 (FF_IVL)
-        if member.flag & 0x100:
-            name = ida_frame.get_member_name(member.id) or ""
-            soff = member.soff
-            size = member.get_size()
-            regvars.append({
-                "name": name,
-                "offset": soff,
-                "size": size,
-            })
+    for rv in get_func_regvars(func.start_ea):
+        canon = getattr(rv, "canon", None) or ""
+        regvars.append({
+            "name": getattr(rv, "user", None) or canon,
+            "register": canon,
+            "start_ea": hex(rv.start_ea),
+            "end_ea": hex(rv.end_ea),
+            "comment": getattr(rv, "cmt", None) or None,
+        })
 
     return json.dumps({
         "name": ida_funcs.get_func_name(func.start_ea) or "",

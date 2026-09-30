@@ -10,6 +10,13 @@ IDA 8.3+ while using the IDA 9.x APIs when available:
 - ``ida_typeinf.get_ordinal_limit`` (IDA 9.4 renamed ``get_ordinal_qty``)
 - ``ida_name.del_global_name()`` / ``del_local_name()`` (IDA 9.4 removed
   ``ida_name.del_name``)
+- ``ida_funcs.FUNC_STATICDEF`` (IDA 9.4 renamed ``FUNC_STATIC``)
+- ``ida_typeinf.get_cc_name`` / ``func_type_data_t.cc`` (IDA 9.4 exposes
+  ``func_type_data_t.get_cc()`` only)
+- ``ida_frame.get_func_frame`` (IDA 9.4 removed ``frame_t``/``get_frame``)
+- ``ida_bytes.get_original_bytes``, ``ida_lines.get_extra_cmt_qty``,
+  ``ida_segment.get_segm_cmt``, ``ida_ua.get_reg_name`` (removed or moved in
+  IDA 9.4)
 
 No ``ida_mcp`` imports here — only ``ida_*`` — so this module can be
 imported first and exec'd standalone in tests with stubbed IDA modules.
@@ -32,14 +39,44 @@ except ImportError:
     ida_bytes = None
 
 try:
+    import ida_frame
+except ImportError:
+    ida_frame = None
+
+try:
+    import ida_funcs
+except ImportError:
+    ida_funcs = None
+
+try:
+    import ida_idp
+except ImportError:
+    ida_idp = None
+
+try:
+    import ida_lines
+except ImportError:
+    ida_lines = None
+
+try:
     import ida_name
 except ImportError:
     ida_name = None
 
 try:
+    import ida_segment
+except ImportError:
+    ida_segment = None
+
+try:
     import ida_typeinf
 except ImportError:
     ida_typeinf = None
+
+try:
+    import ida_ua
+except ImportError:
+    ida_ua = None
 
 try:
     import idaapi
@@ -65,11 +102,18 @@ def detect_ida_version() -> str:
     """Detect the current IDA Pro version (cached in IDA_MAJOR/IDA_MINOR)."""
     global IDA_VERSION, IDA_MAJOR, IDA_MINOR
     ver = "0.0"
-    if ida_ida is not None:
+    # ida_ida carried get_kernel_version() up to 9.3; 9.4 only has the idaapi one.
+    for mod in (ida_ida, idaapi):
+        getter = getattr(mod, "get_kernel_version", None) if mod is not None else None
+        if not callable(getter):
+            continue
         try:
-            ver = ida_ida.get_kernel_version() or ver
+            found = getter() or ""
         except Exception:
-            pass
+            found = ""
+        if found:
+            ver = found
+            break
     IDA_VERSION = ver
     IDA_MAJOR, IDA_MINOR, _ = _parse_kernel_version(ver)
     return ver
@@ -307,6 +351,289 @@ def get_type_ordinal_limit(til=None) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Function flags (FUNC_STATIC was renamed in IDA 9.4)
+# ---------------------------------------------------------------------------
+
+# ``FUNC_STATIC`` was renamed to ``FUNC_STATICDEF`` ("static function").
+FUNC_STATIC: int = getattr(ida_funcs, "FUNC_STATIC", 0) or getattr(ida_funcs, "FUNC_STATICDEF", 0)
+
+
+# ---------------------------------------------------------------------------
+# Calling conventions (ida_typeinf.get_cc_name is gone in IDA 9.4)
+# ---------------------------------------------------------------------------
+
+# CM_CC_* value -> name, as reported by the removed get_cc_name().
+_CC_NAMES = {
+    "CM_CC_INVALID": "invalid",
+    "CM_CC_UNKNOWN": "unknown",
+    "CM_CC_VOIDARG": "voidarg",
+    "CM_CC_CDECL": "cdecl",
+    "CM_CC_ELLIPSIS": "ellipsis",
+    "CM_CC_STDCALL": "stdcall",
+    "CM_CC_PASCAL": "pascal",
+    "CM_CC_FASTCALL": "fastcall",
+    "CM_CC_THISCALL": "thiscall",
+    "CM_CC_SWIFT": "swift",
+    "CM_CC_GOLANG": "golang",
+    "CM_CC_SPECIALE": "special",
+    "CM_CC_SPECIALP": "special",
+    "CM_CC_SPECIAL": "special",
+    "CM_CC_GOSTK": "gostk",
+    "CM_CC_RUST": "rust",
+}
+
+
+def get_func_cc(ftd) -> int | None:
+    """Calling convention (a CM_CC_* value) of a ``func_type_data_t``.
+
+    IDA 9.4 replaced the ``cc`` attribute with ``get_cc()``.
+    """
+    getter = getattr(ftd, "get_cc", None)
+    if callable(getter):
+        try:
+            return int(getter())
+        except Exception:
+            pass
+    try:
+        return int(ftd.cc)
+    except Exception:
+        return None
+
+
+def get_cc_name(cc: int | None) -> str | None:
+    """Name of the calling convention ``cc`` (None in, None out).
+
+    ``ida_typeinf.get_cc_name`` was removed in IDA 9.4: the type system only
+    exposes the numeric value, so the CM_CC_* constants are mapped here.
+    """
+    if cc is None:
+        return None
+    if ida_typeinf is not None:
+        legacy = getattr(ida_typeinf, "get_cc_name", None)
+        if callable(legacy):
+            try:
+                name = legacy(cc)
+            except Exception:
+                name = None
+            if name:
+                return name
+        for const_name, label in _CC_NAMES.items():
+            if getattr(ida_typeinf, const_name, None) == cc:
+                return label
+        usercall = getattr(ida_typeinf, "CM_CC_LAST_USERCALL", None)
+        if usercall is not None and cc <= usercall:
+            return "usercall"
+    return "unknown(0x%X)" % cc
+
+
+# ---------------------------------------------------------------------------
+# Stack frames (IDA 9.4 removed frame_t / ida_frame.get_frame)
+# ---------------------------------------------------------------------------
+
+def get_frame_tinfo(pfn):
+    """Stack frame of ``pfn`` as a ``tinfo_t``, or None when it has none.
+
+    IDA 9.4 replaced ``frame_t`` with the ``struct __fixed(...)`` type built by
+    ``get_func_frame``; its members expose ``name``, ``offset`` (frame offset in
+    bits), ``size`` and ``type``.
+    """
+    if ida_frame is None or ida_typeinf is None:
+        return None
+    getter = getattr(ida_frame, "get_func_frame", None)
+    if not callable(getter):
+        return None
+    tif = ida_typeinf.tinfo_t()
+    try:
+        if not getter(tif, pfn):
+            return None
+    except Exception:
+        return None
+    return tif
+
+
+def frame_udt_members(tif) -> list[dict]:
+    """Snapshot of a frame tinfo's members: ``name``/``offset``/``size``/``type``.
+
+    ``offset``/``size`` are in bytes (``udm_t`` stores bits) and ``type`` is a
+    copy of the member tinfo. Everything is read while the
+    ``udt_type_data_t`` is alive on purpose: its entries reference storage owned
+    by that vector, so a detached entry reads back empty names and types.
+    """
+    if ida_typeinf is None or tif is None:
+        return []
+    udt = ida_typeinf.udt_type_data_t()
+    try:
+        if not tif.get_udt_details(udt):
+            return []
+    except Exception:
+        return []
+    out: list[dict] = []
+    for m in udt:
+        mtype = None
+        if m.type is not None:
+            try:
+                mtype = ida_typeinf.tinfo_t(m.type)
+            except Exception:
+                mtype = None
+        out.append({
+            "name": m.name or "",
+            "offset": int(m.offset) // 8,
+            "size": int(m.size) // 8 if m.size else 0,
+            "type": mtype,
+        })
+    return out
+
+
+def frame_soff(pfn, frameoff: int) -> int:
+    """Classic (fp-relative) frame offset for a frame-tinfo offset.
+
+    ``soff_to_fpoff`` converts a struct offset into the fp-relative offset the
+    stack-frame window (and the old ``frame_t``) used: negative for locals, 0 at
+    the return address, positive for arguments.
+    """
+    if ida_frame is not None:
+        fn = getattr(ida_frame, "soff_to_fpoff", None)
+        if callable(fn):
+            try:
+                return int(fn(pfn, frameoff))
+            except Exception:
+                pass
+    return frameoff
+
+
+def is_frame_arg(pfn, frameoff: int) -> bool:
+    """True when ``frameoff`` (a frame-tinfo offset) belongs to the arguments."""
+    if ida_frame is not None:
+        fn = getattr(ida_frame, "is_funcarg_off", None)
+        if callable(fn):
+            try:
+                return bool(fn(pfn, frameoff))
+            except Exception:
+                pass
+    return False
+
+
+def get_func_regvars(ea: int) -> list:
+    """Register variables (``regvar_t``) of the function at ``ea``."""
+    if ida_frame is None:
+        return []
+    qty_fn = getattr(ida_frame, "get_func_regvar_qty", None)
+    vec_fn = getattr(ida_frame, "get_func_regvars", None)
+    vec_cls = getattr(ida_frame, "regvars_t", None)
+    if not (callable(qty_fn) and callable(vec_fn) and vec_cls is not None):
+        return []
+    try:
+        if qty_fn(ea) <= 0:
+            return []
+    except Exception:
+        return []
+    out = vec_cls()
+    try:
+        if not vec_fn(out, ea):
+            return []
+        return list(out)
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Bytes / comments / registers (renamed or moved in IDA 9.4)
+# ---------------------------------------------------------------------------
+
+def get_original_bytes(ea: int, size: int) -> bytes | None:
+    """Original (pre-patch) bytes at ``ea``.
+
+    IDA 9.4 removed the bulk ``ida_bytes.get_original_bytes``; only the
+    per-width readers survive, so assemble the range byte by byte.
+    """
+    if ida_bytes is None or size <= 0:
+        return None
+    bulk = getattr(ida_bytes, "get_original_bytes", None)
+    if callable(bulk):
+        try:
+            return bulk(ea, size)
+        except Exception:
+            pass
+    get_byte = getattr(ida_bytes, "get_original_byte", None)
+    if not callable(get_byte):
+        return None
+    out = bytearray()
+    for i in range(size):
+        try:
+            out.append(int(get_byte(ea + i)) & 0xFF)
+        except Exception:
+            break
+    return bytes(out) if out else None
+
+
+def get_extra_cmt_qty(ea: int, what: int) -> int:
+    """Number of extra comment lines at ``ea``, starting at slot ``what``."""
+    if ida_lines is None:
+        return 0
+    legacy = getattr(ida_lines, "get_extra_cmt_qty", None)
+    if callable(legacy):
+        try:
+            return int(legacy(ea, what))
+        except Exception:
+            pass
+    first_free = getattr(ida_lines, "get_first_free_extra_cmtidx", None)
+    if callable(first_free):
+        try:
+            return max(0, int(first_free(ea, what)) - what)
+        except Exception:
+            pass
+    return 0
+
+
+def get_extra_cmt(ea: int, what: int, index: int = 0) -> str | None:
+    """``index``-th extra comment line at ``ea``, starting at slot ``what``.
+
+    IDA 9.4 folds the line index into ``what`` (``get_extra_cmt(ea, what + i)``)
+    while older bindings took it as a third argument.
+    """
+    if ida_lines is None:
+        return None
+    fn = getattr(ida_lines, "get_extra_cmt", None)
+    if not callable(fn):
+        return None
+    for args in ((ea, what + index), (ea, what, index)):
+        try:
+            return fn(*args)
+        except Exception:
+            continue
+    return None
+
+
+def get_segment_comment(seg, repeatable: bool = False) -> str | None:
+    """Comment of ``seg`` (``get_segment_cmt`` replaced ``get_segm_cmt``)."""
+    if ida_segment is None:
+        return None
+    for fn_name in ("get_segment_cmt", "get_segm_cmt"):
+        fn = getattr(ida_segment, fn_name, None)
+        if not callable(fn):
+            continue
+        try:
+            return fn(seg, repeatable)
+        except Exception:
+            continue
+    return None
+
+
+def get_reg_name(reg: int, width: int = 0) -> str | None:
+    """Text representation of the register ``reg`` (moved to ``ida_idp``)."""
+    for mod in (ida_idp, ida_ua):
+        fn = getattr(mod, "get_reg_name", None) if mod is not None else None
+        if not callable(fn):
+            continue
+        for args in ((reg, width), (reg,)):
+            try:
+                return fn(*args)
+            except Exception:
+                continue
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Entry points (moved to ida_entry on modern IDA)
 # ---------------------------------------------------------------------------
 
@@ -375,6 +702,19 @@ __all__ = [
     "get_func_name",
     "del_name",
     "get_type_ordinal_limit",
+    "FUNC_STATIC",
+    "get_func_cc",
+    "get_cc_name",
+    "get_frame_tinfo",
+    "frame_udt_members",
+    "frame_soff",
+    "is_frame_arg",
+    "get_func_regvars",
+    "get_original_bytes",
+    "get_extra_cmt_qty",
+    "get_extra_cmt",
+    "get_segment_comment",
+    "get_reg_name",
     "get_entry_qty",
     "get_entry_ordinal",
     "get_entry",

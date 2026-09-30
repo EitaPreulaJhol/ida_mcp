@@ -20,6 +20,8 @@ import idc
 from .rpc import tool, unsafe
 from .sync import idasync
 from .api_analysis import parse_addr
+# aliased: this module's own ``get_original_bytes`` tool would shadow it
+from .compat import get_original_bytes as _compat_original_bytes
 
 
 # ===========================================================================
@@ -235,7 +237,7 @@ def get_original_bytes(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    raw = ida_bytes.get_original_bytes(ea, size)
+    raw = _compat_original_bytes(ea, size)
     return json.dumps({
         "addr": hex(ea),
         "size": len(raw) if raw else 0,

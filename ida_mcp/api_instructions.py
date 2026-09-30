@@ -18,6 +18,7 @@ import idc
 from .rpc import tool
 from .sync import idasync
 from .api_analysis import parse_addr
+from .compat import get_reg_name
 
 
 def _decode_insn(ea: int) -> tuple:
@@ -26,6 +27,24 @@ def _decode_insn(ea: int) -> tuple:
     if ida_ua.decode_insn(insn, ea) > 0:
         return insn, True
     return None, False
+
+
+def _reg_width(op) -> int:
+    """Byte width of a register operand.
+
+    ``insn.size`` is the *instruction* length (5 for ``mov [rsp+arg_0], rbx``),
+    which is not a register width — IDA only names a register for widths
+    1/2/4/8 — so the width comes from the operand's dtype instead.
+    """
+    get_size = getattr(ida_ua, "get_dtype_size", None)
+    if callable(get_size):
+        try:
+            size = int(get_size(op.dtype))
+        except Exception:
+            size = 0
+        if size in (1, 2, 4, 8):
+            return size
+    return 8
 
 
 def _insn_to_dict(ea: int, insn) -> dict:
@@ -48,7 +67,7 @@ def _insn_to_dict(ea: int, insn) -> dict:
         op_dict: dict = {"index": i}
         if op.type == ida_ua.o_reg:
             op_dict["type"] = "register"
-            op_dict["register"] = ida_ua.get_reg_name(op.reg, insn.size)
+            op_dict["register"] = get_reg_name(op.reg, _reg_width(op))
         elif op.type == ida_ua.o_mem:
             op_dict["type"] = "memory"
             op_dict["address"] = hex(op.addr) if op.addr != idaapi.BADADDR else None
@@ -349,10 +368,7 @@ def get_operand_info(address: str, index: int = 0) -> str:
     info: dict = {"addr": hex(ea), "index": index, "dtype": op.dtype}
     if op.type == ida_ua.o_reg:
         info["type"] = "register"
-        try:
-            info["register"] = ida_ua.get_reg_name(op.reg, insn.size)
-        except Exception:
-            info["register"] = op.reg
+        info["register"] = get_reg_name(op.reg, _reg_width(op)) or op.reg
         info["reg_no"] = op.reg
     elif op.type == ida_ua.o_mem:
         info["type"] = "memory"
@@ -366,10 +382,7 @@ def get_operand_info(address: str, index: int = 0) -> str:
         info["hex"] = hex(op.value & 0xFFFFFFFFFFFFFFFF)
     elif op.type in (getattr(ida_ua, "o_phrase", -1), getattr(ida_ua, "o_displ", -2)):
         info["type"] = "phrase" if op.type == getattr(ida_ua, "o_phrase", -1) else "displacement"
-        try:
-            info["base_register"] = ida_ua.get_reg_name(op.reg, insn.size)
-        except Exception:
-            info["base_register"] = op.reg
+        info["base_register"] = get_reg_name(op.reg, _reg_width(op)) or op.reg
         info["offset"] = op.addr
     else:
         info["type"] = f"unknown({op.type})"

@@ -108,6 +108,30 @@ def _as_int(value, default: int = 0) -> int:
         return default
 
 
+def type_label(tif) -> str:
+    """Human-readable label for a ``tinfo_t``: its name, else its declaration.
+
+    IDA-generated types are frequently anonymous (``unsigned int``, ``_QWORD``,
+    nested unnamed aggregates), where ``get_type_name()`` is empty and the C
+    declaration is the only useful label (cf. ``api_typeinfo._format_tinfo``).
+    """
+    try:
+        name = tif.get_type_name()
+    except Exception:
+        name = None
+    if name:
+        return name
+    dstr = getattr(tif, "dstr", None)
+    if callable(dstr):
+        try:
+            decl = dstr()
+        except Exception:
+            decl = None
+        if decl:
+            return decl
+    return "<unnamed>"
+
+
 def read_bytes_bss_safe(ea: int, size: int) -> bytes | None:
     """Read ``size`` bytes starting at ``ea``, substituting 0 for unloaded bytes.
 

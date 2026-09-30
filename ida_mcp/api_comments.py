@@ -15,6 +15,7 @@ import idc
 from .rpc import tool, unsafe
 from .sync import idasync
 from .api_analysis import parse_addr
+from .compat import get_extra_cmt, get_extra_cmt_qty
 
 
 # ===========================================================================
@@ -105,11 +106,12 @@ def get_extra_comments(address: str) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    # Anterior (0) extra comments
+    # Anterior (E_PREV) extra comments: IDA 9.4 removed get_extra_cmt_qty, so
+    # compat derives the count from the first free slot index.
     results: list[str] = []
-    count = ida_lines.get_extra_cmt_qty(ea, 0)
+    count = get_extra_cmt_qty(ea, ida_lines.E_PREV)
     for i in range(count):
-        cmt = ida_lines.get_extra_cmt(ea, 0, i)
+        cmt = get_extra_cmt(ea, ida_lines.E_PREV, i)
         if cmt:
             results.append(cmt)
 
