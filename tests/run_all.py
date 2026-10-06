@@ -36,6 +36,7 @@ TESTS = [
     "strings_test.py",
     "hexrays_test.py",
     "info_types_test.py",
+    "typeinfo_upsert_test.py",
     "server_extra_test.py",
     "debug_test.py",
     "hooks_test.py",

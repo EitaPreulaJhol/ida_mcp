@@ -236,27 +236,34 @@ def declare_type(
 
 
 def _declare_type_impl(declaration: str) -> dict:
-    """Plain (non-synced) declare logic — called from @idasync contexts.
+    """Parse ``declaration`` into the local type library (non-synced core).
 
-    ``enum_upsert`` calls this directly; calling the ``declare_type`` tool
-    from inside another ``@idasync`` body would nest ``execute_sync``.
+    Split out of ``declare_type`` so it can run inside another ``@idasync``
+    body without nesting ``execute_sync``.
+
+    IDA 9.4 repurposed ``ida_typeinf.print_decls`` into the type-to-header
+    printer (``print_decls(printer, til, ordinals, flags)``), so it can no
+    longer surface parse diagnostics. ``idc_parse_types`` is the documented
+    entry point and returns the *number of parsing errors* (0 == success).
     """
-    errors = ida_typeinf.print_decls(declaration, None, 0)
-    count = ida_typeinf.idc_parse_types(declaration, 0)
+    til = _get_idati()
+    before = get_type_ordinal_limit(til)
+    errors = ida_typeinf.idc_parse_types(declaration, 0)
+    parsed_count = max(0, get_type_ordinal_limit(til) - before)
 
-    if count == 0:
+    if errors:
         return {
             "declaration": declaration,
             "ok": False,
-            "parsed_count": 0,
-            "errors": errors if errors else "Failed to parse declaration",
+            "parsed_count": parsed_count,
+            "errors": f"{errors} error(s) while parsing the declaration",
         }
 
     return {
         "declaration": declaration,
         "ok": True,
-        "parsed_count": count,
-        "errors": errors if errors else None,
+        "parsed_count": parsed_count,
+        "errors": None,
     }
 
 
@@ -350,8 +357,14 @@ def enum_upsert(
 ) -> str:
     """Create or update an enum type with the given members.
 
-    ``members`` is a JSON array of ``{name, value}`` objects.
-    If the enum doesn't exist, it's created. If it does, members are upserted.
+    ``members`` is a JSON array of ``{name, value}`` objects. If the enum
+    doesn't exist it's created; if it does, the members are upserted — the
+    existing members are kept and the supplied ones are added or overwritten
+    by name.
+
+    Built directly on the ``tinfo_t`` type API (``enum_type_data_t`` /
+    ``edm_t`` + ``create_enum`` / ``set_named_type``): the legacy
+    ``idc.*enum_member*`` helpers are unreliable on the IDA 9.4 build.
     **Unsafe** — requires ``?unsafe=true``.
     """
     ida_auto.auto_wait()
@@ -364,16 +377,65 @@ def enum_upsert(
     if not isinstance(member_list, list):
         return json.dumps({"error": "members must be a JSON array of {name, value} dicts"})
 
-    # Build a C enum declaration
-    member_strs = []
+    updates: list[tuple[str, int]] = []
     for m in member_list:
-        if isinstance(m, dict) and "name" in m and "value" in m:
-            member_strs.append(f"{m['name']} = {m['value']}")
-        else:
+        if not (isinstance(m, dict) and "name" in m and "value" in m):
             return json.dumps({"error": "Each member must be {name, value}"})
+        try:
+            updates.append((str(m["name"]), int(m["value"])))
+        except (TypeError, ValueError):
+            return json.dumps({"error": f"Invalid value for member {m['name']!r}"})
 
-    declaration = f"enum {enum_name} {{ {', '.join(member_strs)} }};"
-    return json.dumps(_declare_type_impl(declaration), indent=2)
+    til = _get_idati()
+
+    # Seed from the existing members (if any) so this is a genuine upsert:
+    # existing members are preserved and the supplied ones are applied on top.
+    values: dict[str, int] = {}
+    is_new = True
+    existing = ida_typeinf.tinfo_t()
+    try:
+        if existing.get_named_type(til, enum_name):
+            if not existing.is_enum():
+                return json.dumps({
+                    "error": f"Type '{enum_name}' already exists and is not an enum",
+                })
+            is_new = False
+            edt_old = ida_typeinf.enum_type_data_t()
+            if existing.get_enum_details(edt_old):
+                for em in edt_old:
+                    values[em.name] = em.value
+    except Exception:
+        pass
+
+    for name, value in updates:
+        values[name] = value
+
+    edt = ida_typeinf.enum_type_data_t()
+    for name, value in values.items():
+        edm = ida_typeinf.edm_t()
+        edm.name = name
+        edm.value = value
+        edt.push_back(edm)
+
+    tif = ida_typeinf.tinfo_t()
+    if not tif.create_enum(edt):
+        return json.dumps({"error": f"Failed to build enum '{enum_name}'"})
+
+    ntf_flags = 0 if is_new else ida_typeinf.NTF_REPLACE
+    code = tif.set_named_type(til, enum_name, ntf_flags)
+    if code != ida_typeinf.TERR_OK:
+        return json.dumps({
+            "error": f"Failed to store enum '{enum_name}': "
+                     f"{ida_typeinf.tinfo_errstr(code)}",
+        })
+
+    return json.dumps({
+        "enum": enum_name,
+        "created": is_new,
+        "member_count": len(values),
+        "members": [{"name": name, "value": value}
+                    for name, value in values.items()],
+    }, indent=2)
 
 
 @tool
