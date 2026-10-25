@@ -12,7 +12,6 @@ import re
 import time
 from collections import defaultdict, deque
 
-import ida_auto
 import ida_bytes
 import ida_entry
 import ida_funcs
@@ -27,7 +26,8 @@ import idc
 
 from .rpc import tool, unsafe
 from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,
-                   update_wait_box, CancelledError, IDASyncError)
+                   update_wait_box, ensure_analysis, CancelledError,
+                   IDASyncError)
 from .api_analysis import parse_addr
 from .compat import inf_is_64bit, is_loaded as _is_loaded
 
@@ -215,7 +215,7 @@ def analyze_function(address: str, include_asm: bool = False) -> str:
     ``get_callers`` + ``basic_blocks``. Pass ``include_asm=True`` to also
     include full disassembly (costs tokens).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -265,7 +265,7 @@ def func_profile(address: str, include_lists: bool = False,
     Cheaper than ``analyze_function`` when pseudocode is not needed.
     ``max_items`` caps each list when ``include_lists`` is true.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -323,7 +323,7 @@ def analyze_component(addresses: str) -> str:
     block counts, internal edges, shared globals, interface vs internal
     classification and cross-function string usage.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     raw = _normalize_addr_list(addresses)
     if not raw:
         return json.dumps({"error": "Empty address list"})
@@ -441,7 +441,7 @@ def diff_before_after(address: str, action: str, action_args: str = "{}") -> str
     (``{\"type\": \"int __cdecl f(int)\"}``). ``action_args`` is a JSON object
     string. Returns ``{before, after, action_applied, changes_detected}``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     if action not in ("rename_func", "set_type", "set_comment"):
         return json.dumps({"error": f"Invalid action {action!r}"})
     try:
@@ -516,7 +516,7 @@ def trace_data_flow(address: str, direction: str = "forward", max_depth: int = 5
     to [1, 20]; traversal is capped at 200 nodes / 500 edges. Each node
     carries function, instruction, code/data type and depth.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     if direction not in ("forward", "backward"):
         return json.dumps({"error": f"direction must be 'forward' or 'backward', got {direction!r}"})
     try:
@@ -598,7 +598,7 @@ def _fetch_callgraph_root(root: str, max_depth: int, max_nodes: int,
                           max_edges: int, max_edges_per_func: int,
                           progress: str = "") -> dict:
     """Single-root call-graph collection (one bounded main-thread hop)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if progress:
         update_wait_box(f"callgraph {progress}")
     try:
@@ -722,7 +722,7 @@ def _fetch_survey_raw(detail_level: str) -> dict:
     in survey_binary(). Returns a plain dict (not JSON); keys starting with
     ``_`` are private and consumed by the outer tool.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     minimal = detail_level == "minimal"
 
     all_func_eas = list(idautils.Functions())

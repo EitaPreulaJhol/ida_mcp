@@ -6,6 +6,7 @@ the vendored zeromcp ``McpServer`` over stdlib ``ThreadingHTTPServer``.
 """
 import fnmatch
 import json
+import logging
 import os
 import time
 
@@ -20,7 +21,7 @@ import idc
 import idautils
 
 from .rpc import tool, unsafe, MCP_SERVER
-from .sync import idasync
+from .sync import idasync, IDAError
 from .api_python import _run_code
 from .api_analysis import parse_addr, _cap_lines
 from .discovery import (discover_instances, register_instance,
@@ -117,16 +118,16 @@ def decompile_function(address: str) -> str:
     try:
         addr = parse_addr(address)
     except ValueError as e:
-        return f"Error: {e}"
+        raise IDAError(str(e))
     func = ida_funcs.get_func(addr)
     if not func:
-        return f"Error: No function at {hex(addr)}"
+        raise IDAError(f"No function at {hex(addr)}")
     try:
         cfunc = ida_hexrays.decompile(func.start_ea)
     except Exception as e:
-        return f"Error: Decompilation failed: {e}"
+        raise IDAError(f"Decompilation failed: {e}")
     if cfunc is None:
-        return f"Error: Decompilation returned no result for {hex(func.start_ea)}"
+        raise IDAError(f"Decompilation returned no result for {hex(func.start_ea)}")
     lines = [ida_lines.tag_remove(l.line) for l in cfunc.get_pseudocode()]
     code, total = _cap_lines("\n".join(lines), 2000)
     if total is not None:
@@ -142,7 +143,7 @@ def get_disassembly(address: str, count: int = 20) -> str:
     try:
         ea = parse_addr(address)
     except ValueError as e:
-        return f"Error: {e}"
+        raise IDAError(str(e))
     lines = []
     for _ in range(count):
         if ea == idaapi.BADADDR:
@@ -261,11 +262,73 @@ def close_instance(port: int = 13337) -> str:
     return json.dumps({"ok": True, "port": port})
 
 
+def _init_auth_token() -> str | None:
+    """Resolve the auth token gating unsafe/debugger tools.
+
+    - ``IDA_MCP_NO_AUTH=1`` disables auth (loopback-only, legacy/open).
+    - ``IDA_MCP_TOKEN`` sets a stable token (useful for a fixed client config).
+    - otherwise a fresh random token is generated each start.
+
+    The token is NEVER written to the discovery file, so a local reader of that
+    file cannot escalate to the unsafe surface.
+    """
+    import secrets
+    if os.getenv("IDA_MCP_NO_AUTH", "").strip().lower() in ("1", "true", "yes"):
+        return None
+    env_token = os.getenv("IDA_MCP_TOKEN", "").strip()
+    return env_token or secrets.token_urlsafe(24)
+
+
+def _init_logging() -> None:
+    """Opt-in logging so tool/main-thread telemetry is visible in IDA.
+
+    Off by default. Set ``IDA_MCP_LOG`` to ``debug``/``info``/``1`` to route
+    the ``ida_mcp`` package logs (e.g. per-tool main-thread hold times, server
+    lifecycle) to the IDA output window. Useful for diagnosing UI freezes.
+    """
+    spec = os.getenv("IDA_MCP_LOG", "").strip().lower()
+    if not spec:
+        return
+    level = {"1": logging.INFO, "true": logging.INFO, "info": logging.INFO,
+             "debug": logging.DEBUG, "warning": logging.WARNING}.get(spec, logging.INFO)
+    pkg_logger = logging.getLogger("ida_mcp")
+    pkg_logger.setLevel(level)
+    if any(getattr(h, "_ida_mcp", False) for h in pkg_logger.handlers):
+        return  # already installed (server restarted in the same process)
+
+    class _IdaMsgHandler(logging.Handler):
+        _ida_mcp = True
+
+        def emit(self, record):
+            try:
+                ida_kernwin.msg(self.format(record) + "\n")
+            except Exception:
+                pass
+
+    handler = _IdaMsgHandler()
+    handler.setFormatter(logging.Formatter("[ida-mcp] %(levelname)s %(name)s: %(message)s"))
+    pkg_logger.addHandler(handler)
+
+
 def start_server(host: str = "127.0.0.1", port: int = 13337) -> None:
     """Start the MCP HTTP server and register this instance for discovery."""
     global _OWN_PORT
+    _init_logging()
+    token = _init_auth_token()
+    MCP_SERVER.auth_token = token
     MCP_SERVER.serve(host, port, background=True)
     _OWN_PORT = port
+    if token:
+        ida_kernwin.msg(
+            f"[ida-mcp] auth token for unsafe/debugger tools: {token}\n"
+            f"[ida-mcp]   pass it as the X-IDA-MCP-Token header or ?token=<token>\n"
+            f"[ida-mcp]   (read-only tools need no token; set IDA_MCP_NO_AUTH=1 to disable)\n"
+        )
+    else:
+        ida_kernwin.msg(
+            "[ida-mcp] auth DISABLED (IDA_MCP_NO_AUTH): unsafe tools reachable "
+            "by any local client via ?unsafe=true\n"
+        )
     try:
         pid = os.getpid()
         get_input_path = getattr(idc, "get_input_file_path", None)

@@ -131,6 +131,29 @@ r = _call("dbg_tool", "?unsafe=true&ext=dbg")
 assert r["isError"] is False, r
 print("combined unsafe+ext gating OK")
 
+# --- auth token gating (item 5): the unsafe surface requires a valid token ---
+srv.auth_token = "s3cr3t"
+# ?unsafe=true without a token no longer lists or runs unsafe tools
+assert "unsafe_tool" not in _list("?unsafe=true"), _list("?unsafe=true")
+r = _call("unsafe_tool", "?unsafe=true")
+assert r["isError"] is True and "token" in r["content"][0]["text"], r
+# correct token via ?token= -> listed and callable
+assert "unsafe_tool" in _list("?unsafe=true&token=s3cr3t")
+r = _call("unsafe_tool", "?unsafe=true&token=s3cr3t")
+assert r["isError"] is False and r["content"][0]["text"] == '"unsafe"', r
+# wrong token -> refused with a token hint
+r = _call("unsafe_tool", "?unsafe=true&token=nope")
+assert r["isError"] is True and "token" in r["content"][0]["text"], r
+# correct token via the X-IDA-MCP-Token header
+st, resp = _rpc("tools/call", {"name": "unsafe_tool", "arguments": {}},
+                "?unsafe=true", headers={"X-IDA-MCP-Token": "s3cr3t"})
+assert resp["result"]["isError"] is False, resp
+# read-only tools stay reachable without a token
+assert "plain_tool" in _list(""), _list("")
+assert _call("plain_tool", "")["isError"] is False
+srv.auth_token = None  # restore open mode for the remaining assertions
+print("auth token gating OK")
+
 # --- Lote 1 guards still hold ---
 st, _ = _rpc("tools/list", {}, "", headers={"Host": "evil.example.com"})
 assert st == 403, st

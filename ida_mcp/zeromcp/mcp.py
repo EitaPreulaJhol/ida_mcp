@@ -9,6 +9,7 @@ import gzip
 import inspect
 import json
 import logging
+import secrets
 import select
 import socket
 import sys
@@ -20,7 +21,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, HTTPServer
 from typing import Any, Callable
 from urllib.parse import urlparse, parse_qs
 
-from typing import get_type_hints, get_origin, get_args, Annotated
+from typing import get_type_hints, get_origin, get_args, Annotated, Literal, Union
+
+try:  # Python 3.10+: ``X | None`` annotations have this origin.
+    from types import UnionType as _UnionType
+except ImportError:  # pragma: no cover - older runtimes only expose typing.Union
+    _UnionType = None
 
 from .jsonrpc import (
     JsonRpcRegistry,
@@ -111,6 +117,11 @@ _unsafe_per_thread = threading.local()
 # Thread-local set of enabled extension groups, parsed per-request from
 # ?ext= (e.g. ?ext=dbg). Empty/absent means no extension tools are visible.
 _request_extensions = threading.local()
+
+# Thread-local per-request auth token, parsed from the X-IDA-MCP-Token header
+# or ?token= query param. Checked against McpServer.auth_token before any
+# unsafe/extension tool is listed or called (see McpServer._auth_ok).
+_request_auth = threading.local()
 
 
 def _enabled_extension_groups() -> set[str]:
@@ -270,11 +281,14 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             logger.debug("[MCP] OPTIONS reply suppressed (client gone)")
 
     def _parse_request_flags(self) -> None:
-        """Parse per-request ?unsafe= / ?ext= / ?profile= into thread-locals."""
+        """Parse per-request ?unsafe= / ?ext= / ?profile= / token into thread-locals."""
         _unsafe_per_thread.allowed = (
             self._get_query_param(self.path, "unsafe", "false").strip().lower() == "true"
         )
         _request_extensions.groups = self._parse_extensions(self.path)
+        token = (self.headers.get("X-IDA-MCP-Token", "")
+                 or self._get_query_param(self.path, "token", "")).strip()
+        _request_auth.token = token or None
         profile_name = self._get_query_param(self.path, "profile", "").strip().lower()
         profile_set = None
         if profile_name and _get_profile_fn is not None:
@@ -567,16 +581,95 @@ _TRUE_LITERALS = frozenset({"true", "1", "yes", "y", "on"})
 _FALSE_LITERALS = frozenset({"false", "0", "no", "n", "off"})
 
 
+def _unwrap_annotation(annotation):
+    """Reduce an annotation to ``(inner_type, enum_values, description)``.
+
+    Peels ``Annotated[T, "desc", ...]`` (capturing the first string as a
+    description), ``Optional[T]`` / ``T | None`` / ``Union[...]`` (keeping the
+    single non-``None`` arm) and ``Literal[...]`` (capturing the allowed values
+    as an enum and inferring the scalar type). ``inner_type`` is what drives
+    the JSON-schema ``type``; ``enum_values``/``description`` are ``None`` when
+    absent. Never raises — unknown shapes fall through unchanged.
+    """
+    desc = None
+    enum_values = None
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
+        if args:
+            annotation = args[0]
+            for extra in args[1:]:
+                if isinstance(extra, str):
+                    desc = extra
+                    break
+    # Optional[T] / T | None / Union[...] -> keep the non-None arm.
+    if get_origin(annotation) is Union or (
+            _UnionType is not None and isinstance(annotation, _UnionType)):
+        non_none = [a for a in get_args(annotation) if a is not type(None)]
+        if non_none:
+            annotation = non_none[0]
+    if get_origin(annotation) is Literal:
+        enum_values = list(get_args(annotation))
+        kinds = {type(v) for v in enum_values}
+        annotation = kinds.pop() if len(kinds) == 1 else str
+    return annotation, enum_values, desc
+
+
+def _json_type_for(annotation) -> str:
+    """Map a resolved Python type to a JSON-schema primitive type name."""
+    if annotation is int:
+        return "integer"
+    if annotation is float:
+        return "number"
+    if annotation is bool:
+        return "boolean"
+    return "string"
+
+
+def _json_safe_default(value) -> bool:
+    """True if ``value`` is safe to emit verbatim as a JSON-schema default."""
+    return isinstance(value, (str, int, float, bool, type(None)))
+
+
+# Tool error convention (see the per-tool docs / README): a tool reports a
+# HARD failure by returning a JSON object with a non-empty top-level ``error``
+# string. The MCP boundary promotes that to ``isError: true`` so clients can
+# detect failures programmatically instead of string-matching the content.
+# Deliberately NOT treated as failures: ``error: null`` (a success payload that
+# carries the field), soft notes under a different key (e.g. ``warning``), and
+# per-item errors nested inside a list/batch result (top-level is then a list).
+def _parse_structured(result):
+    """Best-effort parse of a tool result into structured form.
+
+    Tool bodies return pre-serialized JSON strings; parse them back so a
+    top-level ``error`` can be detected and ``structuredContent`` can carry the
+    real object. Returns the parsed object, or the original value when it is
+    not JSON text.
+    """
+    if isinstance(result, (dict, list)):
+        return result
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except (ValueError, TypeError):
+            return result
+    return result
+
+
+def _is_tool_error(parsed) -> bool:
+    """True iff ``parsed`` is a dict with a non-empty top-level ``error`` str."""
+    if isinstance(parsed, dict):
+        err = parsed.get("error")
+        return isinstance(err, str) and bool(err.strip())
+    return False
+
+
 def _coerce_scalar(value, annotation):
     """Coerce a stringified JSON scalar to ``annotation`` (int/float/bool).
 
     Returns ``value`` untouched for non-strings, unsupported annotations and
     unparsable text, so the tool keeps reporting its own error message.
     """
-    if get_origin(annotation) is Annotated:
-        args = get_args(annotation)
-        if args:
-            annotation = args[0]
+    annotation, _enum, _desc = _unwrap_annotation(annotation)
     if not isinstance(value, str):
         return value
     text = value.strip()
@@ -628,6 +721,18 @@ class McpServer:
         self._sse_lock = threading.Lock()
         self.require_streamable_http_session = False
         self.unsafe_tools: set[str] = set()
+        # Auth token gating the dangerous surface (unsafe + extension tools).
+        # None = auth disabled (loopback-only, legacy/open); when set, a request
+        # must present the matching token (X-IDA-MCP-Token header or ?token=)
+        # for unsafe/ext tools to be listed or callable. Read-only tools are
+        # unaffected. Set by the host (see server.start_server).
+        self.auth_token: str | None = None
+        # Introspection caches: tool signatures/hints never change after
+        # registration, so ``get_type_hints`` + ``inspect.signature`` (and the
+        # derived JSON schema) are computed once per tool instead of on every
+        # tools/list and tools/call. Keyed by tool name.
+        self._introspect_cache: dict[str, tuple] = {}
+        self._schema_cache: dict[str, dict] = {}
         # Concurrency gate: IDA tools run serialized on the main thread,
         # so a second concurrent tools/call would only extend the UI
         # freeze. Fail fast with a retryable isError instead of piling up
@@ -683,8 +788,6 @@ class McpServer:
             self._http_server.request_queue_size = 32
         except Exception:
             pass
-        import sys
-        import socket
         if sys.platform == "win32":
             self._http_server.allow_reuse_address = False
             self._http_server.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
@@ -732,7 +835,6 @@ class McpServer:
         logger.info("[MCP] Server stopped")
 
     def stdio(self, stdin=None, stdout=None) -> None:
-        import sys
         stdin = stdin or sys.stdin.buffer
         stdout = stdout or sys.stdout.buffer
         while True:
@@ -778,6 +880,23 @@ class McpServer:
             while len(self._http_sessions) > self.http_session_max_count:
                 self._http_sessions.pop(next(iter(self._http_sessions)), None)
 
+    def _auth_ok(self) -> bool:
+        """True if the current request may access the unsafe/extension surface.
+
+        Returns True when auth is disabled (``auth_token is None``). Otherwise
+        the per-request token (header/query) must match in constant time.
+        """
+        expected = self.auth_token
+        if not expected:
+            return True
+        provided = getattr(_request_auth, "token", None)
+        if not provided:
+            return False
+        try:
+            return secrets.compare_digest(str(provided), str(expected))
+        except Exception:
+            return False
+
     def _origin_allowed(self, origin: str) -> bool:
         if not origin:
             return False
@@ -808,8 +927,11 @@ class McpServer:
         }
 
     def _mcp_tools_list(self, _meta=None):
-        unsafe_allowed = getattr(_unsafe_per_thread, "allowed", False)
-        enabled = _enabled_extension_groups()
+        # Without a valid token the dangerous surface (unsafe + extension
+        # tools) stays hidden, exactly as if ?unsafe=/?ext= were absent.
+        auth_ok = self._auth_ok()
+        unsafe_allowed = getattr(_unsafe_per_thread, "allowed", False) and auth_ok
+        enabled = _enabled_extension_groups() if auth_ok else set()
         _profile_name, profile_set = _active_profile()
         tools = []
         for func_name, func in self.tools.methods.items():
@@ -829,34 +951,42 @@ class McpServer:
                 return group
         return None
 
-    def _generate_tool_schema(self, func_name, func):
+    def _introspect(self, func_name, func):
+        """Return cached ``(type_hints, signature_parameters)`` for a tool."""
+        cached = self._introspect_cache.get(func_name)
+        if cached is not None:
+            return cached
         try:
             hints = get_type_hints(func, include_extras=True)
         except Exception:
             hints = {}
-        sig = inspect.signature(func)
+        try:
+            parameters = inspect.signature(func).parameters
+        except (TypeError, ValueError):
+            parameters = {}
+        self._introspect_cache[func_name] = (hints, parameters)
+        return hints, parameters
+
+    def _generate_tool_schema(self, func_name, func):
+        cached = self._schema_cache.get(func_name)
+        if cached is not None:
+            return cached
+        hints, parameters = self._introspect(func_name, func)
         props = {}
         required = []
-        for pname, param in sig.parameters.items():
+        for pname, param in parameters.items():
             if pname in ("_meta",):
                 continue
             annotation = hints.get(pname, param.annotation)
-            typ = "string"
-            desc = ""
-            if get_origin(annotation) is Annotated:
-                args = get_args(annotation)
-                annotation = args[0]
-                if len(args) > 1 and isinstance(args[1], str):
-                    desc = args[1]
-            if annotation is int:
-                typ = "integer"
-            elif annotation is float:
-                typ = "number"
-            elif annotation is bool:
-                typ = "boolean"
-            prop = {"type": typ}
+            inner, enum_values, desc = _unwrap_annotation(annotation)
+            prop = {"type": _json_type_for(inner)}
             if desc:
                 prop["description"] = desc
+            if enum_values is not None:
+                prop["enum"] = enum_values
+            if (param.default is not inspect.Parameter.empty
+                    and _json_safe_default(param.default)):
+                prop["default"] = param.default
             props[pname] = prop
             if param.default is inspect.Parameter.empty:
                 required.append(pname)
@@ -867,6 +997,7 @@ class McpServer:
         }
         if required:
             schema["inputSchema"]["required"] = required
+        self._schema_cache[func_name] = schema
         return schema
 
     def _coerce_tool_arguments(self, name: str, arguments):
@@ -881,11 +1012,7 @@ class McpServer:
         func = self.tools.methods.get(name)
         if func is None:
             return arguments
-        try:
-            hints = get_type_hints(func, include_extras=True)
-            parameters = inspect.signature(func).parameters
-        except Exception:
-            return arguments
+        hints, parameters = self._introspect(name, func)
         coerced = None
         for pname, value in arguments.items():
             if not isinstance(value, str):
@@ -904,20 +1031,31 @@ class McpServer:
         return coerced if coerced is not None else arguments
 
     def _mcp_tools_call(self, name, arguments=None, _meta=None):
-        unsafe_allowed = getattr(_unsafe_per_thread, "allowed", False)
+        auth_ok = self._auth_ok()
+        unsafe_requested = getattr(_unsafe_per_thread, "allowed", False)
+        unsafe_allowed = unsafe_requested and auth_ok
         # Gate unsafe tools when unsafe mode is not enabled.
         if name in self.unsafe_tools and not unsafe_allowed:
+            if unsafe_requested and not auth_ok:
+                text = (f"Tool '{name}' requires a valid auth token. Pass it as the "
+                        f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
+            else:
+                text = f"Tool '{name}' requires unsafe mode. Add ?unsafe=true to the endpoint URL."
             return {
-                "content": [{
-                    "type": "text",
-                    "text": f"Tool '{name}' requires unsafe mode. Add ?unsafe=true to the endpoint URL."
-                }],
+                "content": [{"type": "text", "text": text}],
                 "isError": True,
             }
         tool_group = self._get_tool_extension(name)
-        if tool_group is not None and tool_group not in _enabled_extension_groups():
+        enabled_groups = _enabled_extension_groups() if auth_ok else set()
+        if tool_group is not None and tool_group not in enabled_groups:
+            if tool_group in _enabled_extension_groups() and not auth_ok:
+                text = (f"Tool '{name}' requires a valid auth token. Pass it as the "
+                        f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
+            else:
+                text = (f"Tool '{name}' requires extension '{tool_group}'. "
+                        f"Add ?ext={tool_group} to the endpoint URL.")
             return {
-                "content": [{"type": "text", "text": f"Tool '{name}' requires extension '{tool_group}'. Add ?ext={tool_group} to the endpoint URL."}],
+                "content": [{"type": "text", "text": text}],
                 "isError": True,
             }
         _profile_name, profile_set = _active_profile()
@@ -960,10 +1098,12 @@ class McpServer:
                     "isError": True,
                 }
             result = tool_response.get("result") if tool_response else None
+            parsed = _parse_structured(result)
+            structured = parsed if isinstance(parsed, dict) else {"result": result}
             return {
                 "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
-                "structuredContent": result if isinstance(result, dict) else {"result": result},
-                "isError": False,
+                "structuredContent": structured,
+                "isError": _is_tool_error(parsed),
             }
         finally:
             if request_id is not None:

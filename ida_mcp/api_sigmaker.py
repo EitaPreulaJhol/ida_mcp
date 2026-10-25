@@ -197,7 +197,10 @@ def _fetch_one_signature(query: str, max_length: int, wildcard_operands: bool,
     rendered.update({"query": query, "addr": hex(ea),
                      "format": fmt, "unique": unique})
     if err:
-        rendered["error"] = err
+        # A signature WAS produced; ``err`` is a non-fatal note, not a hard
+        # failure, so it goes under ``warning`` (reserving ``error`` for
+        # failures that the MCP boundary promotes to isError:true).
+        rendered["warning"] = err
     return rendered
 
 
@@ -276,7 +279,9 @@ def _fetch_function_signature(query: str, max_length: int,
                      "name": ida_funcs.get_func_name(func.start_ea) or None,
                      "format": fmt, "unique": unique})
     if err:
-        rendered["error"] = err
+        # Signature produced with a non-fatal note (see above): ``warning``,
+        # not ``error``, so the boundary does not flag it as a failure.
+        rendered["warning"] = err
     return rendered
 
 

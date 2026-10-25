@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import urllib.request
+from typing import Annotated, Literal, Optional
 
 # Make the vendored zeromcp package importable without loading the IDA-dependent
 # ida_mcp package __init__.
@@ -28,6 +29,35 @@ def add(a: int, b: int) -> int:
 def boom() -> str:
     """Always raises."""
     raise ValueError("kaboom")
+
+
+@server.tool
+def hard_fail() -> str:
+    """Returns a top-level error payload (hard failure convention)."""
+    return json.dumps({"error": "No function at 0x9999"})
+
+
+@server.tool
+def soft_ok() -> str:
+    """Success payload that carries error:null and a warning note."""
+    return json.dumps({"ok": True, "data": [1, 2], "error": None, "warning": "heuristic"})
+
+
+@server.tool
+def batch_result() -> str:
+    """Batch: per-item errors nested in a list are not a top-level failure."""
+    return json.dumps([{"id": 1, "error": "bad item"}, {"id": 2, "ok": True}])
+
+
+@server.tool
+def configure(
+    fmt: Literal["ida", "x64dbg", "mask"] = "ida",
+    count: Annotated[int, "how many rows"] = 20,
+    limit: Optional[int] = None,
+    maybe: "int | None" = None,
+) -> str:
+    """Tool exercising defaults, enum, Annotated and Optional/union types."""
+    return json.dumps({"fmt": fmt, "count": count, "limit": limit, "maybe": maybe})
 
 
 server.serve("127.0.0.1", 13399, background=True)
@@ -66,6 +96,38 @@ assert add_schema["inputSchema"]["properties"]["a"]["type"] == "integer", add_sc
 assert add_schema["inputSchema"]["required"] == ["a", "b"], add_schema
 print("tools/list OK", names)
 
+# richer schema: defaults, enum, Annotated description, Optional/union typing
+cfg = [t for t in resp["result"]["tools"] if t["name"] == "configure"][0]
+cprops = cfg["inputSchema"]["properties"]
+assert cprops["fmt"]["enum"] == ["ida", "x64dbg", "mask"], cprops
+assert cprops["fmt"]["type"] == "string" and cprops["fmt"]["default"] == "ida", cprops
+assert cprops["count"]["type"] == "integer", cprops
+assert cprops["count"]["default"] == 20, cprops
+assert cprops["count"]["description"] == "how many rows", cprops
+# Optional[int] / int | None must type as integer (not fall back to string)
+assert cprops["limit"]["type"] == "integer" and cprops["limit"]["default"] is None, cprops
+assert cprops["maybe"]["type"] == "integer", cprops
+# all-defaulted tool: nothing required
+assert "required" not in cfg["inputSchema"], cfg
+print("tools/list rich schema OK")
+
+# schema caching: a second tools/list returns the identical cached object
+status2, resp2 = post({"jsonrpc": "2.0", "method": "tools/list", "params": {}, "id": 22})
+cfg2 = [t for t in resp2["result"]["tools"] if t["name"] == "configure"][0]
+assert cfg2 == cfg, "cached schema must be stable across tools/list calls"
+assert server._schema_cache.get("configure") is not None, "schema should be cached"
+print("schema cache OK")
+
+# coercion still works through Optional/union + enum params (stringified ints)
+status, resp = post({
+    "jsonrpc": "2.0", "method": "tools/call",
+    "params": {"name": "configure", "arguments": {"count": "5", "limit": "7"}}, "id": 23,
+})
+assert resp["result"]["isError"] is False, resp
+payload = json.loads(json.loads(resp["result"]["content"][0]["text"]))
+assert payload["count"] == 5 and payload["limit"] == 7, payload
+print("tools/call coercion through Optional OK")
+
 # tools/call success
 status, resp = post({
     "jsonrpc": "2.0", "method": "tools/call",
@@ -84,6 +146,25 @@ status, resp = post({
 assert status == 200, status
 assert resp["result"]["isError"] is True, resp
 print("tools/call error OK", resp["result"]["content"][0]["text"][:40])
+
+
+def call(name, arguments=None):
+    _, rr = post({"jsonrpc": "2.0", "method": "tools/call",
+                  "params": {"name": name, "arguments": arguments or {}}, "id": 99})
+    return rr["result"]
+
+# error convention: top-level error string -> isError:true, structuredContent is the parsed object
+r = call("hard_fail")
+assert r["isError"] is True, r
+assert r["structuredContent"]["error"] == "No function at 0x9999", r
+# error:null + warning note -> NOT a failure
+r = call("soft_ok")
+assert r["isError"] is False, r
+assert r["structuredContent"]["warning"] == "heuristic", r
+# per-item error inside a list -> top-level is a list, NOT a failure
+r = call("batch_result")
+assert r["isError"] is False, r
+print("error convention OK")
 
 server.stop()
 assert not server._running

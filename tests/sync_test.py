@@ -130,4 +130,39 @@ assert seen == [0], seen  # fake batch() returns 0
 assert mod.get_pre_call_batch() is None  # restored after call
 print("get_pre_call_batch OK")
 
+# Test 7: ensure_analysis fast-path, bounded-wait, and timeout-raise.
+fake_auto = types.ModuleType("ida_auto")
+sys.modules["ida_auto"] = fake_auto
+
+# 7a) already complete -> no wait at all
+fake_auto.auto_is_ok = lambda: True
+waited = []
+fake_auto.auto_wait = lambda: waited.append(True)
+mod.ensure_analysis()
+assert waited == [], "fast path must skip auto_wait when analysis is done"
+
+# 7b) completes during the wait -> returns cleanly
+state = {"ok": False}
+fake_auto.auto_is_ok = lambda: state["ok"]
+fake_auto.auto_wait = lambda: state.__setitem__("ok", True)
+mod.ensure_analysis()
+assert state["ok"] is True
+
+# 7c) still running after the (deadline-bounded) wait -> clean IDAError
+fake_auto.auto_is_ok = lambda: False
+fake_auto.auto_wait = lambda: None
+try:
+    mod.ensure_analysis()
+    assert False, "expected IDAError when analysis never completes"
+except mod.IDAError as e:
+    assert "in progress" in str(e), e
+
+# 7d) no auto_is_ok (old IDA / stub) -> degrades to a plain auto_wait, no raise
+del fake_auto.auto_is_ok
+calls = []
+fake_auto.auto_wait = lambda: calls.append(True)
+mod.ensure_analysis()
+assert calls == [True], "must fall back to a plain auto_wait"
+print("ensure_analysis OK")
+
 print("ALL SYNC RESULT-CONTAINER TESTS PASSED")

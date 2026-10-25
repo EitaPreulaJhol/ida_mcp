@@ -127,6 +127,8 @@ def unsafe(func):
     _UNSAFE_NAMES.append(func.__name__)
     return func
 idasync = lambda f: f
+class IDAError(Exception):
+    pass
 def _run_code(code):
     return {"result": code, "stdout": "", "stderr": ""}
 def parse_addr(s):
@@ -206,8 +208,11 @@ out = mod.decompile_function("0x1000")
 assert "[truncated 2500 total lines" in out, out[-80:]
 assert len(out.split("\n")) == 2001, len(out.split("\n"))
 FakeCFunc.LINES = 3
-out = mod.decompile_function("0x9999")
-assert "No function" in out, out
+try:
+    mod.decompile_function("0x9999")
+    assert False, "expected IDAError for missing function"
+except mod.IDAError as e:
+    assert "No function" in str(e), e
 print("decompile cap OK")
 
 out = mod.get_disassembly("0x1000", 2)

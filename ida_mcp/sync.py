@@ -200,6 +200,47 @@ def check_cancelled() -> None:
         pass
 
 
+def ensure_analysis() -> None:
+    """Ensure IDA auto-analysis is complete before reading the IDB.
+
+    Preferred over a bare ``ida_auto.auto_wait()`` at the top of tools that
+    read analysis-derived data (functions, xrefs, names, decompilation):
+
+    - **Fast path:** returns immediately when ``auto_is_ok()`` already reports
+      analysis done (the steady-state case), skipping the wait entirely.
+    - **Bounded wait:** otherwise it calls ``auto_wait()``, which the sync
+      wrapper's deadline-driven ``set_cancelled()`` unblocks at the tool
+      timeout. If analysis is still incomplete afterwards it raises a clean,
+      retryable ``IDAError`` instead of letting the tool hold the IDA main
+      thread (and the serial concurrency gate) for the whole timeout only to
+      fail with a generic "timed out" message.
+
+    Degrades to a plain ``auto_wait()`` when ``auto_is_ok`` is unavailable
+    (older IDA / stubbed test modules), so it is always safe to call.
+    """
+    import ida_auto
+    auto_is_ok = getattr(ida_auto, "auto_is_ok", None)
+    if callable(auto_is_ok):
+        try:
+            if bool(auto_is_ok()):
+                return
+        except Exception:
+            auto_is_ok = None  # can't tell; fall through to a plain wait
+    auto_wait = getattr(ida_auto, "auto_wait", None)
+    if callable(auto_wait):
+        try:
+            auto_wait()
+        except Exception:
+            pass
+    if callable(auto_is_ok):
+        try:
+            still_running = not bool(auto_is_ok())
+        except Exception:
+            still_running = False
+        if still_running:
+            raise IDAError("Auto-analysis still in progress; retry shortly.")
+
+
 def update_wait_box(text: str) -> None:
     """Refresh the tool wait-box label (progress heartbeat). Best-effort."""
     replace = getattr(ida_kernwin, "replace_wait_box", None)

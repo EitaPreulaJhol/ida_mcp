@@ -87,6 +87,8 @@ def unsafe(func):
     _UNSAFE_NAMES.append(func.__name__)
     return func
 idasync = lambda f: f
+class IDAError(Exception):
+    pass
 def _run_code(code):
     return {"result": code, "stdout": "", "stderr": ""}
 def parse_addr(s):
@@ -139,15 +141,21 @@ out = mod.decompile_function("0x1000")
 assert "int main()" in out and "return 0;" in out, out
 print("decompile_function OK")
 
-# 3) decompile_function: no function
-out = mod.decompile_function("0x9999")
-assert "No function at" in out, out
-print("decompile no-func OK:", out)
+# 3) decompile_function: no function -> raises IDAError (isError:true at MCP boundary)
+try:
+    mod.decompile_function("0x9999")
+    assert False, "expected IDAError for missing function"
+except mod.IDAError as e:
+    assert "No function at" in str(e), e
+print("decompile no-func OK")
 
-# 4) decompile_function: decompile returns None
-out = mod.decompile_function("0x8888")
-assert "returned no result" in out, out
-print("decompile None OK:", out)
+# 4) decompile_function: decompile returns None -> raises IDAError
+try:
+    mod.decompile_function("0x8888")
+    assert False, "expected IDAError when decompilation returns None"
+except mod.IDAError as e:
+    assert "returned no result" in str(e), e
+print("decompile None OK")
 
 # 5) get_disassembly
 out = mod.get_disassembly("0x1000", 2)
