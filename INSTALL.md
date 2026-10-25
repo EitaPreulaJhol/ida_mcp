@@ -11,15 +11,11 @@ signatures). Installation has two halves:
 > load them all: most MCP clients cap tool slots (often 40–128), and a huge
 > tool list burns context and confuses small models. This guide wires the
 > agent with the **`/ida` orchestrator skill** (`skills/ida/SKILL.md` for generic agents,
-> `.pi/skills/ida/SKILL.md` for Pi) **plus 62 domain skills**
-> (`skills/<slug>/` / `.pi/skills/<slug>/`, cataloged in `skills/INDEX.md` /
-> `.pi/skills/INDEX.md` - RE, vuln/exploit, malware, kernel/drivers, mobile,
-> web/web3/bounty, ICS/infra; see `README.md` -> Agent skills for the full list):
+> `.pi/skills/ida/SKILL.md` for Pi) plus the `ida-scripting` skill:
 > the agent starts on a 16-tool **triage profile**, runs `survey_binary()`,
 > then escalates (`readonly` -> full -> `?unsafe=true` -> `?unsafe=true&ext=dbg`)
-> and routes to exactly one `/skill:<slug>` only when the task demands it.
-> Server-side enforcement lives in `?profile=` / `?unsafe=` / `?ext=` query
-> parameters (see _Endpoint ladder_).
+> only when the task demands it. Server-side enforcement lives in
+> `?profile=` / `?unsafe=` / `?ext=` query parameters (see _Endpoint ladder_).
 
 ---
 
@@ -101,14 +97,14 @@ debugger tools (total 243, the full registry).
 
 ### Pi Agent
 
-Copy the repo's `.pi/` contents into your Pi folder, restart the agent then type `/ida`. This installs the `/ida` orchestrator **plus all 62 domain skills** (`/skill:<slug>`) and the `INDEX.md` catalog:
+Copy the repo's `.pi/` contents into your Pi folder, restart the agent then type `/ida`. This installs the `/ida` orchestrator and the `ida-scripting` skill:
 
 ```bash
 cp -r .pi/skills/* ~/.pi/agent/skills/
 cp .pi/extensions/ida-mcp.ts ~/.pi/agent/extensions/ida-mcp.ts
 ```
 
-Verify with `ls ~/.pi/agent/skills/ | wc -l` (expect 63 dirs - `ida` + 62 domain - plus `INDEX.md`). After `/ida` triages with `survey_binary()`, invoke a domain skill as `/skill:<slug>` (e.g. `/skill:vuln-audit`, `/skill:deobfuscation`); ceilings per skill are listed in `.pi/skills/INDEX.md`.
+Verify with `ls ~/.pi/agent/skills/` (expect `ida` and `ida-scripting`). After `/ida` triages with `survey_binary()`, escalate the endpoint ladder only as the task needs.
 
 The extension proxies the Streamable-HTTP server with lazy loading:
 `/ida [status|triage|readonly|full|unsafe|dbg|tools]` switches ladder
@@ -223,15 +219,15 @@ Any client speaking Streamable HTTP works:
 
 ## C. Install the skills (lazy loading)
 
-The `/ida` orchestrator skill teaches the agent the connect -> triage -> escalate -> route loop so the
-243 tools never flood its context. The 62 domain skills (`/skill:<slug>`) are loaded one-at-a-time after triage (progressive disclosure). Two mirrored trees ship with this repo -
+The `/ida` orchestrator skill teaches the agent the connect -> triage -> escalate loop so the
+243 tools never flood its context, and `ida-scripting` carries the IDAPython API reference. Two mirrored trees ship with this repo -
 same methodology and skill bodies, different frontmatter/trigger word:
 
 | Agent | Files | Install as |
 |---|---|---|
-| Pi | `.pi/skills/ida/SKILL.md` (orchestrator) + `.pi/skills/<slug>/` (62 domain) + `.pi/skills/INDEX.md` (ceilings catalog) | Copy the whole `.pi/` folder, or `cp -r .pi/skills/* ~/.pi/agent/skills/` - invoke orchestrator with `/ida`, domain skills with `/skill:<slug>` (e.g. `/skill:reverse-engineering`, `/skill:memory-corruption`) |
-| Generic (Claude Code, Cursor, …) | `skills/ida/SKILL.md` (orchestrator) + `skills/<slug>/` (62 domain) + `skills/INDEX.md` (ceilings catalog) | `~/.claude/skills/ida/SKILL.md` (personal) or `<repo>/.claude/skills/ida/SKILL.md` (shared); copy domain skills the same way (`~/.claude/skills/<slug>/`); Cursor: import as rule/command or paste into Project Rules with the trigger "analyzing a binary in IDA"; Copilot: custom instruction; Cline/Roo: `.clinerules` / `.roo/rules/` - invoke with `/ida`, then route to one domain skill |
-| Cline CLI (`cline skill`) | `skills/` tree | `cline skill add <repo>/skills -a cline -g -y -s "*" --copy` - installs the orchestrator + all 62 domain skills into `~/.agents/skills/` (equally valid: `~/.cline/skills/`; both are Cline skill search paths), then `cline skill list -g` to verify, `cline skill remove -g -s "*"` to uninstall |
+| Pi | `.pi/skills/ida/SKILL.md` (orchestrator) + `.pi/skills/ida-scripting/` | Copy the whole `.pi/` folder, or `cp -r .pi/skills/* ~/.pi/agent/skills/` - invoke the orchestrator with `/ida` |
+| Generic (Claude Code, Cursor, …) | `skills/ida/SKILL.md` (orchestrator) + `skills/ida-scripting/` | `~/.claude/skills/ida/SKILL.md` (personal) or `<repo>/.claude/skills/ida/SKILL.md` (shared); copy `ida-scripting` the same way; Cursor: import as rule/command or paste into Project Rules with the trigger "analyzing a binary in IDA"; Copilot: custom instruction; Cline/Roo: `.clinerules` / `.roo/rules/` - invoke with `/ida` |
+| Cline CLI (`cline skill`) | `skills/` tree | `cline skill add <repo>/skills -a cline -g -y -s "*" --copy` - installs both skills into `~/.agents/skills/` (equally valid: `~/.cline/skills/`; both are Cline skill search paths), then `cline skill list -g` to verify, `cline skill remove -g -s "*"` to uninstall |
 | Generic fallback | either tree | Paste into the agent's system prompt or project instructions |
 
 > **Skill frontmatter must be strict YAML.** Cline (`parseAgentSkillMarkdown`)
@@ -241,9 +237,7 @@ same methodology and skill bodies, different frontmatter/trigger word:
 > ``ceiling: `?unsafe=true` `` makes the skill unloadable (skipped with a YAML
 > parse error) even though lenient clients tolerate it.
 
-Domain skill groups (full list in `README.md` -> Agent skills, ceilings in `skills/INDEX.md` / `.pi/skills/INDEX.md`): RE & triage (`generic-re`, `reverse-engineering`, `ctf`, `firmware-re`, `protocol-analysis`, `crypto-analysis`, `ai-features`, `ida-scripting`), vuln/exploit (`vuln-audit`, `0day-find`, `memory-corruption`, `rce-detection`, `race-condition`, `rop-builder`, `shellcode-generator`, `auto-exploit`, `deobfuscation`, `smart-patch-ida`, `modify`, … + `triage-validation` before `report-writing`), malware (`malware-analysis`, `linux-malware`, `mobile-malware-analysis`), kernel/drivers (`driver-analysis`, `kernel-exploit`, `linux-driver-exploit`, `windows-driver-exploit`, `macos-driver-exploit`), mobile (`apk-analysis`, `android-exploit`, `ios-exploit`, `mobile-pentest`, `ssl-pinning-bypass`, `owasp-mobile-top10`), web/bounty/web3 (`web2-recon`, `web2-vuln-classes`, `bug-bounty`/`bb-methodology`, `web3-audit`, `web3-vuln`, `meme-coin-audit`), infra/ICS (`container-escape`, `vm-escape`, `iot-vuln`, `scada-vuln`, `security-arsenal`, `prompt-injection`, `collaborative-analysis`).
-
-After installing, type **`/ida`** or just "analyze the binary open in IDA" and the agent will: check `server_health` -> run `survey_binary` -> work through the ladder, asking before crossing into `?unsafe=true` -> load exactly one domain skill for the task.
+After installing, type **`/ida`** or just "analyze the binary open in IDA" and the agent will: check `server_health` -> run `survey_binary` -> work through the ladder, asking before crossing into `?unsafe=true`.
 
 ---
 
@@ -252,7 +246,7 @@ After installing, type **`/ida`** or just "analyze the binary open in IDA" and t
 - [ ] IDA Output window shows the `[ida-mcp] listening…` line.
 - [ ] `curl` tools/list (part A, step 3) returns JSON.
 - [ ] Agent lists the `ida` MCP server as connected.
-- [ ] `/ida` -> agent calls `server_health`, then `survey_binary`, then routes to one `/skill:<slug>` (e.g. `/skill:generic-re`).
+- [ ] `/ida` -> agent calls `server_health`, then `survey_binary`, then works through the triage -> readonly -> full ladder.
 - [ ] Escalation works: ask for something needing writes (e.g. "rename
       `main`") -> agent explains the `?unsafe=true` step instead of failing
       silently.
@@ -299,9 +293,9 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 
 ## Further reading
 
-- [`README.md`](README.md) - full tool reference (243 tools), design, safety model, Agent skills catalog (62 domain skills), layout.
-- [`skills/ida/SKILL.md`](skills/ida/SKILL.md) - generic `/ida` orchestrator skill; [`skills/INDEX.md`](skills/INDEX.md) + [`skills/<slug>/`](skills/) - 62 generic domain skills (`/skill:<slug>`).
-- [`.pi/skills/ida/SKILL.md`](.pi/skills/ida/SKILL.md) - Pi skill (`/ida`); [`.pi/skills/INDEX.md`](.pi/skills/INDEX.md) + [`.pi/skills/<slug>/`](.pi/skills/) - 62 Pi domain skills.
+- [`README.md`](README.md) - full tool reference (243 tools), design, safety model, Agent skills, layout.
+- [`skills/ida/SKILL.md`](skills/ida/SKILL.md) - generic `/ida` orchestrator skill; [`skills/ida-scripting/SKILL.md`](skills/ida-scripting/SKILL.md) - IDAPython scripting skill.
+- [`.pi/skills/ida/SKILL.md`](.pi/skills/ida/SKILL.md) - Pi `/ida` skill; [`.pi/skills/ida-scripting/SKILL.md`](.pi/skills/ida-scripting/SKILL.md) - Pi IDAPython scripting skill.
 - [`.pi/extensions/ida-mcp.ts`](.pi/extensions/ida-mcp.ts) - Pi extension (bridge, `/ida` command, footer indicator, `IDA_MCP_URL` override).
 - [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/188-tool allowlists.
 - [`tests/`](tests/) - (Almost) complete test suite (`run_all.py`, `tool_inventory_test.py` guards registry <-> docs drift).
