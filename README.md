@@ -24,18 +24,18 @@ It is built specifically for reverse-engineering workflows: read-first, lazy too
 ## Error convention
 Tools signal a **hard failure** in one of two equivalent ways, both surfaced to the client as `isError: true` on the `tools/call` result:
 
-- **Raise `IDAError(msg)`** — used by plain-text tools (e.g. `decompile_function`, `get_disassembly`) where an error string would otherwise be indistinguishable from a successful result. It maps to a clean JSON-RPC `-32000` with no traceback leak.
-- **Return a JSON object with a non-empty top-level `error` string** — used by the JSON tools. The MCP boundary parses the result and promotes a top-level `error` to `isError: true`, also exposing the parsed object as `structuredContent`.
+- **Raise `IDAError(msg)`** - used by plain-text tools (e.g. `decompile_function`, `get_disassembly`) where an error string would otherwise be indistinguishable from a successful result. It maps to a clean JSON-RPC `-32000` with no traceback leak.
+- **Return a JSON object with a non-empty top-level `error` string** - used by the JSON tools. The MCP boundary parses the result and promotes a top-level `error` to `isError: true`, also exposing the parsed object as `structuredContent`.
 
 Deliberately **not** treated as failures: `error: null` on an otherwise-successful payload, soft notes under a separate key (`warning`), and per-item errors nested inside a list/batch result (the top level is then a list, not an `error` object). This lets an agent detect failures programmatically instead of string-matching the content.
 
 ## Output limits
-Listing tools that can grow with the binary (`get_functions`, `get_callees`, `get_all_comments`, `get_entry_points`, `type_query`, plus the query/string listings) take `limit` / `offset` for pagination — a full page means more may follow, so advance `offset` (or narrow with a filter). As a universal backstop, any tool result whose text exceeds `max_output_chars` (default 512 KiB, set via `IDA_MCP_MAX_OUTPUT`) is refused with an actionable `isError` instead of flooding the agent's context.
+Listing tools that can grow with the binary (`get_functions`, `get_callees`, `get_all_comments`, `get_entry_points`, `type_query`, plus the query/string listings) take `limit` / `offset` for pagination - a full page means more may follow, so advance `offset` (or narrow with a filter). As a universal backstop, any tool result whose text exceeds `max_output_chars` (default 512 KiB, set via `IDA_MCP_MAX_OUTPUT`) is refused with an actionable `isError` instead of flooding the agent's context.
 
 ## Safety model
 By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires.
 
-**Auth token for the unsafe surface.** Because `?unsafe=true` exposes script execution and patching (effectively local RCE), the unsafe and debugger tools additionally require a secret token — loopback binding and the DNS-rebinding/Origin guards do not stop another local process or user. On startup the server prints a random token to the IDA output window; clients pass it as the `X-IDA-MCP-Token` header or `?token=<token>`. Read-only tools need no token. Set `IDA_MCP_TOKEN` to pin a stable token for a fixed client config, or `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user workstation. The token is never written to the discovery file.
+**Auth token for the unsafe surface.** Because `?unsafe=true` exposes script execution and patching (effectively local RCE), the unsafe and debugger tools additionally require a secret token - loopback binding and the DNS-rebinding/Origin guards do not stop another local process or user. On startup the server prints a random token to the IDA output window; clients pass it as the `X-IDA-MCP-Token` header or `?token=<token>`. Read-only tools need no token. Set `IDA_MCP_TOKEN` to pin a stable token for a fixed client config, or `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user workstation. The token is never written to the discovery file.
 
 ## Tool surface
 The plugin exposes 243 tools across 22 modules:
