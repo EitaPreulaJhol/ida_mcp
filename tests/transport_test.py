@@ -140,7 +140,7 @@ assert r["isError"] is True and "token" in r["content"][0]["text"], r
 # correct token via ?token= -> listed and callable
 assert "unsafe_tool" in _list("?unsafe=true&token=s3cr3t")
 r = _call("unsafe_tool", "?unsafe=true&token=s3cr3t")
-assert r["isError"] is False and r["content"][0]["text"] == '"unsafe"', r
+assert r["isError"] is False and r["content"][0]["text"] == "unsafe", r
 # wrong token -> refused with a token hint
 r = _call("unsafe_tool", "?unsafe=true&token=nope")
 assert r["isError"] is True and "token" in r["content"][0]["text"], r

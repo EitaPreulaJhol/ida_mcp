@@ -32,6 +32,12 @@ def boom() -> str:
 
 
 @server.tool
+def greet() -> str:
+    """Returns a plain multi-line text result (not JSON)."""
+    return "line1\nline2"
+
+
+@server.tool
 def hard_fail() -> str:
     """Returns a top-level error payload (hard failure convention)."""
     return json.dumps({"error": "No function at 0x9999"})
@@ -124,8 +130,11 @@ status, resp = post({
     "params": {"name": "configure", "arguments": {"count": "5", "limit": "7"}}, "id": 23,
 })
 assert resp["result"]["isError"] is False, resp
-payload = json.loads(json.loads(resp["result"]["content"][0]["text"]))
+# string results are emitted verbatim (no double-encoding), so a single decode
+payload = json.loads(resp["result"]["content"][0]["text"])
 assert payload["count"] == 5 and payload["limit"] == 7, payload
+# structuredContent carries the parsed object directly
+assert resp["result"]["structuredContent"]["count"] == 5, resp
 print("tools/call coercion through Optional OK")
 
 # tools/call success
@@ -153,8 +162,14 @@ def call(name, arguments=None):
                   "params": {"name": name, "arguments": arguments or {}}, "id": 99})
     return rr["result"]
 
-# error convention: top-level error string -> isError:true, structuredContent is the parsed object
+# no double-encoding: a plain-text result is emitted verbatim (real newline,
+# no surrounding quotes or escaping)
+r = call("greet")
+assert r["content"][0]["text"] == "line1\nline2", r
+# a JSON-string result decodes in a SINGLE json.loads (not double-encoded)
 r = call("hard_fail")
+assert json.loads(r["content"][0]["text"]) == {"error": "No function at 0x9999"}, r
+# error convention: top-level error string -> isError:true, structuredContent is the parsed object
 assert r["isError"] is True, r
 assert r["structuredContent"]["error"] == "No function at 0x9999", r
 # error:null + warning note -> NOT a failure

@@ -1099,9 +1099,17 @@ class McpServer:
                 }
             result = tool_response.get("result") if tool_response else None
             parsed = _parse_structured(result)
-            structured = parsed if isinstance(parsed, dict) else {"result": result}
+            # content.text is model-readable text. Tool bodies already encode
+            # structured data to a JSON string, so emit a string result
+            # verbatim and only serialize a non-string result (int/dict/...),
+            # avoiding the double-encoding json.dumps(str) would produce.
+            if isinstance(result, str):
+                text = result
+            else:
+                text = json.dumps(result, separators=(",", ":"))
+            structured = parsed if isinstance(parsed, dict) else {"result": parsed}
             return {
-                "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
+                "content": [{"type": "text", "text": text}],
                 "structuredContent": structured,
                 "isError": _is_tool_error(parsed),
             }
