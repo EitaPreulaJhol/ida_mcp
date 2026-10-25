@@ -22,11 +22,13 @@ from .api_analysis import parse_addr
 
 @tool
 @idasync
-def get_entry_points() -> str:
+def get_entry_points(limit: int = 1000, offset: int = 0) -> str:
     """List all entry points (main, DllMain, TLS callbacks, exports, etc.)
     with ordinals and addresses.
 
-    Returns a JSON array of ``{ordinal, addr, name}`` objects.
+    Returns a JSON array of ``{ordinal, addr, name}`` objects. Paginated: at
+    most ``limit`` entries from ``offset`` (``limit=0`` = no cap); a full page
+    means more may follow (large export tables).
     """
     ida_auto.auto_wait()
     results: list[dict] = []
@@ -45,7 +47,8 @@ def get_entry_points() -> str:
             "forwarder": forwarder if forwarder else None,
         })
 
-    return json.dumps(results, indent=2)
+    page = results[offset:] if limit <= 0 else results[offset:offset + limit]
+    return json.dumps(page, indent=2)
 
 
 @tool

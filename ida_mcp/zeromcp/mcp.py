@@ -727,6 +727,10 @@ class McpServer:
         # for unsafe/ext tools to be listed or callable. Read-only tools are
         # unaffected. Set by the host (see server.start_server).
         self.auth_token: str | None = None
+        # Output backstop: a tool result whose text exceeds this many chars is
+        # refused with an actionable isError instead of flooding the client's
+        # context. 0 disables. Tweak via server.start_server / IDA_MCP_MAX_OUTPUT.
+        self.max_output_chars: int = 512 * 1024
         # Introspection caches: tool signatures/hints never change after
         # registration, so ``get_type_hints`` + ``inspect.signature`` (and the
         # derived JSON schema) are computed once per tool instead of on every
@@ -1107,6 +1111,17 @@ class McpServer:
                 text = result
             else:
                 text = json.dumps(result, separators=(",", ":"))
+            cap = self.max_output_chars
+            if cap and len(text) > cap:
+                return {
+                    "content": [{"type": "text", "text": (
+                        f"Output too large: {len(text)} chars exceed the {cap}-char cap. "
+                        f"Narrow the request (use the tool's limit/offset or a tighter "
+                        f"filter), or raise IDA_MCP_MAX_OUTPUT.")}],
+                    "structuredContent": {"error": "output_too_large",
+                                          "size": len(text), "cap": cap, "tool": name},
+                    "isError": True,
+                }
             structured = parsed if isinstance(parsed, dict) else {"result": parsed}
             return {
                 "content": [{"type": "text", "text": text}],

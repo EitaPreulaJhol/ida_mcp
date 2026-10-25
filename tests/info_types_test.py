@@ -311,6 +311,9 @@ r = json.loads(tinfo.type_query("poi"))
 assert len(r) == 2, r  # case-insensitive substring filter
 r = json.loads(tinfo.type_query("nope"))
 assert r == [], r
+# pagination: limit/offset page the type list
+assert [e["ordinal"] for e in json.loads(tinfo.type_query("", limit=1))] == [1], r
+assert [e["ordinal"] for e in json.loads(tinfo.type_query("", offset=1))] == [2], r
 print("type_query ordinal enumeration OK")
 
 r = json.loads(tinfo.search_structs(""))

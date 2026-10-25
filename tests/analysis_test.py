@@ -301,6 +301,11 @@ _fake_functions[0x2000] = FakeFunc(0x2000, 0x2100)
 r = mod.get_callees("0x1000")
 assert "target_func" in r, f"expected target_func: {r}"
 assert "another_target" in r, f"expected another_target: {r}"
+# pagination: limit/offset bound and page the result list
+import json as _json
+assert len(_json.loads(mod.get_callees("0x1000", limit=1))) == 1, mod.get_callees("0x1000", limit=1)
+full = _json.loads(mod.get_callees("0x1000"))
+assert _json.loads(mod.get_callees("0x1000", offset=1)) == full[1:], full
 print("get_callees basic OK")
 
 setup_module()

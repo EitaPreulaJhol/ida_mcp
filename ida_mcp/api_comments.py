@@ -73,13 +73,18 @@ def get_repeatable_comment(address: str) -> str:
 
 @tool
 @idasync
-def get_all_comments() -> str:
+def get_all_comments(limit: int = 500, offset: int = 0) -> str:
     """Get all comments (regular and repeatable) in the binary.
 
-    Returns up to 500 comment entries.
+    Paginated: returns at most ``limit`` comments starting at ``offset``
+    (``limit=0`` = no cap). When ``next_offset`` is present, more comments
+    follow — advance ``offset`` to continue. The scan stops once a full page is
+    collected, so it stays cheap on large databases.
     """
     ida_auto.auto_wait()
     results: list[dict] = []
+    # Collect one past the page end (when capped) to detect whether more exist.
+    hard = None if limit <= 0 else offset + limit + 1
 
     for ea in idautils.Heads():
         cmt = ida_bytes.get_cmt(ea, False)
@@ -90,10 +95,14 @@ def get_all_comments() -> str:
         if rpt:
             results.append({"address": hex(ea), "comment": rpt, "type": "repeatable"})
 
-        if len(results) >= 500:
+        if hard is not None and len(results) >= hard:
             break
 
-    return json.dumps({"comments": results, "count": len(results)}, indent=2)
+    page = results[offset:] if limit <= 0 else results[offset:offset + limit]
+    out = {"comments": page, "count": len(page), "offset": offset}
+    if limit > 0 and len(results) > offset + limit:
+        out["next_offset"] = offset + limit
+    return json.dumps(out, indent=2)
 
 
 @tool

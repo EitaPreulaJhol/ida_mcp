@@ -99,15 +99,22 @@ def execute_script(code: str) -> str:
 
 @tool
 @idasync
-def get_functions(filter_pattern: str = "*") -> str:
-    """List functions whose name matches a glob pattern (fnmatch)."""
+def get_functions(filter_pattern: str = "*", limit: int = 1000,
+                  offset: int = 0) -> str:
+    """List functions whose name matches a glob pattern (fnmatch).
+
+    Paginated: returns at most ``limit`` functions starting at ``offset``
+    (``limit=0`` means no cap). A full page means more may follow — advance
+    ``offset`` to continue. Use ``filter_pattern`` to narrow instead of paging.
+    """
     ida_auto.auto_wait()
     funcs = []
     for ea in idautils.Functions():
         name = ida_funcs.get_func_name(ea)
         if fnmatch.fnmatch(name, filter_pattern):
             funcs.append({"address": hex(ea), "name": name})
-    return json.dumps(funcs, indent=2)
+    page = funcs[offset:] if limit <= 0 else funcs[offset:offset + limit]
+    return json.dumps(page, indent=2)
 
 
 @tool
@@ -314,6 +321,12 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> None:
     """Start the MCP HTTP server and register this instance for discovery."""
     global _OWN_PORT
     _init_logging()
+    cap = os.getenv("IDA_MCP_MAX_OUTPUT", "").strip()
+    if cap:
+        try:
+            MCP_SERVER.max_output_chars = max(0, int(cap, 0))
+        except ValueError:
+            pass
     token = _init_auth_token()
     MCP_SERVER.auth_token = token
     MCP_SERVER.serve(host, port, background=True)

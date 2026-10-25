@@ -29,6 +29,9 @@ Tools signal a **hard failure** in one of two equivalent ways, both surfaced to 
 
 Deliberately **not** treated as failures: `error: null` on an otherwise-successful payload, soft notes under a separate key (`warning`), and per-item errors nested inside a list/batch result (the top level is then a list, not an `error` object). This lets an agent detect failures programmatically instead of string-matching the content.
 
+## Output limits
+Listing tools that can grow with the binary (`get_functions`, `get_callees`, `get_all_comments`, `get_entry_points`, `type_query`, plus the query/string listings) take `limit` / `offset` for pagination — a full page means more may follow, so advance `offset` (or narrow with a filter). As a universal backstop, any tool result whose text exceeds `max_output_chars` (default 512 KiB, set via `IDA_MCP_MAX_OUTPUT`) is refused with an actionable `isError` instead of flooding the agent's context.
+
 ## Safety model
 By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires.
 

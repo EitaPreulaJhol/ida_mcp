@@ -181,6 +181,16 @@ r = call("batch_result")
 assert r["isError"] is False, r
 print("error convention OK")
 
+# output backstop: a result larger than the cap is refused, not dumped
+server.max_output_chars = 5
+r = call("greet")  # returns "line1\nline2" (11 chars) > 5
+assert r["isError"] is True and "too large" in r["content"][0]["text"], r
+assert r["structuredContent"]["error"] == "output_too_large", r
+server.max_output_chars = 512 * 1024  # restore
+r = call("greet")
+assert r["isError"] is False and r["content"][0]["text"] == "line1\nline2", r
+print("output backstop OK")
+
 server.stop()
 assert not server._running
 print("ALL ZEROMCP SMOKE TESTS PASSED")

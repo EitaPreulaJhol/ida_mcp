@@ -108,11 +108,14 @@ def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
 @idasync
 def type_query(
     filter: str = "",
+    limit: int = 1000,
+    offset: int = 0,
 ) -> str:
     """Query the type catalog for all registered local types.
 
     Optionally filter by a case-insensitive substring match on type names.
-    Returns type names, sizes, and kinds.
+    Returns type names, sizes, and kinds. Paginated: at most ``limit`` types
+    from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
     """
     ida_auto.auto_wait()
     results: list[dict] = []
@@ -130,7 +133,8 @@ def type_query(
                     **info,
                 })
 
-    return json.dumps(results, indent=2)
+    page = results[offset:] if limit <= 0 else results[offset:offset + limit]
+    return json.dumps(page, indent=2)
 
 
 @tool

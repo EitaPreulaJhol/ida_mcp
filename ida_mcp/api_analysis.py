@@ -260,11 +260,12 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
 
 @tool
 @idasync
-def get_callees(address: str) -> str:
-    """Get all functions called BY the function at the given address or name.
+def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
+    """Get functions called BY the function at the given address or name.
 
     Returns a JSON array of ``{addr, name, type}`` where ``type`` is
-    ``"internal"`` or ``"external"``.
+    ``"internal"`` or ``"external"``. Paginated: at most ``limit`` entries
+    from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
     """
     ida_auto.auto_wait()
     try:
@@ -300,7 +301,9 @@ def get_callees(address: str) -> str:
                 }
         current_ea = idc.next_head(current_ea, func.end_ea)
 
-    return json.dumps(list(callees.values()), indent=2)
+    rows = list(callees.values())
+    page = rows[offset:] if limit <= 0 else rows[offset:offset + limit]
+    return json.dumps(page, indent=2)
 
 
 @tool

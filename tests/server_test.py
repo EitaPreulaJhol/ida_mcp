@@ -134,6 +134,9 @@ sys.modules["server_test"] = mod
 out = mod.get_functions("*")
 data = json.loads(out)
 assert {f["name"] for f in data} == {"func_1000", "func_2000"}, data
+# pagination: limit/offset page the function list
+assert len(json.loads(mod.get_functions("*", limit=1))) == 1, out
+assert json.loads(mod.get_functions("*", offset=1)) == data[1:], data
 print("get_functions OK", data)
 
 # 2) decompile_function success
