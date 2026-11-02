@@ -3,6 +3,8 @@
 
 It is built specifically for reverse-engineering workflows: read-first, lazy tool loading so small models stay on-task, and a strict opt-in gate for anything that mutates the IDB.
 
+Special thanks to [Eduardo](https://github.com/lluiseduardo-silva), which provided means for further improving the project.
+
 ## What it does
 - **Decompilation & disassembly**: Hex-Rays pseudocode, linear and structured disassembly, microcode summaries, flowcharts and CFG blocks.
 - **Binary triage in one call**: `survey_binary()` returns metadata, stats, segments, entry points, notable strings/functions, categorized imports and a call-graph summary.
