@@ -9,8 +9,8 @@
  *
  * Endpoint ladder (mirrors INSTALL.md):
  *   triage   ?profile=triage            16 tools (default)
- *   readonly ?profile=readonly         188 safe reads
- *   full     (no suffix)               224 non-mutating
+ *   readonly ?profile=readonly         186 safe reads
+ *   full     (no suffix)               186 safe tools, no profile filter
  *   unsafe   ?unsafe=true              + renames/comments/types/patches/scripts
  *   dbg      ?unsafe=true&ext=dbg      + 19 debugger tools
  *
@@ -31,8 +31,8 @@ type Level = "triage" | "readonly" | "full" | "unsafe" | "dbg";
 
 const LADDER: Record<Level, { suffix: string; hint: string }> = {
 	triage: { suffix: "?profile=triage", hint: "16 tools (default)" },
-	readonly: { suffix: "?profile=readonly", hint: "188 safe reads" },
-	full: { suffix: "", hint: "224 non-mutating" },
+	readonly: { suffix: "?profile=readonly", hint: "186 safe reads" },
+	full: { suffix: "", hint: "186 safe tools, unfiltered" },
 	unsafe: { suffix: "?unsafe=true", hint: "+ writes (rename/comment/patch/script)" },
 	dbg: { suffix: "?unsafe=true&ext=dbg", hint: "+ 19 debugger tools" },
 };
@@ -307,7 +307,7 @@ export default async function (pi: ExtensionAPI) {
 		label: "IDA profile",
 		description:
 			"Switch the IDA MCP endpoint ladder level and lazily register the newly visible tools. " +
-			"Levels: triage (16, default) < readonly (188) < full (224) < unsafe (+writes) < dbg (+debugger). " +
+			"Levels: triage (16, default) < readonly (186) < full (186, unfiltered) < unsafe (224) < dbg (243). " +
 			"Use when a tool errors with 'not in profile', 'requires unsafe mode' or 'requires extension'.",
 		promptSnippet: "Switch IDA analysis scope with ida_profile (triage/readonly/full/unsafe/dbg)",
 		promptGuidelines: [

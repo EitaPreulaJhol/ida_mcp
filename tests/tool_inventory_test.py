@@ -311,6 +311,21 @@ EXPECTED = {
 }
 
 
+# IDA SDK calls that mutate the IDB or write files (matched by bare name).
+WRITE_SINKS = {
+    "set_cmt", "set_func_cmt", "update_extra_cmt", "del_extra_cmt",
+    "set_name", "force_name", "del_global_name", "del_local_name",
+    "set_name_public", "make_name_public", "make_name_non_public",
+    "patch_byte", "patch_bytes", "patch_word", "patch_dword", "patch_qword",
+    "put_byte", "put_bytes", "del_items", "create_insn", "create_data",
+    "add_func", "del_func", "set_func_start", "set_func_end",
+    "apply_tinfo", "apply_cdecl", "set_tinfo", "set_named_type",
+    "add_entry", "rename_entry", "mark_position",
+    "add_bpt", "del_bpt", "set_reg_val", "write_dbg_memory",
+    "plan_to_apply_idasgn", "save_database", "gen_file",
+}
+
+
 def collect_tools(path):
     """Return sorted @tool function names in a source file via AST."""
     with open(path, "r", encoding="utf-8") as f:
@@ -432,6 +447,31 @@ def main() -> int:
         failures.append("get_profile('nope') must return None")
     else:
         print("unknown profile -> None OK")
+
+    # 5) A tool that calls an IDA write API must be @unsafe (or ext-gated).
+    #    Direct calls in the tool body only; keeps ungated writers such as
+    #    the old delete_comment (set_cmt) / idb_save (save_database) out.
+    ungated = []
+    for module, _tools in EXPECTED.items():
+        path = os.path.join(PKG, module + ".py")
+        with open(path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name not in _tools or node.name in unsafe_tools | ext_tools:
+                continue
+            for call in ast.walk(node):
+                if not isinstance(call, ast.Call):
+                    continue
+                fn = call.func
+                name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+                if name in WRITE_SINKS:
+                    ungated.append(f"{module}.{node.name} -> {name}")
+    if ungated:
+        failures.append(f"write sinks in tools without @unsafe: {sorted(set(ungated))}")
+    else:
+        print("no ungated write sinks OK")
 
     print("\n" + "=" * 50)
     if failures:

@@ -85,14 +85,14 @@ the skill (part C) drives escalation from there.
 | Step | URL | Tools |
 |---|---|---|
 | 1 - triage (default) | `http://127.0.0.1:13337/mcp?profile=triage` | 16: health, survey, list, decompile, xrefs |
-| 2 - readonly | `http://127.0.0.1:13337/mcp?profile=readonly` | 188: all safe reads |
-| 3 - full (safe) | `http://127.0.0.1:13337/mcp` | 188: same safe set, no profile filter |
+| 2 - readonly | `http://127.0.0.1:13337/mcp?profile=readonly` | 186: all safe reads |
+| 3 - full (safe) | `http://127.0.0.1:13337/mcp` | 186: same safe set, no profile filter |
 | 4 - unsafe | `http://127.0.0.1:13337/mcp?unsafe=true` | 224: + renames, comments, types, patches, scripts, hooks, FLIRT apply |
 | 5 - debugger | `http://127.0.0.1:13337/mcp?unsafe=true&ext=dbg` | 243: + 19 `dbg_*` tools |
 
-Steps 2 and 3 expose the same 188 safe tools. `readonly` is just the
+Steps 2 and 3 expose the same 186 safe tools. `readonly` is just the
 explicit allowlist, while bare `/mcp` is the unfiltered safe set. Step 4
-unhides the 36 non-debugger write tools (total 224); step 5 adds the 19
+unhides the 38 non-debugger write tools (total 224); step 5 adds the 19
 debugger tools (total 243, the full registry).
 
 ### Pi Agent
@@ -297,5 +297,5 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 - [`skills/ida/SKILL.md`](skills/ida/SKILL.md) - generic `/ida` orchestrator skill; [`skills/ida-scripting/SKILL.md`](skills/ida-scripting/SKILL.md) - IDAPython scripting skill.
 - [`.pi/skills/ida/SKILL.md`](.pi/skills/ida/SKILL.md) - Pi `/ida` skill; [`.pi/skills/ida-scripting/SKILL.md`](.pi/skills/ida-scripting/SKILL.md) - Pi IDAPython scripting skill.
 - [`.pi/extensions/ida-mcp.ts`](.pi/extensions/ida-mcp.ts) - Pi extension (bridge, `/ida` command, footer indicator, `IDA_MCP_URL` override).
-- [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/188-tool allowlists.
+- [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/186-tool allowlists.
 - [`tests/`](tests/) - (Almost) complete test suite (`run_all.py`, `tool_inventory_test.py` guards registry <-> docs drift).

@@ -2,7 +2,9 @@
 
 Stubs IDA modules and loads the source via exec.
 """
+import importlib.util
 import json
+import re
 import os
 import sys
 import types
@@ -131,6 +133,12 @@ src = src.replace(
     "                {'name': 'argc', 'offset': 8, 'size': 4, 'type': 'argument', 'type_info': 'int'}]\n"
     "    return []",
 )
+_rg_spec = importlib.util.spec_from_file_location(
+    "regex_guard_under_test", os.path.join(PKG, "regex_guard.py"))
+_rg = importlib.util.module_from_spec(_rg_spec)
+_rg_spec.loader.exec_module(_rg)
+sys.modules["regex_guard_under_test"] = _rg
+src = src.replace("from .regex_guard import", "from regex_guard_under_test import")
 mod = types.ModuleType("query_test")
 exec(compile(src, "query_test", "exec"), mod.__dict__)
 sys.modules["query_test"] = mod
@@ -221,5 +229,30 @@ assert r["count"] == 0, r
 r = json.loads(mod.get_local_variable_references("0x1000", "nope"))
 assert "error" in r, r
 print("get_local_variable_references OK")
+
+# --- client regexes: ReDoS-prone nested quantifiers are rejected ---
+for bad in (r"(a+)+b", r"(\w*\s?)*$", r"(?:x|y+){2,}", r"((ab)*c)+"):
+    try:
+        _rg.compile_client_regex(bad)
+        raise AssertionError(f"should reject {bad!r}")
+    except re.error as e:
+        assert "nested quantifiers" in str(e), (bad, e)
+for good in (r"^sub_[0-9a-f]+$", r"(\d{1,3}\.){3}\d{1,3}", r"crypt|aes", r"(ab)+",
+             r"(?:a?)+", r"x{2}(y{3}){4}"):
+    _rg.compile_client_regex(good)
+if sys.version_info >= (3, 11):
+    _rg.compile_client_regex(r"(?>a+)+b")
+    _rg.compile_client_regex(r"(a+)++b")
+try:
+    _rg.compile_client_regex("a" * (_rg.MAX_PATTERN_LEN + 1))
+    raise AssertionError("over-long pattern should be rejected")
+except re.error:
+    pass
+r = json.loads(mod.func_query(name_regex=r"(a+)+b"))
+assert "nested quantifiers" in r["error"], r
+r = json.loads(mod.entity_query(kind="strings", regex=r"(a+)+b"))
+assert "nested quantifiers" in r["error"], r
+assert mod._match_glob("aaaa!", "/(a+)+b/") is False
+print("client regex guard OK")
 
 print("ALL QUERY TESTS PASSED")

@@ -31,6 +31,7 @@ except ImportError:  # standalone harness without package context
     class IDASyncError(Exception):
         pass
 from .api_analysis import parse_addr
+from .regex_guard import compile_client_regex
 
 
 # ===========================================================================
@@ -150,7 +151,7 @@ def find_regex(
     limit = min(max(int(limit), 1), 500)
 
     try:
-        regex = re.compile(pattern, re.IGNORECASE)
+        regex = compile_client_regex(pattern, re.IGNORECASE)
     except re.error as e:
         return json.dumps({"error": f"Invalid regex: {e}"})
 

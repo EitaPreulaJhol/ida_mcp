@@ -242,7 +242,7 @@ def _load(name, filename, replacements):
 
 
 info = _load("info_types_info", "api_info.py", [
-    ("from .rpc import tool", "tool = lambda f: f"),
+    ("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f"),
     ("from .sync import idasync", "idasync = lambda f: f"),
     ("from .compat import get_entry_qty, get_entry_ordinal, get_entry, get_entry_name",
      "get_entry_qty = lambda: 1\nget_entry_ordinal = lambda i: 1\n"

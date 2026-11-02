@@ -272,6 +272,45 @@ with urllib.request.urlopen(req) as r:
     assert json.loads(r.read())["result"] == {}, "gzip body failed"
 print("gzip POST OK")
 
+# negative / non-hex chunk sizes are malformed framing -> 400 (a "-1" used
+# to become rfile.read(-1) and buffer the stream past post_body_limit)
+for bad_size in (b"-1", b"+5", b"0x5", b"zz"):
+    conn = _http.HTTPConnection("127.0.0.1", 18998, timeout=10)
+    conn.putrequest("POST", "/mcp")
+    conn.putheader("Content-Type", "application/json")
+    conn.putheader("Transfer-Encoding", "chunked")
+    conn.endheaders()
+    conn.send(bad_size + b"\r\n" + b"A" * 4096)
+    resp = conn.getresponse()
+    assert resp.status == 400, (bad_size, resp.status)
+    conn.close()
+print("malformed chunk size -> 400 OK")
+
+# gzip bomb: small compressed body that inflates past the limit -> 413
+bomb = _gzip.compress(b'{"pad":"' + b"0" * (11 * 1024 * 1024) + b'"}')
+assert len(bomb) < 1024 * 1024, len(bomb)
+for enc, data in (("gzip", bomb),
+                  ("deflate", __import__("zlib").compress(_gzip.decompress(bomb)))):
+    req = urllib.request.Request(
+        BASE, data=data,
+        headers={"Content-Type": "application/json", "Content-Encoding": enc})
+    try:
+        urllib.request.urlopen(req)
+        raise AssertionError(f"{enc} bomb should 413")
+    except urllib.error.HTTPError as e:
+        assert e.code == 413, (enc, e.code)
+st, resp = _rpc("tools/list", {})
+assert st == 200, (st, resp)
+print("decompression bomb -> 413 OK")
+
+# JSON-RPC batch array -> invalid-request error, not a dropped connection
+req = urllib.request.Request(
+    BASE, data=b'[{"jsonrpc":"2.0","method":"ping","id":1}]',
+    headers={"Content-Type": "application/json"})
+with urllib.request.urlopen(req, timeout=10) as r:
+    assert json.loads(r.read())["error"]["code"] == -32600
+print("batch array -> -32600 OK")
+
 # --- profile gating (thread-local injection; file loading covered by inventory) ---
 mcp._request_profile.current = ("triage", {"plain_tool"})
 assert {t["name"] for t in srv._mcp_tools_list()["tools"]} == {"plain_tool"}

@@ -103,8 +103,8 @@ All domain skills use native ida_mcp tools only (`execute_script`, `set_name`,
 | Step | Endpoint suffix | Tools visible | Use when |
 |------|----------------|---------------|----------|
 | 1 | `?profile=triage` | 16 (health, survey, list, decompile, xrefs) | **Always start here** |
-| 2 | `?profile=readonly` | 188 (all safe reads) | Triage is insufficient |
-| 3 | _(no profile)_ | 224 (safe + gated) | Need a specific safe tool outside readonly (rare) |
+| 2 | `?profile=readonly` | 186 (all safe reads) | Triage is insufficient |
+| 3 | _(no profile)_ | 186 (same safe set, no profile filter) | Rarely needed: identical to readonly, just unfiltered |
 | 4 | `?unsafe=true` | + renames, comments, types, patches, scripts | Annotating / modifying the IDB |
 | 5 | `?unsafe=true&ext=dbg` | + 19 debugger tools | Live debugging session |
 

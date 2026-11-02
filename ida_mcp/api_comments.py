@@ -39,11 +39,11 @@ def get_comment(address: str) -> str:
 
 @tool
 @idasync
+@unsafe
 def delete_comment(address: str) -> str:
     """Delete the regular comment at the given address.
 
-    Note: this is a write operation but does not require unsafe mode
-    since it only affects annotations.
+    **Unsafe** — requires ``?unsafe=true``.
     """
     ida_auto.auto_wait()
     try:

@@ -243,4 +243,36 @@ finally:
     builtins.__import__ = real_import
 
 
+# 10) IDB-persisted host: only loopback is honored; IDA_MCP_HOST overrides.
+class _FakeNetnode:
+    host = ""
+
+    def __init__(self, *args):
+        pass
+
+    def supstr(self, idx):
+        return _FakeNetnode.host
+
+
+_msgs = []
+_saved_nn, _saved_msg = loader_mod.ida_netnode, ida_kernwin.msg
+loader_mod.ida_netnode = types.SimpleNamespace(netnode=_FakeNetnode)
+ida_kernwin.msg = _msgs.append
+_saved_env = os.environ.pop("IDA_MCP_HOST", None)
+try:
+    _FakeNetnode.host = "0.0.0.0"
+    assert loader_mod._get_host("127.0.0.1") == "127.0.0.1"
+    assert any("ignoring non-loopback host '0.0.0.0'" in m for m in _msgs), _msgs
+    _FakeNetnode.host = "::1"
+    assert loader_mod._get_host("127.0.0.1") == "::1"
+    os.environ["IDA_MCP_HOST"] = "0.0.0.0"
+    assert loader_mod._get_host("127.0.0.1") == "0.0.0.0"
+finally:
+    loader_mod.ida_netnode, ida_kernwin.msg = _saved_nn, _saved_msg
+    os.environ.pop("IDA_MCP_HOST", None)
+    if _saved_env is not None:
+        os.environ["IDA_MCP_HOST"] = _saved_env
+print("IDB host restricted to loopback OK")
+
+
 print("ALL PLUGIN TESTS PASSED")

@@ -113,15 +113,42 @@ def _set_port(port: int) -> None:
         pass
 
 
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def _is_loopback(host: str) -> bool:
+    return host.strip().lower() in _LOOPBACK_HOSTS
+
+
 def _get_host(default: str) -> str:
-    """Read the persisted server host from the IDB. Defaults to ``default``."""
+    """Resolve the bind host. Defaults to ``default``.
+
+    ``IDA_MCP_HOST`` (operator environment) wins and may be any address. The
+    IDB-persisted value is honored only when it is loopback: an IDB can come
+    from a third party, and a ``0.0.0.0`` stored in it would otherwise expose
+    the token-less read-only surface to the network on autostart.
+    """
+    env_host = os.getenv("IDA_MCP_HOST", "").strip()
+    if env_host:
+        return env_host
     if ida_netnode is None:
         return default
     try:
         val = ida_netnode.netnode(NETNODE_CONFIG).supstr(_SUP_HOST)
     except Exception:
         return default
-    return val if val else default
+    if not val:
+        return default
+    if not _is_loopback(val):
+        try:
+            ida_kernwin.msg(
+                f"[ida-mcp] WARNING: ignoring non-loopback host {val!r} stored in "
+                f"the IDB; binding {default}. Set IDA_MCP_HOST to bind elsewhere.\n"
+            )
+        except Exception:
+            pass
+        return default
+    return val
 
 
 def _set_host(host: str) -> None:
@@ -260,13 +287,20 @@ class IdaMcp(_PluginBase):
                 _stop_server(self.port)
             else:
                 _start_server(self.host, self.port)
-                _set_host(self.host)
+                if _is_loopback(self.host):
+                    _set_host(self.host)
                 _set_port(self.port)
                 try:
                     ida_kernwin.msg(
                         f"[ida-mcp] listening on http://{self.host}:{self.port}/mcp"
                         f" (append ?unsafe=true for write tools)\n"
                     )
+                    if not _is_loopback(self.host):
+                        ida_kernwin.msg(
+                            f"[ida-mcp] WARNING: bound to non-loopback {self.host}; "
+                            f"read-only tools are reachable from the network "
+                            f"without a token\n"
+                        )
                 except Exception:
                     pass
         except Exception as e:

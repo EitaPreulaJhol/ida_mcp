@@ -14,7 +14,6 @@ basic_blocks
 breaks_flow
 callgraph
 decompile_function
-delete_comment
 demangle_name
 disasm
 entity_query
@@ -152,7 +151,6 @@ get_xrefs
 get_xrefs_from
 get_xrefs_to
 idb_meta
-idb_save
 imports_query
 infer_types
 int_convert

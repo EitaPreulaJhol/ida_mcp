@@ -92,7 +92,7 @@ class JsonRpcRegistry:
 
     def dispatch(self, request: dict | str | bytes | bytearray) -> JsonRpcResponse | None:
         try:
-            if not isinstance(request, dict):
+            if isinstance(request, (str, bytes, bytearray)):
                 request = json.loads(request)
             if not isinstance(request, dict):
                 return self._error(None, -32600, "Invalid request: must be a JSON object")

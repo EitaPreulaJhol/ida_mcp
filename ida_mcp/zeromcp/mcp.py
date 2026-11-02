@@ -5,7 +5,6 @@ MCP Streamable HTTP transport (POST /mcp, GET /mcp SSE, DELETE /mcp) plus the
 legacy SSE transport (GET /sse, POST /sse?session=) on top of
 ThreadingHTTPServer, so no external ASGI/uvicorn dependency is required.
 """
-import gzip
 import inspect
 import json
 import logging
@@ -302,6 +301,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         """Read the POST body honoring limits, chunked framing and encoding."""
         if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
             raw = self._read_chunked()
+            if raw is None:
+                self._safe_send_error(400, "Malformed chunked body")
+                return None
         else:
             try:
                 content_length = int(self.headers.get("Content-Length", 0))
@@ -322,15 +324,18 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             return None
         return self._decompress_body(raw)
 
-    def _read_chunked(self) -> bytes:
+    def _read_chunked(self) -> bytes | None:
+        """Read a chunked body; returns None on malformed framing."""
         body = b""
         limit = self.mcp_server.post_body_limit
         while True:
-            try:
-                line = self.rfile.readline().split(b";")[0].strip()
-                chunk_size = int(line, 16)
-            except ValueError:
-                break
+            line = self.rfile.readline(1024).split(b";")[0].strip()
+            # Strict hex only: int(x, 16) also accepts "-1" / "+f" / "0x1f" /
+            # "1_0", and a negative size would turn into rfile.read(-1)
+            # (read-until-EOF), bypassing post_body_limit entirely.
+            if not line or line.strip(b"0123456789abcdefABCDEF"):
+                return None
+            chunk_size = int(line, 16)
             if chunk_size == 0:
                 while self.rfile.readline().strip():
                     pass  # consume trailers
@@ -345,18 +350,26 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         encoding = self.headers.get("Content-Encoding", "").lower().strip()
         if not encoding:
             return data
+        # Bound the *decompressed* size too: post_body_limit is checked on the
+        # compressed bytes, and a ~1 MiB gzip bomb inflates to 1 GiB.
+        limit = self.mcp_server.post_body_limit
         try:
             if encoding in ("gzip", "x-gzip"):
-                return gzip.decompress(data)
-            if encoding == "deflate":
+                out = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(data, limit + 1)
+            elif encoding == "deflate":
                 try:
-                    return zlib.decompress(data)
+                    out = zlib.decompressobj(zlib.MAX_WBITS).decompress(data, limit + 1)
                 except zlib.error:
-                    return zlib.decompress(data, -15)
+                    out = zlib.decompressobj(-zlib.MAX_WBITS).decompress(data, limit + 1)
+            else:
+                return data
         except Exception:
             self._safe_send_error(400, "Bad Content-Encoding")
             return None
-        return data
+        if len(out) > limit:
+            self._safe_send_error(413, f"Payload Too Large: exceeds {limit} bytes")
+            return None
+        return out
 
     def do_POST(self):
         if not self._check_api_request():
@@ -386,7 +399,8 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         response = self.mcp_server.registry.dispatch(request)
 
         # Session management: create a session id on initialize.
-        if request.get("method") == "initialize":
+        # (A batch array is answered by dispatch() as invalid-request.)
+        if isinstance(request, dict) and request.get("method") == "initialize":
             sid = str(uuid.uuid4())
             self.mcp_server.register_http_session(sid)
             mcp_session_id = sid

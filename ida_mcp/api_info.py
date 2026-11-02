@@ -19,7 +19,7 @@ import idaapi
 import idc
 import idautils
 
-from .rpc import tool
+from .rpc import tool, unsafe
 from .sync import idasync
 from .compat import get_entry_qty, get_entry_ordinal, get_entry, get_entry_name
 
@@ -265,8 +265,11 @@ def get_version_info() -> str:
 
 @tool
 @idasync
+@unsafe
 def idb_save(path: str = "") -> str:
     """Save the active IDB to disk, optionally to a new path.
+
+    **Unsafe** — requires ``?unsafe=true`` (writes to disk at ``path``).
 
     In GUI mode uses IDA's native in-place save (equivalent to Ctrl+W) and
     never packs/kills the live working files; for an explicit different

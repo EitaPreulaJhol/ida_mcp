@@ -27,6 +27,7 @@ from .rpc import tool
 from .sync import idasync
 from .api_analysis import parse_addr
 from .api_functions import _collect_frame_vars
+from .regex_guard import compile_client_regex
 
 
 _MAX_ENTITY_STRINGS = 50000
@@ -140,7 +141,7 @@ def _match_glob(value: str, pattern: str) -> bool:
         if "s" in flags_str:
             flags |= re.DOTALL
         try:
-            return re.compile(body, flags or re.IGNORECASE).search(value) is not None
+            return compile_client_regex(body, flags or re.IGNORECASE).search(value) is not None
         except re.error:
             return False
     return fnmatch.fnmatch(value, pattern)
@@ -189,7 +190,7 @@ def func_query(filter_pattern: str = "", name_regex: str = "",
         rows = [r for r in rows if fnmatch.fnmatch(r["name"], filter_pattern)]
     if name_regex:
         try:
-            rx = re.compile(name_regex)
+            rx = compile_client_regex(name_regex)
             rows = [r for r in rows if rx.search(r["name"])]
         except re.error as e:
             return json.dumps({"error": f"Invalid name_regex: {e}"})
@@ -244,7 +245,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
         rows = [r for r in rows if _match_glob(str(r.get(primary, "")), filter)]
     if regex:
         try:
-            rx = re.compile(regex)
+            rx = compile_client_regex(regex)
             rows = [r for r in rows if rx.search(str(r.get(primary, "")))]
         except re.error as e:
             return json.dumps({"kind": kind, "error": f"Invalid regex: {e}"})

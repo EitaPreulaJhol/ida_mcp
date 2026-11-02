@@ -37,6 +37,8 @@ By default the server is **read-only**. Mutating tools (renames, comments, type 
 
 **Auth token for the unsafe surface.** Because `?unsafe=true` exposes script execution and patching (effectively local RCE), the unsafe and debugger tools additionally require a secret token - loopback binding and the DNS-rebinding/Origin guards do not stop another local process or user. On startup the server prints a random token to the IDA output window; clients pass it as the `X-IDA-MCP-Token` header or `?token=<token>`. Read-only tools need no token. Set `IDA_MCP_TOKEN` to pin a stable token for a fixed client config, or `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user workstation. The token is never written to the discovery file.
 
+**Bind address.** The server binds `127.0.0.1`. A host persisted in the IDB is honored only when it is loopback (an IDB may come from someone else, and a stored `0.0.0.0` would expose the token-less read-only tools to the network); a non-loopback value is ignored with a warning. To bind elsewhere, set `IDA_MCP_HOST` in IDA's environment. Client regexes (`find_regex`, `func_query`, `entity_query`, `/re/` filters) reject nested quantifiers such as `(a+)+`, which backtrack exponentially on the IDA main thread where the tool timeout cannot interrupt them; use a possessive `++` or atomic `(?>...)` group instead.
+
 ## Tool surface
 The plugin exposes 243 tools across 22 modules:
 
@@ -192,6 +194,7 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 | `ida_mcp/sync.py` | `@idasync` main-thread bridge |
 | `ida_mcp/profiles.py` + `profiles/` | Lazy-loading tool allowlists (`triage`, `readonly`) |
 | `ida_mcp/compat.py` | IDA 8.3 to 9.x API shims |
+| `ida_mcp/regex_guard.py` | Rejects ReDoS-prone client regexes before compiling |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |
 | `ida_mcp/zeromcp/` | Vendored stdlib MCP transport |
 | `skills/ida/`, `skills/ida-scripting/` | Generic agent skills (Claude Code/Cursor/Copilot): `/ida` orchestrator (connect -> triage -> escalate) + IDAPython scripting |
@@ -204,7 +207,7 @@ This repo includes a ready-to-use skill and extension for the [Pi Agent](https:/
 
 | Path | What it provides |
 |------|------------------|
-| `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (188) -> full (224) -> unsafe (+writes) -> dbg (+19 debugger tools)` only as needed |
+| `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (186) -> full (186, unfiltered) -> unsafe (224) -> dbg (243)` only as needed |
 | `.pi/skills/ida-scripting/` | IDAPython scripting skill with the full API reference |
 | `.pi/extensions/ida-mcp.ts` | Extension bridge: proxies the plugin's Streamable-HTTP server (`http://127.0.0.1:13337/mcp`) into pi tools with lazy loading, `/ida [status\|triage\|readonly\|full\|unsafe\|dbg\|tools]` command, `ida_profile` / `ida_status` management tools, and a live `IDA:online/offline` footer indicator (polling + session-event refresh) |
 
