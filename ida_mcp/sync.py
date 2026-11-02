@@ -49,6 +49,45 @@ class CancelledError(RequestCancelledError):
     """Raised when a request is cancelled via notifications/cancelled."""
 
 
+class ToolInterrupt(BaseException):
+    """Timeout/cancel injected into a running tool body.
+
+    Deliberately a ``BaseException``: agent-written scripts routinely wrap
+    work in ``try/except Exception``. An ``Exception``-derived timeout raised
+    from the profile hook would be swallowed once -- and CPython *removes* a
+    profile hook that raises, so the script would then run unbounded with the
+    IDA UI frozen. Converted to ``IDASyncError`` / ``CancelledError`` at the
+    sync boundary (see :func:`sync_wrapper`), so callers never see it.
+    """
+
+    def __init__(self, reason: str = "timeout",
+                 message: str = "Tool hard-interrupted after exceeding its time limit"):
+        super().__init__(message)
+        self.reason = reason
+        self.message = message
+
+    def to_error(self) -> Exception:
+        if self.reason == "cancel":
+            return CancelledError(self.message)
+        return IDASyncError(self.message)
+
+
+# After the native set_cancelled() fires, tools get this long to format a
+# partial result before the profile hook raises.
+_NATIVE_CANCEL_GRACE_SEC = 5.0
+# How often the profile hook polls ida_kernwin.user_cancelled() while a tool
+# runs. In the GUI that repaints the wait box and makes its Cancel button
+# work even for scripts that never poll it themselves. IDA_MCP_UI_PUMP=0
+# disables it.
+_UI_PUMP_INTERVAL_SEC = 0.3
+# Hard-interrupt watchdog (script tools only): extra time after the soft
+# timeout (or after a cancel request) before an async ToolInterrupt is
+# injected into the main thread, the retry period, and the max attempts.
+_HARD_INTERRUPT_EXTRA_SEC = 5.0
+_HARD_INTERRUPT_RETRY_SEC = 2.0
+_HARD_INTERRUPT_MAX_ATTEMPTS = 10
+
+
 def _get_tool_timeout_seconds() -> float:
     value = os.getenv(_TOOL_TIMEOUT_ENV, "").strip()
     if value == "":
@@ -252,6 +291,153 @@ def update_wait_box(text: str) -> None:
         pass
 
 
+def _ui_pump():
+    """Return ``ida_kernwin.user_cancelled`` when UI pumping is enabled.
+
+    None when headless, when the API is missing, or when disabled with
+    ``IDA_MCP_UI_PUMP=0``.
+    """
+    if os.getenv("IDA_MCP_UI_PUMP", "").strip().lower() in ("0", "false", "no", "off"):
+        return None
+    fn = getattr(ida_kernwin, "user_cancelled", None)
+    if not callable(fn):
+        return None
+    try:
+        is_idaq = getattr(ida_kernwin, "is_idaq", None)
+        if callable(is_idaq) and not is_idaq():
+            return None
+    except Exception:
+        return None
+    return fn
+
+
+def _guarded_body(ff, hard=None):
+    """Sentinel frame: the watchdog only injects while THIS frame is live.
+
+    The main thread cannot leave it normally without ``disarm()``, which takes
+    the watchdog lock -- so a check-then-inject in the watchdog can never land
+    after the tool returned, even if the GIL switches between the two.
+    """
+    if hard is None:
+        return ff()
+    hard.frame = sys._getframe()
+    try:
+        return ff()
+    finally:
+        hard.disarm()
+
+
+def _load_set_async_exc():
+    if os.getenv("IDA_MCP_NO_HARD_INTERRUPT", "").strip().lower() in ("1", "true", "yes"):
+        return None
+    try:
+        import ctypes
+        return (ctypes.pythonapi.PyThreadState_SetAsyncExc, ctypes.c_ulong,
+                ctypes.py_object(ToolInterrupt))
+    except Exception:  # non-CPython / ctypes unavailable
+        return None
+
+
+class _HardInterruptWatchdog:
+    """Last-resort stop for runaway scripts (execute_script / py_eval / ...).
+
+    The soft timeout lives in a profile hook, which (a) CPython removes after
+    its first raise -- so a bare ``except:`` in a script defeats it -- and
+    (b) never fires inside a call-free loop (``while True: n += 1``). Either
+    way the IDA main thread, and with it the whole UI and the MCP server,
+    stays blocked indefinitely.
+
+    This watchdog runs on its own thread. Once the soft timeout (plus grace)
+    or a cancel request is overdue, it injects ``ToolInterrupt`` into the main
+    thread with ``PyThreadState_SetAsyncExc``, retrying a bounded number of
+    times. It injects only while :func:`_guarded_body` is on the main
+    thread's stack -- checked and injected under the GIL, so it can never
+    fire into unrelated IDA/plugin code after the tool returned. A pending
+    exception is delivered at the next bytecode boundary, i.e. right after a
+    long SDK call returns (C code itself cannot be interrupted). Disable with
+    ``IDA_MCP_NO_HARD_INTERRUPT=1``.
+    """
+
+    def __init__(self, deadline, cancel_event):
+        self._tid = threading.get_ident()  # called on the IDA main thread
+        self._deadline = deadline
+        self._cancel_event = cancel_event
+        self._done = threading.Event()
+        self._lock = threading.Lock()
+        self._api = _load_set_async_exc()
+        self._ctid = self._api[1](self._tid) if self._api else None
+        self.frame = None  # set by _guarded_body; identity-checked
+
+    def start(self) -> None:
+        if self._api is None or (self._deadline is None and self._cancel_event is None):
+            return
+        t = threading.Thread(target=self._run, name="ida-mcp-hard-interrupt",
+                             daemon=True)
+        t.start()
+
+    def _main_in_tool(self) -> bool:
+        target = self.frame
+        if target is None:
+            return False
+        frame = sys._current_frames().get(self._tid)
+        while frame is not None:
+            if frame is target:
+                return True
+            frame = frame.f_back
+        return False
+
+    def _due_at(self, cancel_seen):
+        due = None
+        if self._deadline is not None:
+            due = self._deadline + _NATIVE_CANCEL_GRACE_SEC + _HARD_INTERRUPT_EXTRA_SEC
+        if cancel_seen is not None:
+            c = cancel_seen + _HARD_INTERRUPT_EXTRA_SEC
+            due = c if due is None else min(due, c)
+        return due
+
+    def _run(self) -> None:
+        cancel_seen = None
+        attempts = 0
+        next_try = None
+        while not self._done.wait(0.25):
+            now = time.monotonic()
+            ev = self._cancel_event
+            if cancel_seen is None and ev is not None and ev.is_set():
+                cancel_seen = now
+            due = self._due_at(cancel_seen)
+            if due is None or now < due:
+                continue
+            if next_try is not None and now < next_try:
+                continue
+            with self._lock:
+                if self._done.is_set() or not self._main_in_tool():
+                    return
+                self._api[0](self._ctid, self._api[2])
+            attempts += 1
+            logger.warning("[MCP] tool still running past its limit; hard "
+                           "interrupt injected (attempt %d/%d)",
+                           attempts, _HARD_INTERRUPT_MAX_ATTEMPTS)
+            if attempts >= _HARD_INTERRUPT_MAX_ATTEMPTS:
+                return
+            next_try = now + _HARD_INTERRUPT_RETRY_SEC
+
+    def disarm(self) -> None:
+        """Stop the watchdog (no further injections after this returns).
+
+        Deliberately does NOT call ``PyThreadState_SetAsyncExc(tid, NULL)`` to
+        "clear" a pending interrupt: on CPython 3.11 doing so when nothing is
+        pending leaves the eval-breaker async flag stuck, and the next call
+        made under a profile hook spins forever (would hang IDA). Clearing is
+        unnecessary anyway: injection only happens while ``_guarded_body`` is
+        on the stack (checked under the GIL), and a pending async exception is
+        delivered at the latest when that call returns into ``timed_ff``'s
+        ``try`` (CPython checks the eval breaker after every CALL), where it
+        is caught and converted.
+        """
+        with self._lock:
+            self._done.set()
+
+
 def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
     """Run ``ff`` on the IDA main thread (default write mode).
 
@@ -283,7 +469,11 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
         try:
             res_container.put(ff())
             completed = True
-        except Exception as x:  # noqa: BLE001 - capture, never re-raise here
+        except BaseException as x:  # noqa: BLE001 - capture, never re-raise here
+            # BaseException too: a script calling exit() raises SystemExit,
+            # which would otherwise escape execute_sync with the container
+            # still empty -- the HTTP thread then blocks forever on get()
+            # while holding the tool gate ("Server busy" until IDA restarts).
             res_container.put(x)
         finally:
             # Telemetry for two-phase targeting: how long each tool held
@@ -313,12 +503,19 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
 
     idaapi.execute_sync(runned, _resolve_sync_mode(mode))
     res = res_container.get()
+    if isinstance(res, ToolInterrupt):
+        raise res.to_error()
     if isinstance(res, Exception):
         raise res
+    if isinstance(res, BaseException):
+        # SystemExit / KeyboardInterrupt from a tool body: never let them
+        # unwind the HTTP worker thread (no reply would ever be sent).
+        raise IDAError(f"Tool aborted by {type(res).__name__}: {res}")
     return res
 
 
-def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None):
+def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
+                 hard_interrupt=False):
     """Wrapper to enable timeout and cancellation during IDA synchronization."""
     from .zeromcp.jsonrpc import get_current_cancel_event
 
@@ -349,19 +546,43 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None):
                 native_timer.daemon = True
                 native_timer.start()
 
+            pump = _ui_pump()
+            next_pump = [time.monotonic() + _UI_PUMP_INTERVAL_SEC]
+
             def profilefunc(frame, event, arg):
+                # NOTE: CPython unsets the profile hook as soon as it raises,
+                # so each raise below is a one-shot. ToolInterrupt is a
+                # BaseException so `except Exception` in the tool body cannot
+                # swallow it; the hard-interrupt watchdog covers the rest.
                 # Check request-level cancellation first (higher priority).
                 if cancel_event is not None and cancel_event.is_set():
-                    raise CancelledError("Request was cancelled")
+                    raise ToolInterrupt("cancel", "Request was cancelled")
+                now = time.monotonic()
                 # If native cancel just fired, give the tool a short grace
                 # period to format a partial response rather than racing the
-                # IDASyncError. Beyond that we still raise to bound the
-                # response time.
+                # timeout. Beyond that we still raise to bound the response
+                # time.
                 fired_at = cancel_fired_at[0]
-                if fired_at is not None and time.monotonic() < fired_at + 5.0:
+                if fired_at is not None and now < fired_at + _NATIVE_CANCEL_GRACE_SEC:
                     return
-                if deadline is not None and time.monotonic() >= deadline:
-                    raise IDASyncError(f"Tool timed out after {timeout:.2f}s")
+                if deadline is not None and now >= deadline:
+                    raise ToolInterrupt("timeout", f"Tool timed out after {timeout:.2f}s")
+                # Keep the wait box alive: polling user_cancelled() lets IDA
+                # repaint it and honours its Cancel button even for scripts
+                # that never poll it themselves.
+                if pump is not None and now >= next_pump[0]:
+                    next_pump[0] = now + _UI_PUMP_INTERVAL_SEC
+                    try:
+                        user_hit_cancel = bool(pump()) and cancel_fired_at[0] is None
+                    except Exception:
+                        user_hit_cancel = False
+                    if user_hit_cancel:
+                        raise ToolInterrupt("cancel", "Cancelled by user (IDA wait box)")
+
+            hard = None
+            if hard_interrupt:
+                hard = _HardInterruptWatchdog(deadline, cancel_event)
+                hard.start()
 
             old_profile = sys.getprofile()
             sys.setprofile(profilefunc)
@@ -369,8 +590,16 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None):
             # return partial results gracefully (independent of the Timer).
             _deadline_state.deadline = deadline
             try:
-                return ff()
+                return _guarded_body(ff, hard)
+            except ToolInterrupt as e:
+                raise e.to_error() from None
             finally:
+                if hard is not None:
+                    # Backup for an interrupt delivered inside the sentinel's
+                    # own finally (before disarm ran). The sentinel frame is
+                    # gone now, so the watchdog can no longer inject anyway.
+                    hard._done.set()
+                    hard.frame = None
                 sys.setprofile(old_profile)
                 _deadline_state.deadline = None
                 if native_timer is not None:
@@ -393,8 +622,9 @@ def _idasync_with_mode(f, mode):
         ff.__name__ = f.__name__
         timeout_override = _normalize_timeout(getattr(f, "__ida_mcp_timeout_sec__", None))
         keep_batch = bool(getattr(f, "__ida_mcp_keep_batch__", False))
+        hard = bool(getattr(f, "__ida_mcp_hard_interrupt__", False))
         return sync_wrapper(ff, timeout_override, keep_batch=keep_batch,
-                            mode=mode)
+                            mode=mode, hard_interrupt=hard)
 
     return wrapper
 
@@ -448,4 +678,17 @@ def keep_batch(func):
     """
 
     setattr(func, "__ida_mcp_keep_batch__", True)
+    return func
+
+
+def hard_interrupt(func):
+    """Decorator: arm the hard-interrupt watchdog for this tool.
+
+    For tools that run arbitrary user/agent code (``execute_script``,
+    ``py_eval``, ``py_exec_file``) where the profile-hook timeout can be
+    swallowed or never reached. Apply like :func:`keep_batch` (innermost,
+    after ``@idasync``).
+    """
+
+    setattr(func, "__ida_mcp_hard_interrupt__", True)
     return func

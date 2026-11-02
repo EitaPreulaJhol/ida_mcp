@@ -184,3 +184,14 @@ request step 4–5 "just in case" — justify each escalation in one sentence.
 - **Do not brute-force.** Static analysis + `execute_script` only.
 - **Respect the ladder.** A step-4/5 tool failing means the endpoint lacks
   the flag — explain and ask, don't work around it.
+- **Pace IDA calls — IDA has ONE main thread.** Every tool (and every
+  `execute_script`) runs on it; while a call runs the IDA UI is frozen and
+  the server refuses other calls with `Server busy`. One IDA call at a time,
+  never parallel fan-out. Keep each call short (well under the 60s tool
+  timeout): prefer paginated tools (`limit`/`offset`, filters) over one giant
+  call, and split scripts into batches.
+- **Timeout / `Server busy` / no answer ≠ offline.** It means the previous
+  call is still holding the main thread. Do NOT re-run the same call and do
+  NOT conclude IDA is down: wait 15–30s, check `server_health` (or
+  `ida_status` in pi), then continue with a SMALLER call. Only report IDA as
+  offline on connection refused after it has been idle.

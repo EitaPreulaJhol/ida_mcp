@@ -28,7 +28,7 @@ import ida_xref
 import idautils
 
 from .rpc import tool, unsafe
-from .sync import idasync
+from .sync import idasync, hard_interrupt, ToolInterrupt
 
 
 def _make_exec_globals() -> dict:
@@ -39,7 +39,7 @@ def _make_exec_globals() -> dict:
         except Exception:
             return None
 
-    return {
+    g = {
         "__builtins__": __builtins__,
         "idaapi": idaapi,
         "idc": idc,
@@ -59,6 +59,13 @@ def _make_exec_globals() -> dict:
         "ida_typeinf": ida_typeinf,
         "ida_xref": ida_xref,
     }
+    # Modules the ida-scripting skill documents as pre-loaded; imported
+    # lazily so a module missing on this IDA version is simply absent.
+    for name in ("ida_auto", "ida_ua", "ida_gdl", "ida_netnode", "ida_search"):
+        mod = lazy_import(name)
+        if mod is not None:
+            g[name] = mod
+    return g
 
 
 def _pick_result(exec_locals: dict, exec_globals: dict):
@@ -152,6 +159,27 @@ def _run_code(code: str) -> dict:
             "stdout": stdout_capture.getvalue(),
             "stderr": stderr_text,
         }
+    except ToolInterrupt as e:
+        # Timeout / cancel reached the script body. Return what it printed so
+        # far (often most of the work) instead of discarding it.
+        stderr_text = stderr_capture.getvalue()
+        hint = (f"{e.message}. The script was interrupted on the IDA main thread; "
+                f"output above is partial. Split the work into smaller batches "
+                f"(e.g. process N functions per call, resume from the last printed "
+                f"address) instead of re-running the same script.")
+        return {
+            "result": "",
+            "stdout": stdout_capture.getvalue(),
+            "stderr": (stderr_text + "\n" + hint).strip(),
+            "error": e.message,
+        }
+    except SystemExit as e:
+        return {
+            "result": "",
+            "stdout": stdout_capture.getvalue(),
+            "stderr": (stderr_capture.getvalue() + f"\nScript called exit({e.code!r}); "
+                       f"execution stopped there (IDA itself keeps running).").strip(),
+        }
     except Exception:
         return {
             "result": "",
@@ -166,6 +194,7 @@ def _run_code(code: str) -> dict:
 @tool
 @idasync
 @unsafe
+@hard_interrupt
 def py_eval(code: str) -> dict:
     """Execute Python in IDA context and return result/stdout/stderr.
 
@@ -178,6 +207,7 @@ def py_eval(code: str) -> dict:
 @tool
 @idasync
 @unsafe
+@hard_interrupt
 def py_exec_file(file_path: str) -> dict:
     """Execute a Python script file in IDA context and return stdout/stderr."""
     if not os.path.isfile(file_path):

@@ -165,4 +165,108 @@ mod.ensure_analysis()
 assert calls == [True], "must fall back to a plain auto_wait"
 print("ensure_analysis OK")
 
+# Test 8: runaway-script protection. Shrink the timing knobs so this runs fast.
+import time as _time
+mod._NATIVE_CANCEL_GRACE_SEC = 0.2
+mod._HARD_INTERRUPT_EXTRA_SEC = 0.3
+mod._HARD_INTERRUPT_RETRY_SEC = 0.3
+
+
+def _helper():
+    return 1
+
+
+# 8a) `except Exception` in the tool body cannot swallow the soft timeout.
+#     (Before: IDASyncError was swallowed once, CPython then removed the
+#     profile hook, and the loop ran unbounded.)
+@mod.idasync
+@mod.tool_timeout(0.3)
+def swallow_exception():
+    end = _time.monotonic() + 10
+    while _time.monotonic() < end:
+        try:
+            _helper()
+        except Exception:
+            pass
+    return "ran to completion"
+
+
+t0 = _time.monotonic()
+try:
+    swallow_exception()
+    raise AssertionError("timeout was swallowed by `except Exception`")
+except mod.IDASyncError as e:
+    assert "timed out" in str(e), e
+assert _time.monotonic() - t0 < 3, _time.monotonic() - t0
+print("soft timeout survives `except Exception` OK")
+
+
+# 8b) bare `except:` swallows the one-shot profile interrupt; the hard
+#     watchdog (script tools only) must still stop it.
+@mod.idasync
+@mod.tool_timeout(0.3)
+@mod.hard_interrupt
+def swallow_everything():
+    end = _time.monotonic() + 10
+    while _time.monotonic() < end:
+        try:
+            _helper()
+        except:  # noqa: E722 - this is the scenario under test
+            pass
+    return "ran to completion"
+
+
+t0 = _time.monotonic()
+try:
+    swallow_everything()
+    raise AssertionError("bare except defeated the hard interrupt")
+except mod.IDASyncError as e:
+    pass
+assert _time.monotonic() - t0 < 5, _time.monotonic() - t0
+print("hard interrupt beats bare `except:` OK")
+
+
+# 8c) call-free tight loop: the profile hook never fires at all.
+@mod.idasync
+@mod.tool_timeout(0.3)
+@mod.hard_interrupt
+def tight_loop():
+    n = 0
+    end = _time.monotonic() + 10
+    while True:
+        n += 1
+        if n % 10_000_000 == 0 and _time.monotonic() > end:
+            return "ran to completion"
+
+
+t0 = _time.monotonic()
+try:
+    tight_loop()
+    raise AssertionError("tight loop was not interrupted")
+except mod.IDASyncError:
+    pass
+assert _time.monotonic() - t0 < 5, _time.monotonic() - t0
+print("hard interrupt stops call-free loop OK")
+
+# 8d) after an interrupted tool, nothing stray is left pending and the next
+#     tool runs normally (watchdog disarmed, call stack clean).
+_time.sleep(1.0)
+assert ok(5) == 10
+print("clean state after hard interrupt OK")
+
+
+# 8e) exit()/SystemExit from a tool body must not escape execute_sync
+#     (in IDA that left the result container empty -> server busy forever).
+@mod.idasync
+def calls_exit():
+    raise SystemExit(2)
+
+
+try:
+    calls_exit()
+    raise AssertionError("SystemExit should map to IDAError")
+except mod.IDAError as e:
+    assert "SystemExit" in str(e), e
+print("SystemExit contained OK")
+
 print("ALL SYNC RESULT-CONTAINER TESTS PASSED")

@@ -32,7 +32,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.join(HERE, "..", "ida_mcp")
 src = open(os.path.join(PKG, "api_python.py")).read()
 src = src.replace("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
+src = src.replace(
+    "from .sync import idasync, hard_interrupt, ToolInterrupt",
+    "idasync = lambda f: f\nhard_interrupt = lambda f: f\n"
+    "class ToolInterrupt(BaseException):\n"
+    "    def __init__(self, reason='timeout', message='t'):\n"
+    "        super().__init__(message); self.reason = reason; self.message = message",
+)
 mod = types.ModuleType("api_test")
 exec(compile(src, "api_test", "exec"), mod.__dict__)
 sys.modules["api_test"] = mod
@@ -67,5 +73,31 @@ r = mod._run_code("raise ValueError('boom')")
 assert "boom" in r["stderr"], r
 assert r["result"] == "", r
 print("exception captured OK")
+
+# 7) timeout/cancel inside the script: partial stdout kept, error flagged,
+#    and `except Exception` in the script cannot swallow it.
+def _fire_interrupt():
+    raise mod.ToolInterrupt("timeout", "Tool timed out after 1.00s")
+
+
+sys.modules["idc"].slow_sdk_call = _fire_interrupt
+r = mod._run_code(
+    "print('done 1')\n"
+    "try:\n"
+    "    idc.slow_sdk_call()\n"
+    "except Exception:\n"
+    "    print('swallowed!')\n"
+)
+assert "done 1" in r["stdout"], r
+assert "swallowed!" not in r["stdout"], r
+assert r["error"] == "Tool timed out after 1.00s", r
+assert "smaller batches" in r["stderr"], r
+print("ToolInterrupt -> partial output + error OK")
+
+# 8) exit() in a script must not escape (would wedge the server).
+r = mod._run_code("print('before')\nimport sys\nsys.exit(3)")
+assert "before" in r["stdout"] and "exit(3)" in r["stderr"], r
+assert not r.get("error"), r
+print("SystemExit contained OK")
 
 print("ALL API_PYTHON _run_code TESTS PASSED")

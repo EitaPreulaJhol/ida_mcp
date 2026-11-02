@@ -21,7 +21,7 @@ import idc
 import idautils
 
 from .rpc import tool, unsafe, MCP_SERVER
-from .sync import idasync, IDAError
+from .sync import idasync, IDAError, hard_interrupt
 from .api_python import _run_code
 from .api_analysis import parse_addr, _cap_lines
 from .discovery import (discover_instances, register_instance,
@@ -88,13 +88,23 @@ def _format_result(res: dict) -> str:
 @tool
 @idasync
 @unsafe
+@hard_interrupt
 def execute_script(code: str) -> str:
     """Execute arbitrary IDA Python code on the main thread.
 
     Assign to ``result`` (or ``__result__``) to return a value; stdout/stderr
     and IDA message-window output are captured and returned.
+
+    Runs on the IDA main thread: the IDA UI is frozen and every other tool
+    call is refused ("Server busy") until it returns. It is interrupted at the
+    tool timeout (default 60s, IDA_MCP_TOOL_TIMEOUT_SEC) with partial output.
+    Keep each call short: batch large loops (N items per call, resume from
+    the last printed address) and print progress.
     """
-    return _format_result(_run_code(code))
+    res = _run_code(code)
+    if res.get("error"):
+        raise IDAError(_format_result(res))
+    return _format_result(res)
 
 
 @tool

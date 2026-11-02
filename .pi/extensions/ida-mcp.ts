@@ -14,7 +14,19 @@
  *   unsafe   ?unsafe=true              + renames/comments/types/patches/scripts
  *   dbg      ?unsafe=true&ext=dbg      + 19 debugger tools
  *
- * Env override: IDA_MCP_URL (default http://127.0.0.1:13337/mcp)
+ * Env overrides:
+ *   IDA_MCP_URL                (default http://127.0.0.1:13337/mcp)
+ *   IDA_MCP_CLIENT_TIMEOUT_MS  per tool call (default 90000). Keep it ABOVE the
+ *                              server's IDA_MCP_TOOL_TIMEOUT_SEC (default 60s) +
+ *                              ~15s interrupt grace, so the server's own
+ *                              "timed out, partial output" reply wins the race.
+ *
+ * Busy vs offline: every IDA tool runs on IDA's main thread. While one runs
+ * (e.g. a long execute_script) the IDA UI is frozen and the server may not
+ * answer at all -- that is "busy", not "offline". The footer shows IDA:busy
+ * and the agent gets an explicit "still running, do not retry" message. On a
+ * client-side timeout/abort a notifications/cancelled is sent so the server
+ * interrupts the tool instead of letting it run on.
  *
  * Dynamic indicator: the footer status (IDA:online/offline) is updated
  * via polling + refresh on session events, so opening IDA *after*
@@ -54,6 +66,34 @@ const POLL_INTERVAL_MS = 10_000;
 const PING_TIMEOUT_MS = 5_000;
 const MIN_EVENT_INTERVAL_MS = 8_000;
 
+function envInt(name: string, fallback: number): number {
+	const v = Number.parseInt(process.env[name] ?? "", 10);
+	return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
+/** Per tool-call timeout. Must exceed the server tool timeout (60s) + interrupt grace. */
+const CALL_TIMEOUT_MS = envInt("IDA_MCP_CLIENT_TIMEOUT_MS", 90_000);
+/** After a call timed out client-side, the server may keep IDA busy for a while longer. */
+const BUSY_HOLD_MS = 120_000;
+
+// --- busy tracking: a frozen main thread is "busy", not "offline" ---
+let inFlight = 0;
+let lastCallTimeoutAt = 0;
+let nextRpcId = 1;
+
+function idaLikelyBusy(): boolean {
+	return inFlight > 0 || Date.now() - lastCallTimeoutAt < BUSY_HOLD_MS;
+}
+
+class IdaTimeoutError extends Error {
+	readonly requestId: number;
+	constructor(message: string, requestId: number) {
+		super(message);
+		this.name = "IdaTimeoutError";
+		this.requestId = requestId;
+	}
+}
+
 function endpoint(level: Level = currentLevel): string {
 	return `${BASE_URL}${LADDER[level].suffix}`;
 }
@@ -73,8 +113,11 @@ async function rpc(
 	params: Record<string, unknown> | undefined,
 	signal: AbortSignal | undefined,
 	level: Level = currentLevel,
-	timeoutMs = 60000,
+	timeoutMs = CALL_TIMEOUT_MS,
+	onRequestId?: (id: number) => void,
 ): Promise<any> {
+	const id = nextRpcId++;
+	onRequestId?.(id);
 	const ctrl = new AbortController();
 	const timer = setTimeout(() => ctrl.abort(new Error(`IDA MCP timeout after ${timeoutMs}ms`)), timeoutMs);
 	const onAbort = () => ctrl.abort(signal?.reason);
@@ -83,7 +126,8 @@ async function rpc(
 		const res = await fetch(endpoint(level), {
 			method: "POST",
 			headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-			body: JSON.stringify({ jsonrpc: "2.0", method, params: params ?? {}, id: 1 }),
+			// Unique ids: the server keys cancellation (notifications/cancelled) by request id.
+			body: JSON.stringify({ jsonrpc: "2.0", method, params: params ?? {}, id }),
 			signal: ctrl.signal,
 		});
 		if (!res.ok) {
@@ -94,12 +138,9 @@ async function rpc(
 		if (data.error) throw new Error(`IDA MCP error: ${data.error.message ?? JSON.stringify(data.error)}`);
 		return data.result;
 	} catch (e: any) {
-		if (e?.name === "AbortError" || /aborted/i.test(String(e?.message))) {
+		if (ctrl.signal.aborted || e?.name === "AbortError") {
 			if (signal?.aborted) throw new Error("Cancelled");
-			throw new Error(
-				`IDA MCP request timed out. Is IDA Pro running with a binary open? ` +
-					`Look for "[ida-mcp] listening on http://127.0.0.1:13337/mcp" in IDA's Output window.`,
-			);
+			throw new IdaTimeoutError(`IDA MCP did not answer ${method} within ${Math.round(timeoutMs / 1000)}s`, id);
 		}
 		if (/fetch failed|ECONNREFUSED|ENOTFOUND|EHOST/i.test(String(e?.message ?? e))) {
 			throw new Error(
@@ -119,23 +160,69 @@ async function listRemoteTools(level: Level, signal?: AbortSignal): Promise<McpT
 	return (result?.tools ?? []) as McpToolDef[];
 }
 
-/** Lightweight ping: only checks whether the bridge responds (any response = online). */
+/**
+ * Lightweight ping: JSON-RPC `ping` is answered by the HTTP thread without
+ * touching IDA's main thread (unlike server_health), so a long-running tool
+ * does not make the bridge look offline.
+ */
 async function pingIda(timeoutMs = PING_TIMEOUT_MS): Promise<boolean> {
-	await rpc("tools/call", { name: "server_health", arguments: {} }, undefined, "triage", timeoutMs);
+	await rpc("ping", {}, undefined, "triage", timeoutMs);
 	return true;
 }
+
+/** Ask the server to interrupt a request we gave up on (fire-and-forget). */
+function sendCancel(requestId: number, level: Level, reason: string): void {
+	void fetch(endpoint(level), {
+		method: "POST",
+		headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+		body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId, reason } }),
+		signal: AbortSignal.timeout(3_000),
+	}).catch(() => {});
+}
+
+const BUSY_HINT =
+	"IDA is NOT offline: tools run on IDA's main thread, which is still busy (the IDA UI is frozen meanwhile). " +
+	"Do not re-run the same call. Wait ~15-30s, check with ida_status, then continue with SMALLER calls " +
+	"(batch loops: N items per execute_script, resume from the last printed address).";
 
 async function callRemoteTool(
 	name: string,
 	args: Record<string, unknown>,
 	signal: AbortSignal | undefined,
+	timeoutMs = CALL_TIMEOUT_MS,
 ): Promise<string> {
-	const result = await rpc("tools/call", { name, arguments: args ?? {} }, signal);
+	const level = currentLevel;
+	let requestId: number | undefined;
+	let result: any;
+	inFlight++;
+	refreshFooterQuietly();
+	try {
+		result = await rpc("tools/call", { name, arguments: args ?? {} }, signal, level, timeoutMs, (id) => {
+			requestId = id;
+		});
+	} catch (e: any) {
+		if (requestId !== undefined && (e instanceof IdaTimeoutError || signal?.aborted)) {
+			// The server keeps running the tool after we stop waiting; ask it to stop.
+			sendCancel(requestId, level, e instanceof IdaTimeoutError ? "client timeout" : "aborted by user");
+		}
+		if (e instanceof IdaTimeoutError) {
+			lastCallTimeoutAt = Date.now();
+			throw new Error(`${e.message} (tool '${name}'). ${BUSY_HINT} A cancel request was sent to IDA.`);
+		}
+		throw e;
+	} finally {
+		inFlight--;
+		refreshFooterQuietly();
+	}
 	if (result?.isError) {
 		const text = result?.content?.map((c: any) => c?.text ?? "").join("\n") ?? "Unknown IDA error";
 		// Routing signals (ladder escalation) are normal flow — return as text,
 		// don't throw, so the model can read the "reconnect with …" hint.
 		if (/requires unsafe|requires extension|not in profile/i.test(text)) return text;
+		if (result?.structuredContent?.busy) return `[IDA busy] ${text} ${BUSY_HINT}`;
+		if (/timed out|cancelled/i.test(text)) {
+			return `[IDA error] ${text}\n(The call was interrupted on IDA's main thread. Split the work into smaller calls; do not re-run it unchanged.)`;
+		}
 		return `[IDA error] ${text}`;
 	}
 	const content = result?.content;
@@ -221,7 +308,13 @@ function setIdaStatus(ui: ExtensionUIContext | undefined, text: string): void {
 
 function onlineStatusText(): string {
 	const n = registered.size;
-	return n > 0 ? `IDA:${currentLevel} (${n})` : `IDA:${currentLevel}`;
+	const base = n > 0 ? `IDA:${currentLevel} (${n})` : `IDA:${currentLevel}`;
+	return inFlight > 0 ? `${base} busy` : base;
+}
+
+/** Repaint the footer from local state only (no network). */
+function refreshFooterQuietly(): void {
+	if (lastOnline) setIdaStatus(currentUi, onlineStatusText());
 }
 
 /** Ensure triage tools exist when the bridge comes back (without them the status lights up but nothing works). */
@@ -265,6 +358,12 @@ async function refreshIdaStatus(
 		}
 		return true;
 	} catch {
+		if (idaLikelyBusy() && lastOnline) {
+			// No answer while a tool holds IDA's main thread (or just timed out):
+			// that is a frozen UI, not a dead server. Don't flip to offline.
+			setIdaStatus(ui ?? currentUi, `IDA:${currentLevel} busy`);
+			return true;
+		}
 		if (lastOnline !== false) setIdaStatus(ui ?? currentUi, "IDA:offline");
 		lastOnline = false;
 		return false;
@@ -345,11 +444,30 @@ export default async function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "ida_status",
 		label: "IDA status",
-		description: "Check whether the IDA Pro MCP bridge is reachable (server_health) and show the current endpoint/level.",
+		description:
+			"Check whether the IDA Pro MCP bridge is reachable and whether IDA's main thread is free (server_health), " +
+			"and show the current endpoint/level. Use it after a timeout/'busy' error before retrying.",
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, signal) {
 			try {
-				const text = await callRemoteTool("server_health", {}, signal);
+				let reachable = true;
+				try {
+					await pingIda();
+				} catch {
+					reachable = false;
+				}
+				if (!reachable && idaLikelyBusy()) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `endpoint: ${endpoint()}\nlevel: ${currentLevel}\nBUSY: IDA is not answering yet; a previous call is most likely still running on its main thread. Wait and check again; do not re-run heavy calls.`,
+							},
+						],
+						details: { level: currentLevel, endpoint: endpoint(), unreachable: false, busy: true },
+					};
+				}
+				const text = await callRemoteTool("server_health", {}, signal, 15_000);
 				lastOnline = true;
 				setIdaStatus(currentUi, onlineStatusText());
 				return {
@@ -357,6 +475,14 @@ export default async function (pi: ExtensionAPI) {
 					details: { level: currentLevel, endpoint: endpoint(), unreachable: false },
 				};
 			} catch (e: any) {
+				if (idaLikelyBusy()) {
+					// Reachable but the main thread is still occupied: busy, not offline.
+					setIdaStatus(currentUi, `IDA:${currentLevel} busy`);
+					return {
+						content: [{ type: "text", text: `endpoint: ${endpoint()}\nlevel: ${currentLevel}\nBUSY: ${e?.message ?? e}` }],
+						details: { level: currentLevel, endpoint: endpoint(), unreachable: false, busy: true },
+					};
+				}
 				lastOnline = false;
 				setIdaStatus(currentUi, "IDA:offline");
 				return {
@@ -414,7 +540,7 @@ export default async function (pi: ExtensionAPI) {
 			}
 			// status (or unknown → status)
 			try {
-				const text = await callRemoteTool("server_health", {}, undefined);
+				const text = await callRemoteTool("server_health", {}, undefined, 15_000);
 				lastOnline = true;
 				try {
 					await ensureTriageTools(pi);
@@ -424,6 +550,11 @@ export default async function (pi: ExtensionAPI) {
 				setIdaStatus(ctx.ui, onlineStatusText());
 				ctx.ui.notify(`IDA ok [${currentLevel}] ${endpoint()}\n${text.slice(0, 1500)}`, "info");
 			} catch (e: any) {
+				if (idaLikelyBusy()) {
+					setIdaStatus(ctx.ui, `IDA:${currentLevel} busy`);
+					ctx.ui.notify(`IDA busy (main thread occupied by a previous call): ${e?.message ?? e}`, "info");
+					return;
+				}
 				lastOnline = false;
 				setIdaStatus(ctx.ui, "IDA:offline");
 				ctx.ui.notify(`IDA unreachable at ${endpoint()}: ${e?.message ?? e}`, "error");

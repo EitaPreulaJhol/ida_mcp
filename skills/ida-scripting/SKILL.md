@@ -32,12 +32,60 @@ Task: Help the user write IDAPython scripts. You have `execute_script` which run
 - Call `ida_hexrays.mark_cfunc_dirty(ea)` before re-decompiling a function you've modified.
 - IDA 9+ removed `ida_struct` and `ida_enum` — use `ida_typeinf` for all type operations.
 
+## Long-running scripts (read before writing any loop)
+
+`execute_script` runs **on IDA's main thread**. While it runs the IDA UI is
+frozen, a wait box is shown, and every other MCP call is refused with
+`Server busy`. Hard limits:
+
+- **Time budget: ~60s per call** (`IDA_MCP_TOOL_TIMEOUT_SEC`). On timeout the
+  script is interrupted and you get the output printed so far plus an error.
+  `try/except` in your script does NOT stop the interrupt (it is a
+  `BaseException`); a runaway loop is force-stopped a few seconds later.
+- **The client may stop waiting first** (pi: 90s). That is reported as
+  "did not answer… NOT offline". IDA is busy, not down.
+
+So:
+
+1. **Batch big loops.** Never decompile or scan every function in one call.
+   Process a slice (e.g. 200–500 functions, or one segment), print a cursor,
+   and resume from it in the next call:
+   ```python
+   START, N = 0, 300          # next call: START = last printed "next_start"
+   funcs = list(idautils.Functions())
+   for ea in funcs[START:START + N]:
+       ...                     # work
+   print("next_start", START + N, "of", len(funcs))
+   ```
+   Decompilation is the slowest operation (large functions can take seconds
+   each): start with small batches of `ida_hexrays.decompile()` calls.
+2. **Measure first.** On an unknown binary run one small batch, look at the
+   time it took, then size the next batches to stay under ~20–30s.
+3. **Bail before the deadline yourself** in long loops:
+   ```python
+   import time; t0 = time.monotonic()
+   for i, ea in enumerate(work):
+       if time.monotonic() - t0 > 25:
+           print("stopped_at", i); break
+   ```
+4. **Avoid whole-database waits** unless needed: `ida_auto.auto_wait()` blocks
+   until all analysis finishes (can be minutes on a fresh IDB).
+5. **No `while True` without an exit**, no `time.sleep`, no network/subprocess
+   waits inside the script; do slow external work outside IDA.
+6. **Do not call `exit()`/`sys.exit()`.** It only stops your script (it is
+   caught), but it hides the output you wanted.
+7. **After a timeout or `Server busy`: do not re-send the same script.** Wait,
+   check `server_health`, then send a smaller batch. Never run IDA calls in
+   parallel.
+8. **Print compact results** (counts, top-N, addresses), not thousands of lines.
+   Output over the cap is refused.
+
 ## Environment
 
 The `execute_script` tool provides:
 - `idaapi`, `idautils`, `idc` — high-level wrappers
 - `ida_funcs`, `ida_name`, `ida_bytes`, `ida_segment`, `ida_typeinf`, `ida_nalt`, `ida_xref`, `ida_kernwin`, `ida_hexrays`, `ida_lines`, `ida_search`, `ida_ida`, `ida_entry`, `ida_frame`, `ida_auto`, `ida_gdl`, `ida_netnode` — low-level modules
-- Full Python stdlib (except subprocess/os.exec — blocked for safety)
+- Full Python stdlib (nothing is sandboxed: the script runs inside the IDA process with its full privileges)
 - `BADADDR` is available via `idaapi.BADADDR`
 
 ## Quick Reference

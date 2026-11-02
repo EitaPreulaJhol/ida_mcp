@@ -34,6 +34,14 @@ Deliberately **not** treated as failures: `error: null` on an otherwise-successf
 ## Output limits
 Listing tools that can grow with the binary (`get_functions`, `get_callees`, `get_all_comments`, `get_entry_points`, `type_query`, plus the query/string listings) take `limit` / `offset` for pagination - a full page means more may follow, so advance `offset` (or narrow with a filter). As a universal backstop, any tool result whose text exceeds `max_output_chars` (default 512 KiB, set via `IDA_MCP_MAX_OUTPUT`) is refused with an actionable `isError` instead of flooding the agent's context.
 
+## Long-running tools & timeouts
+Every tool runs on the IDA main thread, so while one runs the IDA UI is frozen and other calls get a retryable `Server busy`. To keep that bounded:
+
+- **Soft timeout** - `IDA_MCP_TOOL_TIMEOUT_SEC` (default 60s). At the deadline IDA's cancel flag is set (SDK loops bail), and after a 5s grace a `BaseException` is raised in the tool body, so a script's `try/except Exception` cannot swallow it. `execute_script` / `py_eval` return the output printed so far, plus an error.
+- **Hard interrupt** (script tools only) - if a script still runs about 5s later (bare `except:`, or a call-free `while True` loop), a watchdog injects the interrupt asynchronously, retrying up to 10 times. Long SDK calls are interrupted as soon as they return to Python. Disable with `IDA_MCP_NO_HARD_INTERRUPT=1`.
+- **Cancellation** - `notifications/cancelled` for the request id interrupts the tool the same way. The IDA wait box's Cancel button works too, because the server polls it every 300 ms while a tool runs, which also repaints the box. Disable that polling with `IDA_MCP_UI_PUMP=0`.
+- **Clients** - set the client's tool-call timeout above the server's (pi bridge: `IDA_MCP_CLIENT_TIMEOUT_MS`, default 90000). A client that gives up first should send `notifications/cancelled` and report "busy", not "offline". Health checks should use JSON-RPC `ping`, which does not need the main thread.
+
 ## Safety model
 By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires.
 

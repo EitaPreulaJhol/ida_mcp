@@ -127,6 +127,7 @@ def unsafe(func):
     _UNSAFE_NAMES.append(func.__name__)
     return func
 idasync = lambda f: f
+hard_interrupt = lambda f: f
 class IDAError(Exception):
     pass
 def _run_code(code):
