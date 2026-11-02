@@ -43,3 +43,6 @@ Thumbs.db
 *.tmp
 *.bak
 *.orig
+
+# Strix runs
+strix_runs/
