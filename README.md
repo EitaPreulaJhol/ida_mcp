@@ -29,6 +29,23 @@ An agent running inside the IDA session identifies a SHA-1 transform from its ro
 - **Multi-instance aware.** Running instances register themselves on disk so tooling can discover and address several open IDA sessions.
 - **IDA 9.x native.** Uses current APIs (`idaapi.BADADDR`, `insn.get_canon_mnem()`, `ida_bytes.find_bytes()`, `inf_get_min_ea/max_ea`) with shims for 8.3+ in `compat.py`.
 
+### Request flow
+A tool call crosses the HTTP boundary (where auth / profile / unsafe / ext are enforced), is admitted one-at-a-time, then is marshalled onto the IDA main thread where the SDK is actually touched:
+
+```mermaid
+flowchart LR
+    C["MCP client<br/>(agent)"] -->|"HTTP POST /mcp<br/>JSON-RPC"| H["zeromcp<br/>ThreadingHTTPServer"]
+    H -->|"Host/Origin guard,<br/>?profile ?unsafe ?ext + token"| R["JSON-RPC registry<br/>tools/call"]
+    R -->|"concurrency gate<br/>(1 tool at a time)"| S["@idasync marshal"]
+    S -->|"execute_sync(MFF_WRITE)"| M["IDA main thread"]
+    M --> T["tool body<br/>(idaapi / ida_* / Hex-Rays)"]
+    T -->|"result container<br/>(never raises across the boundary)"| S
+    S -->|"soft timeout + hard interrupt,<br/>output cap"| R
+    R -->|"JSON-RPC result / isError"| C
+```
+
+In one line: **client → HTTP (gated) → registry (serialized) → `@idasync` → IDA main thread → tool → result back**, with a soft timeout, hard interrupt, and output cap bounding every call.
+
 ## Error convention
 Tools signal a **hard failure** in one of two equivalent ways, both surfaced to the client as `isError: true` on the `tools/call` result:
 
@@ -240,6 +257,7 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 | `.pi/skills/ida/SKILL.md`, `.pi/skills/ida-scripting/` | Same skills for the Pi Agent (pi-formatted frontmatter), auto-loaded by pi |
 | `.pi/extensions/ida-mcp.ts` | Pi Agent extension: MCP bridge, `/ida` command, `ida_profile` / `ida_status` tools, footer status indicator |
 | `tests/` | Standalone test scripts (run outside IDA with stubbed IDA modules) |
+| `CONTRIBUTING.md` | Architecture, the drift-guard invariants, and the add-a-tool flow |
 
 ## Pi Agent integration
 This repo includes a ready-to-use skill and extension for the [Pi Agent](https://github.com/earendil-works/pi). Just copy the contents of the `.pi` folder to your user's Pi Agent folder.

@@ -1,0 +1,116 @@
+# Contributing to ida_mcp
+
+Thanks for helping improve `ida_mcp`. This guide covers the architecture, the
+invariants the test suite enforces, and the exact flow for adding a tool so you
+don't trip CI without knowing why.
+
+## Ground rules
+
+- **Zero third-party runtime dependencies.** The MCP transport is vendored in
+  `ida_mcp/zeromcp` on top of the stdlib. Dev-only tools (ruff, mypy, coverage,
+  pre-commit) are fine — they must never be imported at runtime.
+- **IDA 9.x native, 8.3+ via shims.** Put version-sensitive API differences in
+  `ida_mcp/compat.py`, not scattered across modules.
+- **LF line endings** (`.gitattributes` enforces it).
+- **Supervised, read-first.** Mutating tools are gated; keep it that way.
+
+## Dev setup
+
+No install is needed to run the suite (every harness stubs IDA):
+
+```bash
+python3 tests/run_all.py              # all harnesses (no IDA required)
+python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift guard
+```
+
+For linting/type-checking:
+
+```bash
+pip install -e ".[dev]"   # ruff (+ optionally mypy/coverage)
+ruff check .
+make test lint            # if you use the Makefile
+pre-commit install        # optional: run lint + inventory on every commit
+```
+
+## Architecture (where things live)
+
+| Path | Responsibility |
+|------|----------------|
+| `ida_mcp_loader.py` | IDA plugin entry (`PLUGIN_ENTRY`), host/port/autostart |
+| `ida_mcp/zeromcp/` | Vendored MCP transport (HTTP + JSON-RPC). No IDA imports. |
+| `ida_mcp/rpc.py` | `@tool` / `@unsafe` / `@ext` decorators + `MCP_SERVER` registry |
+| `ida_mcp/sync.py` | `@idasync` main-thread marshal, timeouts, cancellation |
+| `ida_mcp/server.py` | Core tools + server lifecycle + module wiring |
+| `ida_mcp/api_*.py` | Tool modules (analysis, functions, xrefs, debug, …) |
+| `ida_mcp/profiles/` | `triage.txt` / `readonly.txt` lazy-loading allowlists |
+| `ida_mcp/compat.py` | 8.3 ↔ 9.x API shims |
+| `tests/` | Standalone harnesses (IDA stubbed) + drift guards |
+
+### The main-thread rule
+
+Every IDA SDK call must run on the IDA main thread. Decorate tool functions
+with `@idasync` (and they are registered with `@tool`). Never block, never run
+unbounded loops — the UI is frozen while a tool runs and all other calls get a
+retryable `Server busy`. Keep tools short; paginate large listings; print
+progress in scripts.
+
+### Error convention
+
+- Plain-text tools raise `IDAError(msg)` → JSON-RPC `-32000`, no traceback leak.
+- JSON tools return a dict with a non-empty top-level `error` string → promoted
+  to `isError: true`. `error: null` and per-item errors are NOT failures.
+
+## Adding a tool (follow all steps or CI fails)
+
+The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
+
+1. **Implement** it in the right `api_*.py` with `@tool` + `@idasync`, a
+   **non-empty docstring** (clients pick tools from it), and `@unsafe` if it
+   mutates the IDB, or `@ext("dbg")` (+ `@unsafe`) for debugger tools.
+2. **Register**: make sure `server.py` imports the module (`from . import
+   api_x  # noqa: F401`) so the `@tool` side effect runs.
+3. **Document** it in `README.md` (backtick-quoted, e.g. `` `my_tool` ``) and
+   bump the per-module count header (`### \`api_x\` (N)`).
+4. **Inventory**: add the name to `EXPECTED` in
+   `tests/tool_inventory_test.py`.
+5. **Profiles**: if it is read-safe and broadly useful, add it to
+   `ida_mcp/profiles/readonly.txt` (and `triage.txt` for core triage tools).
+   Triage must stay a strict subset of readonly, both privilege-free.
+6. **Test** it: add/extend a `tests/*_test.py` following an existing harness
+   (stub the IDA modules it touches).
+
+### What the guards enforce (`tool_inventory_test.py`)
+
+- Per-module tool counts match `EXPECTED`.
+- Every tool is documented in README and has a non-empty docstring.
+- `server.py` imports every `api_*` module.
+- Profiles reference only real tools, stay privilege-free, and triage ⊂ readonly.
+- A tool calling a write sink (patch/rename/define/…) must be `@unsafe`/ext-gated.
+
+## Local-only checks (not in CI)
+
+- **Lint**: `ruff check .` (CI enforces pyflakes `F`).
+- **Types** (optional): `mypy` on the pure modules (zeromcp, discovery,
+  profiles, regex_guard) — see `[tool.mypy]`. CI runs it non-blocking for now;
+  confirm a clean local run before proposing to make it blocking.
+- **idalib integration** (`tests/idalib_integration_test.py`): needs a licensed
+  IDA. Run with `IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/path/to/bin`. Catches
+  real API drift the stubbed suite can't (how `idc.Assemble` /
+  `ida_search.find_binary` slipped through before).
+- **IDAPython docs cross-check** (`tests/idadocs_crosscheck_test.py`): point
+  `IDAPYTHON_DOCS_DIR` at a local copy of the official reference; it fails on
+  new drift against an allowlist of known false positives. Skips if absent.
+
+## Releasing
+
+1. Bump `ida_mcp/__version__` and add a `CHANGELOG.md` entry under a new
+   `## [X.Y.Z]` heading.
+2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+3. `release.yml` runs the suite, builds the plugin zip
+   (`scripts/package.py`), and attaches it to the GitHub Release.
+
+## Commit / PR etiquette
+
+- Keep the runtime dependency-free.
+- Run `tests/run_all.py` + `ruff check .` before pushing.
+- Small, focused commits; explain *why* in the body.

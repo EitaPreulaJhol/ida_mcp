@@ -184,8 +184,9 @@ def badaddr() -> int:
     """BADADDR across versions (``ida_ida.BADADDR`` was removed in IDA 9.3)."""
     if idaapi is not None and hasattr(idaapi, "BADADDR"):
         return idaapi.BADADDR
-    if ida_bytes is not None and hasattr(ida_bytes, "BADADDR"):
-        return ida_bytes.BADADDR
+    # Pre-9.3 fallback: ida_ida carried BADADDR before it was removed there.
+    if ida_ida is not None and hasattr(ida_ida, "BADADDR"):
+        return ida_ida.BADADDR
     return 0xFFFFFFFFFFFFFFFF
 
 

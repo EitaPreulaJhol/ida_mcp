@@ -308,6 +308,7 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 ## Further reading
 
 - [`README.md`](README.md) - full tool reference (243 tools), design, safety model, Agent skills, layout.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) - architecture, drift-guard invariants, add-a-tool flow, release steps.
 - [`skills/ida/SKILL.md`](skills/ida/SKILL.md) - generic `/ida` orchestrator skill; [`skills/ida-scripting/SKILL.md`](skills/ida-scripting/SKILL.md) - IDAPython scripting skill.
 - [`.pi/skills/ida/SKILL.md`](.pi/skills/ida/SKILL.md) - Pi `/ida` skill; [`.pi/skills/ida-scripting/SKILL.md`](.pi/skills/ida-scripting/SKILL.md) - Pi IDAPython scripting skill.
 - [`.pi/extensions/ida-mcp.ts`](.pi/extensions/ida-mcp.ts) - Pi extension (bridge, `/ida` command, footer indicator, `IDA_MCP_URL` override).

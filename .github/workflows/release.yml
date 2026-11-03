@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Gate the release on a green suite (dependency-free, IDA stubbed).
+      - name: Run test suite
+        run: python tests/run_all.py
+      - name: Build plugin zip
+        run: python scripts/package.py
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ida_mcp-*.zip
+          generate_release_notes: true
