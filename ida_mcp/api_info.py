@@ -8,7 +8,6 @@ import json
 import os
 
 import ida_auto
-import ida_entry
 import ida_ida
 import ida_kernwin
 import ida_loader

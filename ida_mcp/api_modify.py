@@ -10,11 +10,9 @@ import json
 
 import ida_auto
 import ida_bytes
-import ida_funcs
 import ida_name
 import ida_nalt
 import ida_segment
-import idaapi
 import idc
 
 from .rpc import tool, unsafe
@@ -207,7 +205,6 @@ def rename_address(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    import ida_name
     old_name = ida_name.get_ea_name(ea)
     if ida_name.set_name(ea, name, ida_name.SN_NOWARN):
         return json.dumps({

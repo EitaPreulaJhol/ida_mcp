@@ -10,7 +10,6 @@ import json
 import ida_auto
 import ida_bytes
 import ida_nalt
-import idaapi
 import idautils
 
 from .rpc import tool

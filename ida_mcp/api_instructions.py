@@ -12,7 +12,6 @@ import ida_lines
 import ida_name
 import ida_ua
 import idaapi
-import idautils
 import idc
 
 from .rpc import tool

@@ -220,7 +220,7 @@ t0 = _time.monotonic()
 try:
     swallow_everything()
     raise AssertionError("bare except defeated the hard interrupt")
-except mod.IDASyncError as e:
+except mod.IDASyncError:
     pass
 assert _time.monotonic() - t0 < 5, _time.monotonic() - t0
 print("hard interrupt beats bare `except:` OK")

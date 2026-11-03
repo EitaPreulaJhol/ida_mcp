@@ -7,13 +7,11 @@ adapted for direct in-process IDA SDK access.
 import json
 
 import ida_auto
-import ida_bytes
 import ida_funcs
 import ida_gdl
 import ida_name
 import ida_nalt
 import ida_typeinf
-import idaapi
 import idautils
 import idc
 

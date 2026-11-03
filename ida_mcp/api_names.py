@@ -15,7 +15,6 @@ import re
 
 import ida_auto
 import ida_name
-import idaapi
 import idautils
 
 from .rpc import tool, unsafe

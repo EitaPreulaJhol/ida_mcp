@@ -16,7 +16,6 @@ import ida_funcs
 import ida_hexrays
 import ida_kernwin
 import ida_lines
-import ida_ua
 import idaapi
 import idc
 import idautils

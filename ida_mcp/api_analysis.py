@@ -9,7 +9,6 @@ Write operations are additionally marked ``@unsafe``.
 """
 import fnmatch
 import json
-import re
 
 import ida_auto
 import ida_bytes
@@ -17,7 +16,6 @@ import ida_entry
 import ida_funcs
 import ida_hexrays
 import ida_ida
-import ida_kernwin
 import ida_lines
 import ida_nalt
 import ida_name
@@ -28,7 +26,7 @@ import idaapi
 import idautils
 import idc
 
-from .rpc import tool, unsafe, MCP_SERVER
+from .rpc import tool, unsafe
 from .sync import idasync
 
 

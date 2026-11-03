@@ -220,7 +220,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PKG = os.path.join(HERE, "..", "ida_mcp")
 src = open(os.path.join(PKG, "api_analysis.py")).read()
 src = src.replace(
-    "from .rpc import tool, unsafe, MCP_SERVER",
+    "from .rpc import tool, unsafe",
     "tool = lambda f: f\nunsafe = lambda f: f\nMCP_SERVER = type('FakeMCP', (), {'unsafe_tools': set()})()",
 )
 src = src.replace("from .sync import idasync", "idasync = lambda f: f")
