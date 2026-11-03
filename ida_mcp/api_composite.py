@@ -29,7 +29,7 @@ from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,
                    update_wait_box, ensure_analysis, CancelledError,
                    IDASyncError)
 from .api_analysis import parse_addr
-from .compat import inf_is_64bit, is_loaded as _is_loaded
+from .compat import inf_is_64bit, is_loaded as _is_loaded, get_func as _get_func, getseg as _getseg, get_segm_name as _get_segm_name
 
 
 _DECOMPILE_LINE_CAP = 100
@@ -757,7 +757,7 @@ def _fetch_survey_raw(detail_level: str) -> dict:
             name = idc.get_name(ea) or ""
         except Exception:
             name = ""
-        func = ida_funcs.get_func(ea)
+        func = _get_func(ea)
         flags = func.flags if func else 0
         if name.startswith("sub_"):
             unnamed += 1
@@ -768,9 +768,8 @@ def _fetch_survey_raw(detail_level: str) -> dict:
 
     segments: list[dict] = []
     try:
-        import ida_segment
         for seg_ea in idautils.Segments():
-            seg = idaapi.getseg(seg_ea)
+            seg = _getseg(seg_ea)
             if not seg:
                 continue
             perms = "".join([
@@ -779,7 +778,7 @@ def _fetch_survey_raw(detail_level: str) -> dict:
                 "x" if seg.perm & idaapi.SEGPERM_EXEC else "-",
             ])
             segments.append({
-                "name": ida_segment.get_segm_name(seg) or "",
+                "name": _get_segm_name(seg),
                 "start": hex(seg.start_ea),
                 "end": hex(seg.end_ea),
                 "size": hex(seg.end_ea - seg.start_ea),

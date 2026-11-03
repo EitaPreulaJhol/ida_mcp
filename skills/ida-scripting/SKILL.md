@@ -31,6 +31,7 @@ Task: Help the user write IDAPython scripts. You have `execute_script` which run
 - For large outputs, summarize or paginate — don't dump thousands of lines.
 - Call `ida_hexrays.mark_cfunc_dirty(ea)` before re-decompiling a function you've modified.
 - IDA 9+ removed `ida_struct` and `ida_enum` — use `ida_typeinf` for all type operations.
+- **Modules are pre-imported; put each constant on its owning module.** There is no `ida_imports` (enumerate imports with `ida_nalt.enum_import_names`); `STRTYPE_*`→`ida_nalt`, `SN_*`→`ida_name`, `getseg`/`get_segm_by_name`→`ida_segment`, `decode_insn`→`ida_ua` (no `ida_ua.ida_ua`). See `references/api-reference.md` → "Module gotchas".
 
 ## Long-running scripts (read before writing any loop)
 

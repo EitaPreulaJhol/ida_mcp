@@ -22,6 +22,44 @@ No ``ida_mcp`` imports here — only ``ida_*`` — so this module can be
 imported first and exec'd standalone in tests with stubbed IDA modules.
 """
 import re
+import warnings
+
+
+# ---------------------------------------------------------------------------
+# Deprecation-warning suppression (IDA 9.x)
+# ---------------------------------------------------------------------------
+# IDA 9.x (9.4+) emits Python DeprecationWarnings for several core accessors
+# that are still fully functional and that this plugin -- and the IDAPython
+# scripts it runs -- rely on heavily:
+#     get_func()      -> "use get_func_start or get_func_entry_info()"
+#     getseg()        -> "use get_segment_info()"
+#     get_segm_name() -> "use get_segment_name()"
+# The suggested replacements are NOT drop-in (e.g. get_func_start returns an
+# ea_t, not the func_t whose .flags/.start_ea/.end_ea we need), so we keep the
+# proven accessors -- centralized in the wrappers below -- and silence just
+# these specific, benign warnings instead of spamming every tool's output.
+#
+# Filtering by message keeps it narrow (unrelated deprecations still surface)
+# and installing it once at import means zero per-call cost in hot loops
+# (survey_binary touches every function).
+_SILENCED_DEPRECATIONS = (
+    r"get_func\(\) is deprecated",
+    r"getseg\(\) is deprecated",
+    r"get_segm_name\(\) is deprecated",
+)
+
+
+def silence_known_deprecations() -> None:
+    """Install (idempotent) filters for the benign IDA 9.x deprecations in
+    ``_SILENCED_DEPRECATIONS``. Prepended, so they win over any 'always'
+    filter IDA may have installed."""
+    for pattern in _SILENCED_DEPRECATIONS:
+        warnings.filterwarnings(
+            "ignore", message=pattern, category=DeprecationWarning)
+
+
+silence_known_deprecations()
+
 
 try:
     import ida_ida
@@ -245,6 +283,49 @@ def is_loaded(ea: int) -> bool:
 # ---------------------------------------------------------------------------
 # Function names
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Function / segment accessors (deprecation-free; see silence_known_deprecations)
+# ---------------------------------------------------------------------------
+
+def get_func(ea: int):
+    """``func_t`` containing ``ea`` (or ``None``).
+
+    Thin wrapper over ``ida_funcs.get_func`` so the IDA 9.x deprecation is
+    centralized in one place. The suggested replacements (``get_func_start`` /
+    ``get_func_entry_info``) don't return a ``func_t`` -- callers need
+    ``.flags`` / ``.start_ea`` / ``.end_ea`` -- so the classic accessor stays
+    and its (benign) warning is silenced at import.
+    """
+    if ida_funcs is None:
+        return None
+    return ida_funcs.get_func(ea)
+
+
+def getseg(ea: int):
+    """``segment_t`` containing ``ea`` (or ``None``); ``ida_segment`` with an
+    ``idaapi`` fallback."""
+    for mod in (ida_segment, idaapi):
+        fn = getattr(mod, "getseg", None) if mod is not None else None
+        if callable(fn):
+            try:
+                return fn(ea)
+            except Exception:
+                return None
+    return None
+
+
+def get_segm_name(seg) -> str:
+    """Name of segment ``seg`` ("" if unavailable)."""
+    if ida_segment is not None:
+        fn = getattr(ida_segment, "get_segm_name", None)
+        if callable(fn):
+            try:
+                return fn(seg) or ""
+            except Exception:
+                return ""
+    return ""
+
 
 def get_func_name(ea: int) -> str | None:
     """Function name at ``ea`` (``ida_funcs`` with ``idaapi`` fallback)."""
@@ -700,6 +781,10 @@ __all__ = [
     "get_imagebase",
     "is_loaded",
     "get_func_name",
+    "get_func",
+    "getseg",
+    "get_segm_name",
+    "silence_known_deprecations",
     "del_name",
     "get_type_ordinal_limit",
     "FUNC_STATIC",

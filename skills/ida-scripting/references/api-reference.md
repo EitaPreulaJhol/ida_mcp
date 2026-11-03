@@ -23,6 +23,23 @@
 | `ida_gdl` | FlowChart, BasicBlock (start_ea, end_ea, succs, preds) |
 | `ida_netnode` | Persistent key-value storage: supval, altval, hashval, blob |
 
+### Module gotchas — avoid AttributeError / ModuleNotFoundError
+
+Every `ida_*` module (plus `idaapi`, `idc`, `idautils`) is **already imported** in the script context. Two rules prevent almost every import/attribute error:
+
+1. **Never `import` a module that doesn't exist.** In particular there is **no `ida_imports`** module — enumerate imports via `ida_nalt` (see *Imports / Exports* below).
+2. **Reference each constant/function on its owning module** — don't guess the module. Frequent mix-ups:
+
+| ❌ Wrong | ✅ Correct |
+|---------|-----------|
+| `idc.SN_FORCE` | `ida_name.SN_FORCE` (also on `idaapi`) |
+| `ida_bytes.get_segm_by_name(n)` | `ida_segment.get_segm_by_name(n)` |
+| `ida_bytes.STRTYPE_C` | `ida_nalt.STRTYPE_C` |
+| `import ida_imports` | `ida_nalt.enum_import_names(...)` |
+| `ida_ua.ida_ua.decode_insn(...)` | `ida_ua.decode_insn(...)` (no doubled prefix) |
+
+Constant ownership cheat-sheet: `STRTYPE_*`→`ida_nalt`, `SN_*`→`ida_name`, `SEGPERM_*`/`getseg`/`get_segm_by_name`/`get_segm_name`→`ida_segment`, `FUNC_*`→`ida_funcs`, `fl_*`/`dr_*`/`XREF_*`→`ida_xref`, `BT*`/`BTF_*`/`TINFO_*`→`ida_typeinf`. When unsure: `print([n for n in dir(ida_nalt) if "STRTYPE" in n])`.
+
 ### func_t Properties
 
 | Property | Type | Description |
@@ -429,6 +446,21 @@ is_32 = ida_ida.inf_is_32bit_exactly()
 min_ea = ida_ida.inf_get_min_ea()
 max_ea = ida_ida.inf_get_max_ea()
 ```
+
+### Imports / Exports (there is no `ida_imports` module)
+
+Enumerate **imports** through `ida_nalt`:
+```python
+for i in range(ida_nalt.get_import_module_qty()):
+    mod = ida_nalt.get_import_module_name(i) or "<unknown>"
+    def cb(ea, name, ordinal, _mod=mod):
+        print(f"{_mod}: {name or ('#%d' % ordinal)} @ {hex(ea)}")
+        return True            # return True to keep enumerating
+    ida_nalt.enum_import_names(i, cb)
+```
+**Exports** are the entry-point table — see **Entry Points** below (each export is an entry point).
+
+> The script runtime is hardened: a forwarding `ida_imports` → `ida_nalt` shim means a stray `import ida_imports` still works, and `AttributeError`/`ModuleNotFoundError` tracebacks get an appended `ida_mcp hint:` line naming the correct module (e.g. `SN_FORCE` → `ida_name`, `STRTYPE_C` → `ida_nalt`). Still prefer the correct module directly.
 
 ### Entry Points
 

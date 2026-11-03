@@ -274,8 +274,10 @@ src = src.replace(
     "    raise ValueError(f'Unknown: {s}')",
 )
 src = src.replace(
-    "from .compat import inf_is_64bit, is_loaded as _is_loaded",
-    "inf_is_64bit = lambda: True\n_is_loaded = lambda ea: True",
+    "from .compat import inf_is_64bit, is_loaded as _is_loaded, get_func as _get_func, getseg as _getseg, get_segm_name as _get_segm_name",
+    "inf_is_64bit = lambda: True\n_is_loaded = lambda ea: True\n"
+    "import ida_funcs as _cf_f, idaapi as _cf_a, ida_segment as _cf_s\n"
+    "_get_func = _cf_f.get_func\n_getseg = _cf_a.getseg\n_get_segm_name = _cf_s.get_segm_name",
 )
 mod = types.ModuleType("composite_test")
 exec(compile(src, "composite_test", "exec"), mod.__dict__)
