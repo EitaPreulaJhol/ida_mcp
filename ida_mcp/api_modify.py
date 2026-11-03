@@ -14,7 +14,6 @@ import ida_name
 import ida_nalt
 import ida_segment
 import idautils
-import idc
 
 from .rpc import tool, unsafe
 from .sync import idasync
