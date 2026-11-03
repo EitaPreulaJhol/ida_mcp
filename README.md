@@ -5,6 +5,12 @@ It is built specifically for reverse-engineering workflows: read-first, lazy too
 
 Special thanks to [Eduardo](https://github.com/lluiseduardo-silva), which provided means for further improving the project.
 
+## In action
+
+![ida_mcp driving an IDA Pro session from the pi coding agent](docs/screenshot.png)
+
+An agent running inside the IDA session identifies a SHA-1 transform from its round constants (`fn_20C00`), plans the renames, and executes an IDAPython snippet - all over MCP.
+
 ## What it does
 - **Decompilation & disassembly**: Hex-Rays pseudocode, linear and structured disassembly, microcode summaries, flowcharts and CFG blocks.
 - **Binary triage in one call**: `survey_binary()` returns metadata, stats, segments, entry points, notable strings/functions, categorized imports and a call-graph summary.
