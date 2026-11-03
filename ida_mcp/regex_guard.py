@@ -19,7 +19,7 @@ import functools
 import re
 
 try:
-    from re import _parser as _sre_parse, _constants as _sre_c
+    from re import _parser as _sre_parse, _constants as _sre_c  # type: ignore[attr-defined]
 except ImportError:  # Python < 3.11
     import sre_parse as _sre_parse
     import sre_constants as _sre_c

@@ -77,6 +77,10 @@ warn_unused_ignores = false
 warn_redundant_casts = true
 no_implicit_optional = true
 check_untyped_defs = false
+# Resolving these modules pulls in the ida_mcp package __init__ (which imports
+# the IDA-touching tool modules). follow_imports=silent analyses them for types
+# but suppresses their errors, so only the listed pure modules are reported.
+follow_imports = "silent"
 files = [
     "ida_mcp/zeromcp",
     "ida_mcp/discovery.py",

@@ -27,7 +27,7 @@ from typing import get_type_hints, get_origin, get_args, Annotated, Literal, Uni
 try:  # Python 3.10+: ``X | None`` annotations have this origin.
     from types import UnionType as _UnionType
 except ImportError:  # pragma: no cover - older runtimes only expose typing.Union
-    _UnionType = None
+    _UnionType = None  # type: ignore[assignment,misc]
 
 from .jsonrpc import (
     JsonRpcRegistry,
@@ -132,7 +132,7 @@ def _enabled_extension_groups() -> set[str]:
 try:
     from ..profiles import get_profile as _get_profile_fn
 except ImportError:  # standalone zeromcp use (tests) without the ida_mcp package
-    _get_profile_fn = None
+    _get_profile_fn = None  # type: ignore[assignment]
 
 # Thread-local active profile: (name, tool-set or None). None set = unknown
 # or absent profile -> no filtering (fail-open, documented).
@@ -260,7 +260,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         because same-origin requests do not need CORS. Rejecting unexpected Host
         and Origin headers closes that gap while keeping direct clients working.
         """
-        bound_host = self.server.server_address[0]
+        bound_host = self.server.server_address[0]  # type: ignore[index]
         if not _host_header_allowed_for_bind(bound_host, self.headers.get("Host")):
             self._safe_send_error(403, "Invalid Host")
             return False
@@ -754,8 +754,8 @@ class McpServer:
         self.resources = McpRpcRegistry()
         self.prompts = McpRpcRegistry()
 
-        self._http_server = None
-        self._server_thread = None
+        self._http_server: Any = None
+        self._server_thread: Any = None
         self._running = False
         self._http_sessions: dict[str, float] = {}
         self._http_sessions_lock = threading.Lock()

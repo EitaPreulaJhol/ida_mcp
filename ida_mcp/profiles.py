@@ -14,7 +14,7 @@ import os
 
 _PROFILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "profiles")
 
-_cache: dict[str, set[str] | None] = {}
+_cache: dict[str, set[str]] = {}
 _cache_complete = False
 
 
