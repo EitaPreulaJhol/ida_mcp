@@ -819,9 +819,14 @@ class McpServer:
     def tool(self, func: Callable) -> Callable:
         return self.tools.method(func)
 
-    def resource(self, uri: str) -> Callable[[Callable], Callable]:
+    def resource(self, uri: str, *, name: str | None = None,
+                 mime: str | None = None) -> Callable[[Callable], Callable]:
         def decorator(func: Callable) -> Callable:
             setattr(func, "__resource_uri__", uri)
+            if name:
+                setattr(func, "__resource_name__", name)
+            if mime:
+                setattr(func, "__resource_mime__", mime)
             return self.resources.method(func)
         return decorator
 
@@ -1054,13 +1059,16 @@ class McpServer:
         return {}
 
     def _mcp_initialize(self, protocolVersion, capabilities, clientInfo, _meta=None):
+        caps: dict = {"tools": {}}
+        # Advertise resources/prompts only when some are registered, so a client
+        # never sees an empty capability it can't use.
+        if self.resources.methods:
+            caps["resources"] = {"subscribe": False, "listChanged": False}
+        if self.prompts.methods:
+            caps["prompts"] = {}
         return {
             "protocolVersion": protocolVersion,
-            "capabilities": {
-                "tools": {},
-                "resources": {"subscribe": False, "listChanged": False},
-                "prompts": {},
-            },
+            "capabilities": caps,
             "serverInfo": {"name": self.name, "version": self.version},
         }
 
@@ -1293,16 +1301,73 @@ class McpServer:
         return None
 
     def _mcp_resources_list(self, _meta=None):
-        return {"resources": []}
+        resources = []
+        for func in self.resources.methods.values():
+            uri = getattr(func, "__resource_uri__", None)
+            if not uri:
+                continue
+            resources.append({
+                "uri": uri,
+                "name": getattr(func, "__resource_name__", func.__name__),
+                "description": (func.__doc__ or "").strip(),
+                "mimeType": getattr(func, "__resource_mime__", "application/json"),
+            })
+        return {"resources": resources}
 
     def _mcp_resource_templates_list(self, _meta=None):
         return {"resourceTemplates": []}
 
     def _mcp_resources_read(self, uri, _meta=None):
-        raise JsonRpcException(-32602, f"Unknown resource: {uri}")
+        target = None
+        for func in self.resources.methods.values():
+            if getattr(func, "__resource_uri__", None) == uri:
+                target = func
+                break
+        if target is None:
+            raise JsonRpcException(-32602, f"Unknown resource: {uri}")
+        result = target()
+        text = result if isinstance(result, str) else json.dumps(result, default=str)
+        mime = getattr(target, "__resource_mime__", None)
+        if mime is None:
+            mime = "application/json"
+            try:
+                if not isinstance(json.loads(text), (dict, list)):
+                    mime = "text/plain"
+            except Exception:
+                mime = "text/plain"
+        return {"contents": [{"uri": uri, "mimeType": mime, "text": text}]}
 
     def _mcp_prompts_list(self, _meta=None):
-        return {"prompts": []}
+        prompts = []
+        for name, func in self.prompts.methods.items():
+            args = []
+            try:
+                for p in inspect.signature(func).parameters.values():
+                    if p.name.startswith("_"):
+                        continue
+                    args.append({"name": p.name,
+                                 "required": p.default is inspect.Parameter.empty})
+            except (TypeError, ValueError):
+                pass
+            prompts.append({"name": name,
+                            "description": (func.__doc__ or "").strip(),
+                            "arguments": args})
+        return {"prompts": prompts}
 
     def _mcp_prompts_get(self, name, arguments=None, _meta=None):
-        raise JsonRpcException(-32602, f"Unknown prompt: {name}")
+        func = self.prompts.methods.get(name)
+        if func is None:
+            raise JsonRpcException(-32602, f"Unknown prompt: {name}")
+        result = func(**(arguments or {}))
+        if isinstance(result, dict) and "messages" in result:
+            return result
+        if isinstance(result, str):
+            messages = [{"role": "user",
+                         "content": {"type": "text", "text": result}}]
+        elif isinstance(result, list):
+            messages = result
+        else:
+            messages = [{"role": "user",
+                         "content": {"type": "text",
+                                     "text": json.dumps(result, default=str)}}]
+        return {"description": (func.__doc__ or "").strip(), "messages": messages}

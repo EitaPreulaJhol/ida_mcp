@@ -277,5 +277,7 @@ This repo includes a ready-to-use skill and extension for the [Pi Agent](https:/
 - `decompile_function` output is plain text capped at 2000 lines. Everything else returns JSON.
 - `get_bytes` is BSS-safe (unloaded bytes read as `0x00`).
 - Oversized request bodies, non-loopback `Host` headers and foreign `Origin` values are rejected.
+- Besides tools, the server exposes MCP **resources** (`ida://triage` → `survey_binary`, `ida://health` → `server_health`) and a **prompt** (`reverse-engineer`), so a client can attach binary context without a tool call. These are read-only and advertised in `initialize` capabilities.
+- `server_health` reports per-tool call/error counts and main-thread timing (`stats`); set `IDA_MCP_AUDIT=<path>` for a JSONL trail of mutating calls.
 - Timeouts, host/port and autostart are configurable; per-IDB settings persist via netnodes.
 - Requires IDA Pro 8.3+ (9.3 recommended) with Python 3.11+; IDA Free is not supported and Hex-Rays is needed for decompiler-backed tools.

@@ -378,3 +378,39 @@ def stop_server(port: int = 13337) -> None:
         unregister_instance(port)
     except Exception:  # noqa: BLE001 - unregistration is best-effort
         pass
+
+
+# ---- MCP resources / prompts (item 13) ----
+# Read-only resources backed by existing tools. Readers are plain (NOT
+# @idasync) and call the @idasync tool, so there is exactly one main-thread
+# marshal and no nested execute_sync deadlock. Capabilities advertise these
+# only because they are registered here.
+
+@MCP_SERVER.resource("ida://health", name="server-health", mime="application/json")
+def _resource_health():
+    """Live server + IDB health (same payload as the server_health tool)."""
+    return server_health()
+
+
+@MCP_SERVER.resource("ida://triage", name="binary-triage", mime="application/json")
+def _resource_triage():
+    """One-call binary triage (same payload as the survey_binary tool)."""
+    fn = MCP_SERVER.tools.methods.get("survey_binary")
+    if fn is None:
+        return json.dumps({"error": "survey_binary tool unavailable"})
+    return fn()
+
+
+@MCP_SERVER.prompt
+def reverse_engineer(focus: str = "overview"):
+    """Drive the connect -> triage -> escalate loop for the binary open in IDA."""
+    return (
+        "You are reverse-engineering the binary currently open in IDA Pro via "
+        "ida_mcp.\n"
+        "1. Call server_health to confirm the bridge is up.\n"
+        "2. Call survey_binary for a one-shot triage (or read the ida://triage "
+        "resource).\n"
+        f"3. Focus of this session: {focus}.\n"
+        "Escalate the endpoint ladder (triage -> readonly -> full -> unsafe -> "
+        "dbg) only as the task needs, and ask before crossing into ?unsafe=true."
+    )

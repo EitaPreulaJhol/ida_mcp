@@ -118,6 +118,10 @@ class _FakeMCP:
         self._running = True
     def stop(self):
         self._running = False
+    def resource(self, uri, *, name=None, mime=None):
+        return lambda fn: fn
+    def prompt(self, fn):
+        return fn
 
 MCP_SERVER = _FakeMCP()
 def tool(func):
