@@ -14,7 +14,7 @@
 | `ida_hexrays` | decompile, cfunc_t, citem_t, cexpr_t, cinsn_t, ctree_visitor_t, mba_t, mblock_t, minsn_t, mop_t, lvar_t |
 | `ida_kernwin` | ask_str, ask_yn, warning, msg, jumpto, get_screen_ea, register_action, action_handler_t, UI_Hooks |
 | `ida_lines` | generate_disasm_line, tag_remove |
-| `ida_search` | find_binary, find_text, find_code, find_data, SEARCH_DOWN/UP/NEXT/REGEX |
+| `ida_search` | find_text, find_imm, find_code, find_data, SEARCH_DOWN/UP/NEXT/REGEX (byte-pattern search is `ida_bytes.find_bytes`, not `ida_search`) |
 | `ida_nalt` | get_imagebase, get_root_filename, get_input_file_path, STRTYPE_C |
 | `ida_ida` | inf_get_procname, inf_is_64bit, inf_is_32bit_exactly, inf_get_min_ea, inf_get_max_ea |
 | `ida_entry` | get_entry_qty, get_entry, get_entry_ordinal, get_entry_name |
@@ -493,7 +493,7 @@ clean = ida_lines.tag_remove(line)
 
 - `ida_struct` / `ida_enum` **removed** — use `ida_typeinf` (tinfo_t, udm_t, edm_t)
 - `get_inf_structure()` **removed** — use `inf_get_*()` / `inf_is_*()` accessors
-- `find_binary()` **deprecated** — use `ida_bytes.find_bytes()`
+- `ida_search.find_binary()` **removed** — use `ida_bytes.find_bytes(pattern, start_ea, range_end=...)`
 - Graph API: `abstract_graph_t` → `drawable_graph_t`, `mutable_graph_t` → `interactive_graph_t`
 - Node/edge types moved from `ida_graph` to `ida_gdl`
 - Struct/enum IDB events replaced by `local_types_changed`, `lt_udm_created`

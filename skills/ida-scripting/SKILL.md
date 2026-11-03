@@ -289,17 +289,21 @@ idc.set_func_cmt(ea, "description", 0)
 
 ### Search
 ```python
-# IDA 9+
-ea = ida_bytes.find_bytes(start_ea, "48 8B ?? ?? 90", 0)
+# IDA 9+ byte-pattern search. First arg is the PATTERN, second the start ea
+# (ida_search.find_binary was removed in 9.x).
+ea = ida_bytes.find_bytes("48 8B ?? ?? 90", start_ea, range_end=idaapi.BADADDR)
 
-# Pattern search loop
+# Pattern search loop (advance past each hit to avoid re-matching)
 ea = start_ea
-while ea != idaapi.BADADDR:
-    ea = ida_search.find_binary(
-        ea, idaapi.BADADDR, "E8 ?? ?? ?? ??", 16, ida_search.SEARCH_DOWN | ida_search.SEARCH_NEXT
-    )
-    if ea != idaapi.BADADDR:
-        print(hex(ea))
+while True:
+    ea = ida_bytes.find_bytes("E8 ?? ?? ?? ??", ea, range_end=idaapi.BADADDR)
+    if ea == idaapi.BADADDR:
+        break
+    print(hex(ea))
+    ea += 1
+
+# Text / immediate / code search still live in ida_search:
+# find_text, find_imm, find_code, find_data.
 ```
 
 ### Patching

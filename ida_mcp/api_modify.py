@@ -13,6 +13,7 @@ import ida_bytes
 import ida_name
 import ida_nalt
 import ida_segment
+import idautils
 import idc
 
 from .rpc import tool, unsafe
@@ -145,16 +146,21 @@ def patch_asm(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    # Use idc.Assemble which returns the number of bytes assembled
-    assembled_size = idc.Assemble(ea, 0, asm)
-    if assembled_size == 0:
-        return json.dumps({"error": f"Failed to assemble instruction: {asm}"})
+    # idautils.Assemble (IDA 9.x; idc.Assemble was removed) assembles to bytes
+    # but does NOT write them, so patch the result ourselves. It returns
+    # (False, errmsg) or (True, buf) or (True, [buf, ...]).
+    ok, data = idautils.Assemble(ea, asm)
+    if not ok:
+        return json.dumps({"error": f"Failed to assemble instruction: {asm} ({data})"})
+    blob = data if isinstance(data, (bytes, bytearray)) else b"".join(data)
+    blob = bytes(blob)
+    ida_bytes.patch_bytes(ea, blob)
 
     return json.dumps({
         "ok": True,
         "addr": hex(ea),
         "asm": asm,
-        "size": assembled_size,
+        "size": len(blob),
     }, indent=2)
 
 

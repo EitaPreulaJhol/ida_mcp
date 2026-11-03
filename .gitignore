@@ -46,3 +46,12 @@ Thumbs.db
 
 # Strix runs
 strix_runs/
+
+# Vendored IDAPython API reference (Copyright Hex-Rays) — local dev source of
+# truth only, must NOT be pushed to main. Point tooling at it via
+# IDAPYTHON_DOCS_DIR or this default path.
+docs/idapython-reference/
+
+# Local dev tooling (crosscheck scripts etc.) 
+# not shipped to end users
+tools/
