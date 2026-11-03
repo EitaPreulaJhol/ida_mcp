@@ -69,8 +69,8 @@ ignore = [
 
 [tool.mypy]
 # Type-check only the IDA-INDEPENDENT pure modules (the rest import idaapi and
-# would need SDK stubs). Lenient on purpose: this is a bug net, not a gate.
-# CI runs it non-blocking until a clean run is confirmed locally, then flip.
+# would need SDK stubs). Lenient on purpose: a bug net, not full strictness.
+# Verified clean (mypy 1.0.1), so the CI job is a real gate.
 python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_ignores = false

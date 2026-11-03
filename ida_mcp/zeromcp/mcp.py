@@ -260,7 +260,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         because same-origin requests do not need CORS. Rejecting unexpected Host
         and Origin headers closes that gap while keeping direct clients working.
         """
-        bound_host = self.server.server_address[0]  # type: ignore[index]
+        bound_host = str(self.server.server_address[0])  # type: ignore[index]
         if not _host_header_allowed_for_bind(bound_host, self.headers.get("Host")):
             self._safe_send_error(403, "Invalid Host")
             return False
@@ -436,7 +436,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
     def _handle_sse_post(self) -> None:
         """Legacy SSE message post: dispatch and reply on the GET stream."""
         query = parse_qs(urlparse(self.path).query)
-        session_id = query.get("session", [None])[0]
+        session_id = query.get("session", [None])[0]  # type: ignore[list-item]
         if session_id is None:
             self._safe_send_error(400, "Missing ?session for SSE POST")
             return
@@ -847,7 +847,7 @@ class McpServer:
         # request threads that blocked stop() and piled up on the IDA
         # main-thread queue. Daemonize them and bound the backlog.
         try:
-            self._http_server.daemon_threads = True
+            self._http_server.daemon_threads = True  # type: ignore[attr-defined]
         except Exception:
             pass
         try:

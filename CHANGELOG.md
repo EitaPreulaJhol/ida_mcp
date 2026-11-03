@@ -8,7 +8,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - GitHub Actions CI: standalone test suite on Python 3.11/3.12 + ruff lint,
-  non-blocking mypy (pure modules) and informational coverage jobs.
+  mypy (pure modules, enforced) and an informational coverage job.
 - `pyproject.toml` with project metadata, dynamic version, ruff + mypy +
   coverage config.
 - `__version__` (surfaced in `server_health`).

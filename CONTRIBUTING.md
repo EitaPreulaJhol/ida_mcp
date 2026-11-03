@@ -91,8 +91,8 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 
 - **Lint**: `ruff check .` (CI enforces pyflakes `F`).
 - **Types** (optional): `mypy` on the pure modules (zeromcp, discovery,
-  profiles, regex_guard) — see `[tool.mypy]`. CI runs it non-blocking for now;
-  confirm a clean local run before proposing to make it blocking.
+  profiles, regex_guard) — see `[tool.mypy]`. Verified clean, so CI enforces
+  it; run `mypy` before pushing changes to those modules.
 - **idalib integration** (`tests/idalib_integration_test.py`): needs a licensed
   IDA. Run with `IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/path/to/bin`. Catches
   real API drift the stubbed suite can't (how `idc.Assemble` /

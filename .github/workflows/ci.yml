@@ -47,10 +47,8 @@ jobs:
         run: ruff check .
 
   typecheck:
-    name: mypy (non-blocking)
+    name: mypy
     runs-on: ubuntu-latest
-    # Informational until a clean local run is confirmed; see [tool.mypy].
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
