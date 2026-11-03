@@ -66,3 +66,32 @@ ignore = [
 "tests/*" = ["E402", "F401", "F403", "F405", "B011"]
 # Re-exports: __init__ intentionally imports names for the public surface.
 "ida_mcp/__init__.py" = ["F401"]
+
+[tool.mypy]
+# Type-check only the IDA-INDEPENDENT pure modules (the rest import idaapi and
+# would need SDK stubs). Lenient on purpose: this is a bug net, not a gate.
+# CI runs it non-blocking until a clean run is confirmed locally, then flip.
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = false
+files = [
+    "ida_mcp/zeromcp",
+    "ida_mcp/discovery.py",
+    "ida_mcp/profiles.py",
+    "ida_mcp/regex_guard.py",
+]
+
+[tool.coverage.run]
+# Subprocess harnesses (run_all spawns each) need parallel mode + the
+# COVERAGE_PROCESS_START hook to aggregate. Informational only (no threshold).
+branch = true
+parallel = true
+source = ["ida_mcp"]
+omit = ["ida_mcp/__init__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
