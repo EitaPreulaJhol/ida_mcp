@@ -44,6 +44,7 @@ TESTS = [
     "transport_test.py",
     "disconnect_test.py",
     "gate_test.py",
+    "metrics_audit_test.py",
 ]
 
 

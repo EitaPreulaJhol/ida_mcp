@@ -302,6 +302,10 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 - Profiles are a *focus* mechanism, not a security boundary: `readonly`
   hides mutating tools from `tools/list`, but the safety guarantee comes
   from leaving `?unsafe=true` off.
+- Set `IDA_MCP_AUDIT=<path>` to append a JSONL trail of every mutating
+  (unsafe/debugger) call - useful for reviewing or undoing what an agent did
+  in a supervised session. `server_health` also reports per-tool call/error
+  counts and main-thread timing (`stats`).
 
 ---
 

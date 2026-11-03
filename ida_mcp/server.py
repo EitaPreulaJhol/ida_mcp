@@ -192,9 +192,12 @@ def _health_payload() -> dict:
         imagebase = None
     _pkg = sys.modules.get(__package__ or "ida_mcp")
     version = getattr(_pkg, "__version__", "unknown") if _pkg else "unknown"
+    stats_fn = getattr(MCP_SERVER, "get_stats", None)
+    stats = stats_fn() if callable(stats_fn) else None
     return {
         "status": "ok",
         "version": version,
+        "stats": stats,
         "uptime_sec": round(time.monotonic() - _SERVER_START_TIME, 1),
         "idb_path": idb_path,
         "input_path": input_path,

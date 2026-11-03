@@ -8,6 +8,7 @@ ThreadingHTTPServer, so no external ASGI/uvicorn dependency is required.
 import inspect
 import json
 import logging
+import os
 import secrets
 import select
 import socket
@@ -16,6 +17,7 @@ import threading
 import time
 import uuid
 import zlib
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, HTTPServer
 from typing import Any, Callable
 from urllib.parse import urlparse, parse_qs
@@ -677,6 +679,36 @@ def _is_tool_error(parsed) -> bool:
     return False
 
 
+_AUDIT_VALUE_MAX = 200
+_AUDIT_BLOB_MAX = 2048
+
+
+def _sanitize_audit_args(args) -> dict:
+    """Shallow, size-bounded copy of tool args for the audit log.
+
+    Each value is stringified and truncated (``execute_script`` code /
+    ``py_eval`` expressions can be huge); the whole blob is capped too. Marks
+    truncation with a trailing ellipsis so a reviewer knows it was clipped.
+    """
+    out: dict = {}
+    if not isinstance(args, dict):
+        return {"_args": str(args)[:_AUDIT_VALUE_MAX]}
+    total = 0
+    for k, v in args.items():
+        try:
+            s = v if isinstance(v, str) else json.dumps(v, default=str)
+        except Exception:
+            s = str(v)
+        if len(s) > _AUDIT_VALUE_MAX:
+            s = s[:_AUDIT_VALUE_MAX] + "\u2026"
+        total += len(s)
+        if total > _AUDIT_BLOB_MAX:
+            out["_truncated"] = True
+            break
+        out[str(k)] = s
+    return out
+
+
 def _coerce_scalar(value, annotation):
     """Coerce a stringified JSON scalar to ``annotation`` (int/float/bool).
 
@@ -758,6 +790,17 @@ class McpServer:
         # Set max_concurrent_tools to 0/None to disable (unbounded, legacy).
         self._tool_gate: threading.Semaphore = threading.Semaphore(1)
         self.max_concurrent_tools: int | None = 1
+        # Per-tool metrics (item 07): call/error/busy counts + a bounded window
+        # of recent durations for percentiles. Pure Python, no IDA; surfaced
+        # via server_health. Updates happen in a tiny locked critical section
+        # and never raise into the dispatch path.
+        self._stats_lock = threading.Lock()
+        self._stats: dict[str, dict] = {}
+        self._stats_totals = {"calls": 0, "errors": 0, "busy": 0}
+        self._stats_started = time.monotonic()
+        # Optional audit trail of mutating (unsafe/ext) tool calls (item 08).
+        # IDA_MCP_AUDIT=<path> appends JSONL; unset = disabled (default).
+        self.audit_path: str | None = (os.environ.get("IDA_MCP_AUDIT", "").strip() or None)
 
         self.registry = JsonRpcRegistry()
         self.registry.methods["ping"] = self._mcp_ping
@@ -914,6 +957,83 @@ class McpServer:
             return secrets.compare_digest(str(provided), str(expected))
         except Exception:
             return False
+
+    # ---- metrics (item 07) ----
+    def _record_call(self, name, *, errored=False, busy=False, duration_ms=None):
+        """Update per-tool counters. Never raises into the dispatch path."""
+        try:
+            with self._stats_lock:
+                s = self._stats.get(name)
+                if s is None:
+                    s = {"calls": 0, "errors": 0, "busy": 0,
+                         "durations": deque(maxlen=200)}
+                    self._stats[name] = s
+                if busy:
+                    s["busy"] += 1
+                    self._stats_totals["busy"] += 1
+                    return
+                s["calls"] += 1
+                self._stats_totals["calls"] += 1
+                if errored:
+                    s["errors"] += 1
+                    self._stats_totals["errors"] += 1
+                if duration_ms is not None:
+                    s["durations"].append(duration_ms)
+        except Exception:
+            pass
+
+    def get_stats(self, top: int = 25) -> dict:
+        """Bounded, JSON-able per-tool metrics snapshot (for server_health)."""
+        def _pct(sorted_ds, p):
+            if not sorted_ds:
+                return None
+            k = min(len(sorted_ds) - 1, int(round((p / 100.0) * (len(sorted_ds) - 1))))
+            return round(sorted_ds[k], 1)
+        try:
+            with self._stats_lock:
+                items = []
+                for name, s in self._stats.items():
+                    ds = sorted(s["durations"])
+                    items.append({
+                        "name": name, "calls": s["calls"], "errors": s["errors"],
+                        "busy": s["busy"], "p50_ms": _pct(ds, 50), "p95_ms": _pct(ds, 95),
+                        "max_ms": round(ds[-1], 1) if ds else None,
+                    })
+                totals = dict(self._stats_totals)
+                uptime = round(time.monotonic() - self._stats_started, 1)
+        except Exception:
+            return {"error": "stats_unavailable"}
+        items.sort(key=lambda x: x["calls"], reverse=True)
+        return {
+            "uptime_sec": uptime,
+            "total_calls": totals["calls"],
+            "total_errors": totals["errors"],
+            "total_busy": totals["busy"],
+            "tools": items[:top] if top else items,
+        }
+
+    # ---- audit (item 08) ----
+    def _write_audit(self, name, args, ok, error=None):
+        """Append one JSONL record for a mutating call. Best-effort, opt-in."""
+        path = self.audit_path
+        if not path:
+            return
+        try:
+            import datetime
+            rec = {
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "tool": name,
+                "ok": bool(ok),
+                "unsafe": True,
+                "args": _sanitize_audit_args(args),
+            }
+            if error:
+                rec["error"] = str(error)[:500]
+            line = json.dumps(rec, separators=(",", ":"), default=str)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
 
     def _origin_allowed(self, origin: str) -> bool:
         if not origin:
@@ -1089,6 +1209,7 @@ class McpServer:
             gate_acquired = gate.acquire(blocking=False)
             if not gate_acquired:
                 logger.debug("[MCP] tools/call %s rejected: server busy", name)
+                self._record_call(name, busy=True)
                 return {
                     "content": [{
                         "type": "text",
@@ -1101,6 +1222,8 @@ class McpServer:
         request_id = get_current_request_id()
         if request_id is not None:
             register_pending_request(request_id)
+        _t0 = time.perf_counter()
+        _errored = False
         try:
             arguments = self._coerce_tool_arguments(name, arguments)
             tool_response = self.tools.dispatch({
@@ -1111,6 +1234,7 @@ class McpServer:
             })
             if tool_response and "error" in tool_response:
                 error = tool_response["error"]
+                _errored = True
                 return {
                     "content": [{"type": "text", "text": error.get("message", "Unknown error")}],
                     "isError": True,
@@ -1127,6 +1251,7 @@ class McpServer:
                 text = json.dumps(result, separators=(",", ":"))
             cap = self.max_output_chars
             if cap and len(text) > cap:
+                _errored = True
                 return {
                     "content": [{"type": "text", "text": (
                         f"Output too large: {len(text)} chars exceed the {cap}-char cap. "
@@ -1137,10 +1262,11 @@ class McpServer:
                     "isError": True,
                 }
             structured = parsed if isinstance(parsed, dict) else {"result": parsed}
+            _errored = _is_tool_error(parsed)
             return {
                 "content": [{"type": "text", "text": text}],
                 "structuredContent": structured,
-                "isError": _is_tool_error(parsed),
+                "isError": _errored,
             }
         finally:
             if request_id is not None:
@@ -1150,6 +1276,13 @@ class McpServer:
                     gate.release()
                 except Exception:
                     pass
+                # Metrics + optional audit, after releasing the gate so file
+                # I/O never extends the main-thread hold.
+                self._record_call(name, errored=_errored,
+                                  duration_ms=(time.perf_counter() - _t0) * 1000.0)
+                if self.audit_path and (name in self.unsafe_tools
+                                        or self._get_tool_extension(name) is not None):
+                    self._write_audit(name, arguments, ok=not _errored)
 
     def _mcp_notifications_initialized(self):
         return None
