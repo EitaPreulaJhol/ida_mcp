@@ -45,6 +45,7 @@ TESTS = [
     "disconnect_test.py",
     "gate_test.py",
     "metrics_audit_test.py",
+    "idadocs_crosscheck_test.py",  # skips if IDAPYTHON_DOCS_DIR absent
 ]
 
 
