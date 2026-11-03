@@ -11,6 +11,8 @@ Architecture (aligned with ida-pro-mcp / idalib-mcp):
 """
 import signal
 
+__version__ = "0.1.0"
+
 # Ignore SIGPIPE so the HTTP server writing a response doesn't kill IDA when a
 # client disconnects mid-stream.
 if hasattr(signal, "SIGPIPE"):
@@ -51,6 +53,7 @@ from .sync import idasync, idasync_read, check_cancelled, get_tool_deadline
 from .rpc import MCP_SERVER, tool, unsafe
 
 __all__ = [
+    "__version__",
     "rpc",
     "sync",
     "api_python",

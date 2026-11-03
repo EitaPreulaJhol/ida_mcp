@@ -48,6 +48,29 @@ Every tool runs on the IDA main thread, so while one runs the IDA UI is frozen a
 - **Cancellation** - `notifications/cancelled` for the request id interrupts the tool the same way. The IDA wait box's Cancel button works too, because the server polls it every 300 ms while a tool runs, which also repaints the box. Disable that polling with `IDA_MCP_UI_PUMP=0`.
 - **Clients** - set the client's tool-call timeout above the server's (pi bridge: `IDA_MCP_CLIENT_TIMEOUT_MS`, default 90000). A client that gives up first should send `notifications/cancelled` and report "busy", not "offline". Health checks should use JSON-RPC `ping`, which does not need the main thread.
 
+## Configuration
+Everything is configured through environment variables - there is no config file. All are optional; defaults are chosen for a safe, read-only, single-session workflow.
+
+**Server (set in IDA's environment, read by the plugin/loader):**
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `IDA_MCP_HOST` | `127.0.0.1` | Bind address. Wins over a host persisted in the IDB (a non-loopback IDB value is ignored with a warning); set this to bind off-loopback deliberately. |
+| `IDA_MCP_TOKEN` | random per start | Pin a stable auth token for the unsafe/debugger surface instead of the per-start random one. |
+| `IDA_MCP_NO_AUTH` | unset | `1`/`true`/`yes` disables the auth token entirely - unsafe tools become reachable by any local client. Trusted single-user boxes only. |
+| `IDA_MCP_TOOL_TIMEOUT_SEC` | `60` | Soft per-tool timeout (seconds) before IDA's cancel flag is set and the tool body is interrupted. |
+| `IDA_MCP_NO_HARD_INTERRUPT` | unset | `1`/`true`/`yes` disables the script-only hard-interrupt watchdog (for scripts that swallow the soft timeout). |
+| `IDA_MCP_UI_PUMP` | on | `0`/`false`/`no`/`off` disables wait-box polling - the Cancel button and its repaint stop working while a tool runs. |
+| `IDA_MCP_MAX_OUTPUT` | `524288` (512 KiB) | Max characters in a tool result before it is refused with an actionable `isError`. Accepts `0x` hex; `0` disables the cap. |
+| `IDA_MCP_LOG` | off | `debug`/`info`/`warning` (or `1`/`true`) routes `ida_mcp` package logs (per-tool main-thread hold times, lifecycle) to the IDA output window. |
+
+**Client (pi bridge, set in the pi/agent environment):**
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `IDA_MCP_URL` | `http://127.0.0.1:13337/mcp` | Server URL the pi extension proxies. |
+| `IDA_MCP_CLIENT_TIMEOUT_MS` | `90000` | Client tool-call timeout. Keep it above the server's `IDA_MCP_TOOL_TIMEOUT_SEC` so the client reports "busy" (and cancels) rather than "offline". |
+
 ## Safety model
 By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires.
 

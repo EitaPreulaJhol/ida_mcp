@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ida_mcp"
+description = "Expose a running IDA Pro session to AI coding agents over the Model Context Protocol (MCP)."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "EitaPreulaJhol", email = "carlos.pdesanti@gmail.com" }]
+keywords = ["ida", "ida-pro", "mcp", "reverse-engineering", "decompiler", "hex-rays"]
+requires-python = ">=3.11"
+# Runtime has ZERO third-party dependencies: the MCP transport is vendored in
+# ida_mcp/zeromcp on top of the stdlib. IDA Pro (8.3+) provides the idaapi /
+# ida_* / idc / idautils modules at runtime; they are not installable via pip.
+dependencies = []
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Topic :: Software Development :: Disassemblers",
+]
+
+[project.urls]
+Homepage = "https://github.com/EitaPreulaJhol/ida_mcp"
+Repository = "https://github.com/EitaPreulaJhol/ida_mcp.git"
+
+[project.optional-dependencies]
+# Dev-only tooling. Never imported at runtime, so the zero-dependency runtime
+# promise holds: `pip install ida_mcp[dev]` only for linting/CI.
+dev = ["ruff>=0.5"]
+
+[tool.setuptools]
+# The plugin is loaded by IDA from the source tree; packaging metadata only.
+packages = ["ida_mcp", "ida_mcp.zeromcp"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ida_mcp.__version__" }
+
+[tool.ruff]
+# IDA ships Python 3.11; match it so ruff doesn't flag 3.12+ idioms.
+target-version = "py311"
+line-length = 100
+# Vendored transport and bytecode caches are not ours to lint.
+extend-exclude = ["ida_mcp/zeromcp", "__pycache__", "strix_runs"]
+
+[tool.ruff.lint]
+# Enforced set is pyflakes (F): unused imports, undefined names, f-string and
+# redefinition bugs. High signal, zero reformatting, and the tree already
+# carries `# noqa: F401` markers, so it is clean under F today.
+#
+# To tighten later (after a one-off `ruff check --fix` pass), broaden to:
+#   select = ["E", "W", "F", "I", "UP", "B", "C4"]
+# and keep the ignores below.
+select = ["F"]
+ignore = [
+    "E501",  # line length is enforced softly; long docstrings/URLs are fine
+    "E741",  # ambiguous names (l, O) show up in short RE/loop locals
+    "B008",  # function calls in argument defaults are used intentionally
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests stub IDA modules and exec sources; star/unused patterns are expected.
+"tests/*" = ["E402", "F401", "F403", "F405", "B011"]
+# Re-exports: __init__ intentionally imports names for the public surface.
+"ida_mcp/__init__.py" = ["F401"]

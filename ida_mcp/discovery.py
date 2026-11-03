@@ -27,6 +27,15 @@ def _instance_file_path(port: int) -> str:
     return os.path.join(get_instances_dir(), f"instance_{port}.json")
 
 
+def _quiet_unlink(path: str) -> bool:
+    """Best-effort unlink; swallow OSError. Returns True if removed."""
+    try:
+        os.unlink(path)
+        return True
+    except OSError:
+        return False
+
+
 def register_instance(host, port, pid, binary, idb_path, backend="gui") -> str:
     """Write an instance registration file. Returns the file path."""
     info = {
@@ -58,12 +67,7 @@ def register_instance(host, port, pid, binary, idb_path, backend="gui") -> str:
 
 def unregister_instance(port: int) -> bool:
     """Remove an instance registration file. Returns True if removed."""
-    file_path = _instance_file_path(port)
-    try:
-        os.unlink(file_path)
-        return True
-    except OSError:
-        return False
+    return _quiet_unlink(_instance_file_path(port))
 
 
 def is_pid_alive(pid: int) -> bool:
@@ -102,28 +106,16 @@ def discover_instances():
             with open(file_path, "r", encoding="utf-8") as f:
                 info = json.load(f)
         except (json.JSONDecodeError, OSError):
-            try:
-                os.unlink(file_path)
-            except OSError:
-                pass
+            _quiet_unlink(file_path)
             continue
         if not all(k in info for k in ("host", "port", "pid")):
-            try:
-                os.unlink(file_path)
-            except OSError:
-                pass
+            _quiet_unlink(file_path)
             continue
         if not is_pid_alive(info["pid"]):
-            try:
-                os.unlink(file_path)
-            except OSError:
-                pass
+            _quiet_unlink(file_path)
             continue
         if not probe_instance(info["host"], info["port"], timeout=1.0):
-            try:
-                os.unlink(file_path)
-            except OSError:
-                pass
+            _quiet_unlink(file_path)
             continue
         result.append(info)
     result.sort(key=lambda x: x.get("started_at", ""))

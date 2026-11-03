@@ -384,6 +384,34 @@ def main() -> int:
     else:
         print(f"README.md documents all {actual_total} tools OK")
 
+    # 2b) Every @tool must carry a non-empty docstring. Agents (especially
+    #     small models) pick tools from the description surfaced by
+    #     tools/list, which is the function __doc__; a blank one is a UX bug.
+    undocumented_doc = []
+    for module, tools in sorted(EXPECTED.items()):
+        path = os.path.join(PKG, module + ".py")
+        with open(path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        tool_nodes = {
+            node.name: node
+            for node in tree.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and any(
+                ast.unparse(dec).strip() == "tool"
+                or ast.unparse(dec).strip().startswith("tool(")
+                for dec in node.decorator_list
+            )
+        }
+        for tool in tools:
+            node = tool_nodes.get(tool)
+            doc = ast.get_docstring(node) if node is not None else None
+            if not doc or not doc.strip():
+                undocumented_doc.append(f"{module}.{tool}")
+    if undocumented_doc:
+        failures.append(f"tools missing a docstring: {undocumented_doc}")
+    else:
+        print(f"all {actual_total} tools have a docstring OK")
+
     # 3) server.py must import every api_* module (registration trigger).
     server_path = os.path.join(PKG, "server.py")
     with open(server_path, "r", encoding="utf-8") as f:

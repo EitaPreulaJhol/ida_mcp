@@ -8,6 +8,7 @@ import fnmatch
 import json
 import logging
 import os
+import sys
 import time
 
 import ida_auto
@@ -190,8 +191,11 @@ def _health_payload() -> dict:
         imagebase = hex(idaapi.get_imagebase())
     except Exception:
         imagebase = None
+    _pkg = sys.modules.get(__package__ or "ida_mcp")
+    version = getattr(_pkg, "__version__", "unknown") if _pkg else "unknown"
     return {
         "status": "ok",
+        "version": version,
         "uptime_sec": round(time.monotonic() - _SERVER_START_TIME, 1),
         "idb_path": idb_path,
         "input_path": input_path,
