@@ -76,6 +76,13 @@ class _McpHTTPServer(_DisconnectQuietMixin, HTTPServer):
 
 EXTERNAL_BASE_HEADER = "X-IDA-MCP-External-Base"
 
+# MCP protocol revisions this server speaks, newest first. initialize echoes
+# the client's version when it is one of these and otherwise answers with
+# the server's preferred one (spec: the client then decides whether to
+# continue), instead of blindly echoing whatever string was sent.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+PREFERRED_PROTOCOL_VERSION = "2025-06-18"
+
 
 def _parse_host_header(host_header: str | None) -> str | None:
     """Extract the hostname from a Host header (handles IPv6 + port)."""
@@ -408,15 +415,16 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         if raw is None:
             return
         body = raw if raw else b"{}"
-        try:
-            request = json.loads(body.decode("utf-8")) if body else {}
-        except Exception:
-            request = {}
-
         mcp_session_id = self.headers.get("Mcp-Session-Id")
-
-        # Dispatch
-        response = self.mcp_server.registry.dispatch(request)
+        try:
+            request = json.loads(body.decode("utf-8"))
+        except Exception:
+            # Let the registry produce the spec'd -32700 Parse error (it
+            # re-parses bytes) instead of masking it as -32600 via {}.
+            request = None
+            response = self.mcp_server.registry.dispatch(body)
+        else:
+            response = self.mcp_server.registry.dispatch(request)
 
         # Session management: create a session id on initialize.
         # (A batch array is answered by dispatch() as invalid-request.)
@@ -1111,7 +1119,10 @@ class McpServer:
     def _mcp_ping(self, _meta=None):
         return {}
 
-    def _mcp_initialize(self, protocolVersion, capabilities, clientInfo, _meta=None):
+    def _mcp_initialize(self, protocolVersion=None, capabilities=None, clientInfo=None,
+                        _meta=None):
+        if protocolVersion not in SUPPORTED_PROTOCOL_VERSIONS:
+            protocolVersion = PREFERRED_PROTOCOL_VERSION
         caps: dict = {"tools": {}}
         # Advertise resources/prompts only when some are registered, so a client
         # never sees an empty capability it can't use.

@@ -9,7 +9,8 @@ Covers:
   4. metrics + audit are recorded even with the gate disabled, the audit
      carries the error text, and max_concurrent_tools=N really admits N;
   5. notifications/cancelled is scoped to the caller's session, so one
-     client cannot cancel another client's request with the same id.
+     client cannot cancel another client's request with the same id;
+  6. initialize negotiates protocolVersion and malformed JSON gets -32700.
 """
 import json
 import os
@@ -260,6 +261,40 @@ cancel(1, SA)
 th.join(5)
 check(bool(outcome) and outcome[0]["result"]["content"][0]["text"] == "cancelled",
       "cancel from the owning session cancels")
+
+# ===================================================================
+# 6. protocol version negotiation + JSON parse errors
+# ===================================================================
+
+
+def initialize(version):
+    params = {"capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}
+    if version is not None:
+        params["protocolVersion"] = version
+    return post({"jsonrpc": "2.0", "id": 9, "method": "initialize", "params": params})
+
+
+check(initialize("2025-03-26")["result"]["protocolVersion"] == "2025-03-26",
+      "supported protocol version is echoed")
+check(initialize("1999-01-01")["result"]["protocolVersion"] == "2025-06-18",
+      "unknown protocol version -> server's preferred version")
+check(initialize(None)["result"]["protocolVersion"] == "2025-06-18",
+      "missing protocol version -> preferred version (no traceback)")
+
+
+def post_raw(data):
+    req = urllib.request.Request(BASE, data=data,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())
+
+
+bad = post_raw(b'{"jsonrpc": "2.0", "id": 1, "method": ')
+check(bad.get("error", {}).get("code") == -32700, "malformed JSON -> -32700 parse error")
+bad_utf8 = post_raw(b'\xff\xfe{}')
+check(bad_utf8.get("error", {}).get("code") == -32700, "undecodable body -> -32700")
+check(post_raw(b"[]").get("error", {}).get("code") == -32600,
+      "well-formed non-object stays -32600 invalid request")
 
 srv.stop()
 
