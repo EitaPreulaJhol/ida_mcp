@@ -14,7 +14,12 @@ JsonRpcId: TypeAlias = str | int | float | None
 
 _current_request = threading.local()
 _pending_requests_lock = threading.Lock()
-_pending_requests: dict[int | str, threading.Event] = {}
+# Keyed by (scope, request_id). JSON-RPC ids are only unique per client
+# (everyone starts at 1), so a bare id would let one client's
+# notifications/cancelled abort another client's tool. The scope is the
+# transport session (Mcp-Session-Id / legacy SSE ?session=), set per request
+# by the HTTP handler via set_current_scope(); None for session-less callers.
+_pending_requests: dict[tuple[str | None, JsonRpcId], threading.Event] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -23,27 +28,37 @@ def get_current_request_id() -> JsonRpcId:
     return getattr(_current_request, "id", None)
 
 
+def get_current_scope() -> str | None:
+    return getattr(_current_request, "scope", None)
+
+
+def set_current_scope(scope: str | None) -> None:
+    """Bind the current thread's requests to a transport session (or None)."""
+    _current_request.scope = scope or None
+
+
 def get_current_cancel_event() -> "threading.Event | None":
     return getattr(_current_request, "cancel_event", None)
 
 
-def register_pending_request(request_id: int | str) -> threading.Event:
+def register_pending_request(request_id: JsonRpcId) -> threading.Event:
     event = threading.Event()
     with _pending_requests_lock:
-        _pending_requests[request_id] = event
+        _pending_requests[(get_current_scope(), request_id)] = event
     _current_request.cancel_event = event
     return event
 
 
-def unregister_pending_request(request_id: int | str) -> None:
+def unregister_pending_request(request_id: JsonRpcId) -> None:
     with _pending_requests_lock:
-        _pending_requests.pop(request_id, None)
+        _pending_requests.pop((get_current_scope(), request_id), None)
     _current_request.cancel_event = None
 
 
-def cancel_request(request_id: int | str) -> bool:
+def cancel_request(request_id: JsonRpcId) -> bool:
+    """Cancel ``request_id`` within the caller's own scope only."""
     with _pending_requests_lock:
-        event = _pending_requests.get(request_id)
+        event = _pending_requests.get((get_current_scope(), request_id))
         if event is not None:
             event.set()
             return True
@@ -151,7 +166,9 @@ class JsonRpcRegistry:
 
     def map_exception(self, e: Exception) -> JsonRpcError:
         if self.redact_exceptions:
-            return {"code": -32603, "message": f"Internal Error: {str(e)}"}
+            # Keep the traceback for the operator (server log), not the client.
+            logger.error("[MCP] unhandled %s", type(e).__name__, exc_info=e)
+            return {"code": -32603, "message": f"Internal Error: {type(e).__name__}: {e}"}
         return {
             "code": -32603,
             "message": "\n".join(traceback.format_exception(e)).strip(),

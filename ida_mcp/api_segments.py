@@ -6,11 +6,11 @@ in-process IDA SDK access.
 
 import json
 
-import ida_auto
 import ida_segment
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 # aliased: this module's own ``get_segment_comment`` tool would shadow it
 from .compat import get_segment_comment as _compat_segment_comment
@@ -40,7 +40,7 @@ def get_segments() -> str:
 
     Returns a JSON array of segment metadata objects.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
 
     for i in range(ida_segment.get_segm_qty()):
@@ -58,7 +58,7 @@ def get_segment_at(address: str) -> str:
 
     Returns segment metadata or an error if no segment found.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -78,7 +78,7 @@ def get_segment_by_name(name: str) -> str:
 
     Returns segment metadata or error if not found.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     for i in range(ida_segment.get_segm_qty()):
         seg = ida_segment.getnseg(i)
@@ -92,7 +92,7 @@ def get_segment_by_name(name: str) -> str:
 @idasync
 def get_segment_count() -> str:
     """Get the total number of segments in the binary."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     count = ida_segment.get_segm_qty()
     return json.dumps({"count": count})
 
@@ -101,7 +101,7 @@ def get_segment_count() -> str:
 @idasync
 def get_segment_size(address: str) -> str:
     """Get the size of the segment containing or named by the given address/name."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)
@@ -124,7 +124,7 @@ def get_segment_size(address: str) -> str:
 @idasync
 def get_segment_start(address: str) -> str:
     """Get the start address of the segment containing or named by the given address/name."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)
@@ -145,7 +145,7 @@ def get_segment_start(address: str) -> str:
 @idasync
 def get_segment_end(address: str) -> str:
     """Get the end address of the segment containing or named by the given address/name."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)
@@ -166,7 +166,7 @@ def get_segment_end(address: str) -> str:
 @idasync
 def get_segment_class(address: str) -> str:
     """Get the class of a segment (CODE, DATA, BSS, etc.)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)
@@ -187,7 +187,7 @@ def get_segment_class(address: str) -> str:
 @idasync
 def get_segment_bitness(address: str) -> str:
     """Get the bitness of a segment (16, 32, or 64)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)
@@ -208,7 +208,7 @@ def get_segment_bitness(address: str) -> str:
 @idasync
 def get_segment_permissions(address: str) -> str:
     """Get the permissions of a segment (read, write, execute)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)
@@ -237,7 +237,7 @@ def get_segment_permissions(address: str) -> str:
 @idasync
 def get_code_segments() -> str:
     """Get all executable (code) segments."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
     for i in range(ida_segment.get_segm_qty()):
         seg = ida_segment.getnseg(i)
@@ -250,7 +250,7 @@ def get_code_segments() -> str:
 @idasync
 def get_data_segments() -> str:
     """Get all non-code (data/BSS) segments."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
     for i in range(ida_segment.get_segm_qty()):
         seg = ida_segment.getnseg(i)
@@ -263,7 +263,7 @@ def get_data_segments() -> str:
 @idasync
 def get_segment_comment(address: str) -> str:
     """Get the comment on a segment."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
         seg = ida_segment.getseg(ea)

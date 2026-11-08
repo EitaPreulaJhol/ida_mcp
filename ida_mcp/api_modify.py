@@ -8,7 +8,6 @@ All tools in this module are **unsafe** — they modify the IDA database.
 
 import json
 
-import ida_auto
 import ida_bytes
 import ida_name
 import ida_nalt
@@ -17,6 +16,7 @@ import idautils
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 # aliased: this module's own ``get_original_bytes`` tool would shadow it
 from .compat import get_original_bytes as _compat_original_bytes
@@ -43,7 +43,7 @@ def make_data(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -99,7 +99,7 @@ def patch_bytes(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -139,7 +139,7 @@ def patch_asm(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -173,7 +173,7 @@ def undefine(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -204,7 +204,7 @@ def rename_address(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -233,7 +233,7 @@ def get_original_bytes(
     size: int = 16,
 ) -> str:
     """Get the original bytes (before patching) at an address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -257,7 +257,7 @@ def revert_patch(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -282,7 +282,7 @@ def list_patches() -> str:
 
     Returns up to 1000 patches.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
 
     for i in range(ida_segment.get_segm_qty()):

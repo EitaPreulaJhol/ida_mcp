@@ -23,6 +23,7 @@ import idautils
 from .rpc import tool, unsafe
 from .sync import (idasync, tool_timeout, check_cancelled, update_wait_box,
                    CancelledError, IDASyncError)
+from .sync import ensure_analysis
 from .api_analysis import parse_addr, read_bytes_bss_safe
 from .compat import inf_get_max_ea, inf_get_min_ea
 
@@ -177,7 +178,7 @@ def _check_format(fmt: str) -> str | None:
 def _fetch_one_signature(query: str, max_length: int, wildcard_operands: bool,
                          fmt: str, progress: str = "") -> dict:
     """Single-address signature hop (bounded main-thread hold)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if progress:
         update_wait_box(f"make_signature {progress}")
     try:
@@ -248,7 +249,7 @@ def _fetch_function_signature(query: str, max_length: int,
                               wildcard_operands: bool, fmt: str,
                               progress: str = "") -> dict:
     """Single-function signature hop (bounded main-thread hold)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if progress:
         update_wait_box(f"make_signature {progress}")
     try:
@@ -328,7 +329,7 @@ def make_signature_for_range(start: str, end: str, format: str = "ida",
     embedded raw. Reports whether the result happens to be unique.
     Range is capped at 10000 bytes.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     fmt = _check_format(format)
     if fmt is None:
         return json.dumps({"error": f"Unknown format {format!r} (use ida/x64dbg/mask/bitmask)"})
@@ -372,7 +373,7 @@ def make_signature_for_range(start: str, end: str, format: str = "ida",
 def _fetch_xref_signatures(query: str, top: int, max_length: int,
                            fmt: str, progress: str = "") -> dict:
     """Single-address xref-signature hop (bounded main-thread hold)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if progress:
         update_wait_box(f"find_xref_signatures {progress}")
     try:
@@ -524,7 +525,7 @@ def apply_flirt_signatures(sig_path: str) -> str:
     reports it. Generate ``.sig`` files from ``.pat`` with ``sigmake`` (ships
     with IDA); ``.pat`` generation itself is out of scope.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     if not sig_path or not os.path.isfile(sig_path):
         return json.dumps({"sig_path": sig_path, "ok": False,
                            "error": f"File not found: {sig_path!r}"})
@@ -556,7 +557,7 @@ def apply_flirt_signatures(sig_path: str) -> str:
 @idasync
 def list_flirt_signatures() -> str:
     """List applied FLIRT signatures (library recognition state)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         sigs = _applied_sigs()
     except ValueError as e:

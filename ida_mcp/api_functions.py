@@ -6,7 +6,6 @@ adapted for direct in-process IDA SDK access.
 
 import json
 
-import ida_auto
 import ida_funcs
 import ida_gdl
 import ida_name
@@ -17,6 +16,7 @@ import idc
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr, type_label
 from .compat import (FUNC_STATIC, frame_soff, frame_udt_members, get_cc_name,
                      get_func_cc, get_func_regvars, get_frame_tinfo, is_frame_arg)
@@ -39,7 +39,7 @@ def list_funcs(
     ``count``: number of functions to return (max 1000).
     Returns JSON array of ``{addr, name, size}`` objects.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     count = min(int(count), 1000)
     offset = max(int(offset), 0)
 
@@ -65,7 +65,7 @@ def list_funcs(
 @idasync
 def func_count() -> str:
     """Get the total number of functions in the binary."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     total = len(list(idautils.Functions()))
     return json.dumps({"count": total})
 
@@ -106,7 +106,7 @@ def get_function_bounds(address: str) -> str:
 
     Returns JSON with ``start_ea``, ``end_ea``, and ``size``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     return _get_function_bounds_impl(address)
 
 
@@ -160,7 +160,7 @@ def get_function_signature(address: str) -> str:
 
     Returns the signature string if type info is available.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     return _get_function_signature_impl(address)
 
 
@@ -195,7 +195,7 @@ def _get_function_flags_impl(address: str) -> str:
 @idasync
 def get_function_flags(address: str) -> str:
     """Get function flags (thunk, library, noreturn, far, static, etc.)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     return _get_function_flags_impl(address)
 
 
@@ -203,7 +203,7 @@ def get_function_flags(address: str) -> str:
 @idasync
 def get_function_comment(address: str) -> str:
     """Get the comment on a function."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -242,7 +242,7 @@ def get_function_size(address: str) -> str:
 @idasync
 def get_function_start(address: str) -> str:
     """Get the start address of the function containing the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -317,7 +317,7 @@ def is_function_noreturn(address: str) -> str:
 @idasync
 def get_function_frame_size(address: str) -> str:
     """Get the stack frame size of a function."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -343,7 +343,7 @@ def get_function_frame_size(address: str) -> str:
 @idasync
 def get_function_args_size(address: str) -> str:
     """Get the arguments size of a function's stack frame."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -397,7 +397,7 @@ def get_local_variables(address: str) -> str:
 
     Returns names, types, offsets, and sizes.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -427,7 +427,7 @@ def get_register_variables(address: str) -> str:
     as frame members flagged ``FF_IVL``, so every entry reports the register and
     the address range where the definition holds.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -464,7 +464,7 @@ def get_register_variables(address: str) -> str:
 @idasync
 def get_function_edges(address: str) -> str:
     """Get basic block count, edge count, and cyclomatic complexity for a function."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -493,7 +493,7 @@ def get_function_edges(address: str) -> str:
 @idasync
 def get_function_instructions_count(address: str) -> str:
     """Get the number of instructions in a function."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -522,7 +522,7 @@ def get_functions_in_range(
 
     ``start`` and ``end`` can be hex addresses or symbol names.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)
@@ -546,7 +546,7 @@ def get_functions_in_range(
 @idasync
 def get_next_function(address: str) -> str:
     """Get the next function after the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -581,7 +581,7 @@ def create_function(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -605,7 +605,7 @@ def delete_function(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -632,7 +632,7 @@ def set_function_name(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -664,7 +664,7 @@ def set_function_comment(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:

@@ -26,7 +26,7 @@ An agent running inside the IDA session identifies a SHA-1 transform from its ro
 - **Main-thread safety.** All IDA API calls are marshalled to the IDA main thread via `idaapi.execute_sync` through an `@idasync` layer with a queue-based result container, timeouts and cancellation support.
 - **Simple tool model.** Tools are plain Python functions registered with `@tool` into a single `MCP_SERVER` registry. Unsafe tools are marked with `@unsafe` and hidden/refused unless the client opts in.
 - **Lazy profiles.** Clients start with a 16-tool `triage` profile and escalate to `readonly` and then the full set only as needed, keeping agent context small.
-- **Multi-instance aware.** Running instances register themselves on disk so tooling can discover and address several open IDA sessions.
+- **Multi-instance aware.** A second IDA whose port is taken falls back to the next free one (up to +9), and running instances register themselves on disk so tooling can discover and address several open IDA sessions.
 - **IDA 9.x native.** Uses current APIs (`idaapi.BADADDR`, `insn.get_canon_mnem()`, `ida_bytes.find_bytes()`, `inf_get_min_ea/max_ea`) with shims for 8.3+ in `compat.py`.
 
 ### Request flow
@@ -80,21 +80,23 @@ Everything is configured through environment variables - there is no config file
 | `IDA_MCP_UI_PUMP` | on | `0`/`false`/`no`/`off` disables wait-box polling - the Cancel button and its repaint stop working while a tool runs. |
 | `IDA_MCP_MAX_OUTPUT` | `524288` (512 KiB) | Max characters in a tool result before it is refused with an actionable `isError`. Accepts `0x` hex; `0` disables the cap. |
 | `IDA_MCP_LOG` | off | `debug`/`info`/`warning` (or `1`/`true`) routes `ida_mcp` package logs (per-tool main-thread hold times, lifecycle) to the IDA output window. |
-| `IDA_MCP_AUDIT` | off | Path to a JSONL file. When set, every mutating (unsafe/debugger) tool call appends an audit record (`ts`, `tool`, `ok`, size-bounded `args`). Read-only tools are not logged. |
+| `IDA_MCP_AUDIT` | off | Path to a JSONL file. When set, every mutating (unsafe/debugger) tool call appends an audit record (`ts`, `tool`, `ok`, size-bounded `args`, plus `error` on failure). Read-only tools are not logged. |
+| `IDA_MCP_REDACT_ERRORS` | unset | `1`/`true`/`yes`: an unexpected exception in a tool returns only `Internal Error: <type>: <message>` instead of the full traceback, which is logged in IDA instead (see `IDA_MCP_LOG`). Consider it when untrusted clients can connect. |
 
 **Client (pi bridge, set in the pi/agent environment):**
 
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `IDA_MCP_URL` | `http://127.0.0.1:13337/mcp` | Server URL the pi extension proxies. |
+| `IDA_MCP_TOKEN` | unset | Auth token the pi extension sends as `X-IDA-MCP-Token` (needed for the `unsafe`/`dbg` levels). Same name as the server variable, so one value in a shared environment pins and supplies the token. |
 | `IDA_MCP_CLIENT_TIMEOUT_MS` | `90000` | Client tool-call timeout. Keep it above the server's `IDA_MCP_TOOL_TIMEOUT_SEC` so the client reports "busy" (and cancels) rather than "offline". |
 
 ## Safety model
 By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires.
 
-**Auth token for the unsafe surface.** Because `?unsafe=true` exposes script execution and patching (effectively local RCE), the unsafe and debugger tools additionally require a secret token - loopback binding and the DNS-rebinding/Origin guards do not stop another local process or user. On startup the server prints a random token to the IDA output window; clients pass it as the `X-IDA-MCP-Token` header or `?token=<token>`. Read-only tools need no token. Set `IDA_MCP_TOKEN` to pin a stable token for a fixed client config, or `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user workstation. The token is never written to the discovery file.
+**Auth token for the unsafe surface.** Because `?unsafe=true` exposes script execution and patching (effectively local RCE), the unsafe and debugger tools additionally require a secret token - loopback binding and the DNS-rebinding/Origin guards do not stop another local process or user. On startup the server prints a random token to the IDA output window; clients pass it as the `X-IDA-MCP-Token` header or `?token=<token>`. Read-only tools need no token while the server is bound to loopback; bound anywhere else, every request needs it (HTTP 401 otherwise), since the Host guard cannot apply there. Set `IDA_MCP_TOKEN` to pin a stable token for a fixed client config, or `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user workstation. The token is never written to the discovery file.
 
-**Bind address.** The server binds `127.0.0.1`. A host persisted in the IDB is honored only when it is loopback (an IDB may come from someone else, and a stored `0.0.0.0` would expose the token-less read-only tools to the network); a non-loopback value is ignored with a warning. To bind elsewhere, set `IDA_MCP_HOST` in IDA's environment. Client regexes (`find_regex`, `func_query`, `entity_query`, `/re/` filters) reject nested quantifiers such as `(a+)+`, which backtrack exponentially on the IDA main thread where the tool timeout cannot interrupt them; use a possessive `++` or atomic `(?>...)` group instead.
+**Bind address.** The server binds `127.0.0.1`. A host persisted in the IDB is honored only when it is loopback (an IDB may come from someone else and must not silently move the server onto the network); a non-loopback value is ignored with a warning. To bind elsewhere, set `IDA_MCP_HOST` in IDA's environment; every request then needs the token, and traffic is plain HTTP, so use a trusted network or a tunnel. Client regexes (`find_regex`, `func_query`, `entity_query`, `/re/` filters) reject nested quantifiers such as `(a+)+`, which backtrack exponentially on the IDA main thread where the tool timeout cannot interrupt them; use a possessive `++` or atomic `(?>...)` group instead.
 
 ## Tool surface
 The plugin exposes 243 tools across 22 modules:

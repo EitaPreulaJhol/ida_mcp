@@ -32,6 +32,22 @@ jobs:
       - name: Run test suite
         run: python tests/run_all.py
 
+  # The runtime has Windows-only paths (SO_EXCLUSIVEADDRUSE, APPDATA discovery,
+  # OpenProcess liveness) that the Linux matrix never executes. Informational
+  # until a green run confirms the stubbed suite is portable; then drop
+  # continue-on-error to make it a gate.
+  test-windows:
+    name: tests (windows, informational)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run test suite
+        run: python tests/run_all.py
+
   lint:
     name: ruff
     runs-on: ubuntu-latest
@@ -41,8 +57,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      # Pinned to the version the rule set was verified with (same as
+      # .pre-commit-config.yaml), so a ruff release cannot redden CI by itself.
       - name: Install ruff
-        run: python -m pip install --upgrade "ruff>=0.5"
+        run: python -m pip install "ruff==0.6.9"
       - name: Lint
         run: ruff check .
 

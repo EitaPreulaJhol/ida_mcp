@@ -244,6 +244,7 @@ def _load(name, filename, replacements):
 info = _load("info_types_info", "api_info.py", [
     ("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f"),
     ("from .sync import idasync", "idasync = lambda f: f"),
+    ("from .sync import ensure_analysis", "def ensure_analysis(): return None"),
     ("from .compat import get_entry_qty, get_entry_ordinal, get_entry, get_entry_name",
      "get_entry_qty = lambda: 1\nget_entry_ordinal = lambda i: 1\n"
      "get_entry = lambda o: 0x1000\nget_entry_name = lambda o: 'start'"),
@@ -252,6 +253,7 @@ info = _load("info_types_info", "api_info.py", [
 tinfo = _load("info_types_tinfo", "api_typeinfo.py", [
     ("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f"),
     ("from .sync import idasync", "idasync = lambda f: f"),
+    ("from .sync import ensure_analysis", "def ensure_analysis(): return None"),
     ("from .compat import get_func_cc, get_type_ordinal_limit",
      "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)\n"
      "get_func_cc = lambda ftd: ftd.get_cc()"),
@@ -342,5 +344,22 @@ ida_funcs.get_func = lambda ea: type("Fn", (), {"start_ea": 0x1000})()
 r = json.loads(tinfo.get_type_at("0x1000"))
 assert r["type"]["is_func"] is False, r  # FakeTif.is_func() is False
 print("get_type_at (ida_nalt.get_tinfo) OK")
+
+# --- get_analysis_status reports the CURRENT state (must not wait) ---------
+# It used to call auto_wait() first, so it blocked until analysis finished
+# and then always answered "complete" (or hit the tool timeout).
+_info_mod = sys.modules["info_types_info"]
+_waits = []
+ida_auto.auto_wait = lambda: _waits.append(True)
+ida_auto.auto_is_ok = lambda: False
+r = json.loads(_info_mod.get_analysis_status())
+assert r["is_analysis_complete"] is False and _waits == [], (r, _waits)
+r = json.loads(_info_mod.get_version_info())
+assert _waits == [], "get_version_info must not wait for analysis"
+json.loads(_info_mod.wait_for_analysis())
+assert _waits == [True], "wait_for_analysis still waits"
+ida_auto.auto_wait = lambda: None
+ida_auto.auto_is_ok = lambda: True
+print("get_analysis_status is non-blocking OK")
 
 print("ALL INFO/TYPES TESTS PASSED")

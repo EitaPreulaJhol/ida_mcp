@@ -20,6 +20,7 @@ import idautils
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .compat import get_entry_qty, get_entry_ordinal, get_entry, get_entry_name
 
 
@@ -36,7 +37,7 @@ def get_binary_info() -> str:
     Returns file path, input file path, base address, processor, bitness, and
     compiler info.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     info: dict = {
         "input_file_path": ida_nalt.get_input_file_path(),
         "input_file_name": os.path.basename(ida_nalt.get_input_file_path()) if ida_nalt.get_input_file_path() else None,
@@ -90,7 +91,7 @@ def _get_architecture_info_impl() -> str:
 @idasync
 def get_architecture_info() -> str:
     """Get processor/architecture information."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     return _get_architecture_info_impl()
 
 
@@ -98,7 +99,7 @@ def get_architecture_info() -> str:
 @idasync
 def get_compiler_info() -> str:
     """Get compiler and ABI information."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         cc = ida_ida.compiler_info_t()
         ida_ida.inf_get_cc(cc)
@@ -114,7 +115,7 @@ def get_compiler_info() -> str:
 @idasync
 def get_hexrays_version() -> str:
     """Check if Hex-Rays decompiler is available and get its version."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         import ida_hexrays
         if ida_hexrays.init_hexrays_plugin():
@@ -137,7 +138,7 @@ def get_processor_info() -> str:
 @idasync
 def get_problems() -> str:
     """Get analysis problems/warnings from the database."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     problem_types = {
         ida_problems.PR_NOBASE: "PR_NOBASE",
         ida_problems.PR_NONAME: "PR_NONAME",
@@ -178,7 +179,7 @@ def get_problems() -> str:
 @idasync
 def get_image_size() -> str:
     """Get the image size (max_ea - min_ea) of the binary."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     omin = ida_ida.inf_get_omin_ea()
     omax = ida_ida.inf_get_omax_ea()
     size = omax - omin
@@ -189,7 +190,7 @@ def get_image_size() -> str:
 @idasync
 def get_current_binary_name() -> str:
     """Get the base name of the currently loaded binary."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     path = ida_nalt.get_input_file_path()
     name = os.path.basename(path) if path else None
     return json.dumps({"name": name})
@@ -199,7 +200,7 @@ def get_current_binary_name() -> str:
 @idasync
 def get_base_address() -> str:
     """Get the base address of the binary."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     return json.dumps({"base_address": hex(ida_nalt.get_imagebase())})
 
 
@@ -207,7 +208,7 @@ def get_base_address() -> str:
 @idasync
 def get_input_file_path() -> str:
     """Get the full path to the input file."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     return json.dumps({"path": ida_nalt.get_input_file_path()})
 
 
@@ -215,7 +216,7 @@ def get_input_file_path() -> str:
 @idasync
 def get_input_file_md5() -> str:
     """Get the MD5 hash of the input file."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         md5 = ida_nalt.retrieve_input_file_md5()
         return json.dumps({"md5": md5.hex() if md5 else None})
@@ -227,7 +228,7 @@ def get_input_file_md5() -> str:
 @idasync
 def get_input_file_sha256() -> str:
     """Get the SHA256 hash of the input file."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         sha256 = ida_nalt.retrieve_input_file_sha256()
         return json.dumps({"sha256": sha256.hex() if sha256 else None})
@@ -239,7 +240,6 @@ def get_input_file_sha256() -> str:
 @idasync
 def get_analysis_status() -> str:
     """Get the current analysis status (auto-enabled, complete)."""
-    ida_auto.auto_wait()
     return json.dumps({
         "is_auto_enabled": ida_auto.is_auto_enabled(),
         "is_analysis_complete": ida_auto.auto_is_ok(),
@@ -258,7 +258,6 @@ def wait_for_analysis() -> str:
 @idasync
 def get_version_info() -> str:
     """Get IDA Pro kernel version information."""
-    ida_auto.auto_wait()
     return json.dumps({"kernel_version": idaapi.get_kernel_version()})
 
 
@@ -274,7 +273,7 @@ def idb_save(path: str = "") -> str:
     never packs/kills the live working files; for an explicit different
     destination writes a compressed snapshot copy. Ported from ida-pro-mcp.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         save_path = path.strip() if path else ""
         if not save_path:
@@ -307,7 +306,7 @@ def idb_save(path: str = "") -> str:
 @idasync
 def idb_meta() -> str:
     """Get IDB metadata: paths, file size on disk, root filename, IDA version."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_IDB) or None
     except Exception:
@@ -339,7 +338,7 @@ def get_analysis_prompt() -> str:
     imports/strings counts) meant to be pasted into an agent prompt.
     Ported from idamcp-extendedtools.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         module = ida_nalt.get_root_filename() or "<unknown>"
     except Exception:

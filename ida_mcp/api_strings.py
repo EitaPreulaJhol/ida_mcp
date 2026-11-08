@@ -7,13 +7,13 @@ Follows idamcp-extendedtools ``api_strings.py`` naming.
 import fnmatch
 import json
 
-import ida_auto
 import ida_bytes
 import ida_nalt
 import idautils
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 
 
@@ -66,7 +66,7 @@ def _unicode_types() -> set:
 @idasync
 def get_strings(limit: int = 100, offset: int = 0, filter_pattern: str = "*") -> str:
     """List strings with limit/offset pagination and optional glob filter."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if limit <= 0 or limit > 5000:
         limit = 100
     rows = [_row(si) for si in _iter_strings()]
@@ -82,7 +82,7 @@ def get_strings(limit: int = 100, offset: int = 0, filter_pattern: str = "*") ->
 @idasync
 def get_strings_in_range(start: str, end: str, limit: int = 500) -> str:
     """List strings with addresses in ``[start, end)`` (capped)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)
@@ -105,7 +105,7 @@ def get_strings_in_range(start: str, end: str, limit: int = 500) -> str:
 @idasync
 def get_string_count() -> str:
     """Count all strings indexed in the binary (no item lists)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         total = sum(1 for _ in _iter_strings())
     except Exception as e:
@@ -121,7 +121,7 @@ def get_string_at(address: str) -> str:
     Falls back to the indexed string whose range contains ``address`` when no
     string starts exactly there.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -152,7 +152,7 @@ def get_string_at(address: str) -> str:
 def search_strings(query: str, case_sensitive: bool = False,
                    limit: int = 100) -> str:
     """Substring search across all indexed strings (capped)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if limit <= 0 or limit > 5000:
         limit = 100
     needle = query if case_sensitive else query.lower()
@@ -176,7 +176,7 @@ def search_strings(query: str, case_sensitive: bool = False,
 def get_strings_by_length(min_length: int = 1, max_length: int = 0,
                           offset: int = 0, count: int = 100) -> str:
     """List strings filtered by length (``max_length`` 0 = no limit)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     rows = []
     for si in _iter_strings():
         try:
@@ -195,7 +195,7 @@ def get_strings_by_length(min_length: int = 1, max_length: int = 0,
 @idasync
 def get_ascii_strings(limit: int = 200, offset: int = 0) -> str:
     """List non-Unicode (C-type) strings with pagination."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if limit <= 0 or limit > 5000:
         limit = 200
     uni = _unicode_types()
@@ -211,7 +211,7 @@ def get_ascii_strings(limit: int = 200, offset: int = 0) -> str:
 @idasync
 def get_unicode_strings(limit: int = 200, offset: int = 0) -> str:
     """List UTF-16/32 strings with pagination."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if limit <= 0 or limit > 5000:
         limit = 200
     uni = _unicode_types()

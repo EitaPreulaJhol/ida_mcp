@@ -15,10 +15,10 @@ import json
 import time
 from collections import deque
 
-import ida_auto
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 
 
 _HOOKS: dict[str, dict] = {}
@@ -190,7 +190,7 @@ def install_hook(hook_type: str) -> str:
     summaries to a bounded ring buffer (see ``get_hook_info``); it never
     alters IDA behavior. Re-installing a type replaces the previous hook.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     hook_type = (hook_type or "").strip().lower()
     return json.dumps(_install(hook_type), indent=2)
 
@@ -203,7 +203,7 @@ def install_hexrays_hook() -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     return json.dumps(_install("hexrays"), indent=2)
 
 
@@ -215,7 +215,7 @@ def install_idb_hook() -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     return json.dumps(_install("idb"), indent=2)
 
 
@@ -223,7 +223,7 @@ def install_idb_hook() -> str:
 @idasync
 def get_hook_info(hook_id: str = "") -> str:
     """Inspect installed hooks: type, event counts and recent events."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     if hook_id:
         entry = _HOOKS.get(hook_id)
         if entry is None:
@@ -250,7 +250,7 @@ def remove_hooks(hook_id: str = "all") -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     targets = list(_HOOKS.keys()) if hook_id in ("", "all") else [hook_id]
     removed: list[str] = []
     for hid in targets:

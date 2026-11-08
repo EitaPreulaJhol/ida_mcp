@@ -4,6 +4,7 @@ Tools are declared with ``@tool`` + ``@idasync`` so they run on the IDA main
 thread via the result-container sync (no deadlock). The server is hosted with
 the vendored zeromcp ``McpServer`` over stdlib ``ThreadingHTTPServer``.
 """
+import errno
 import fnmatch
 import json
 import logging
@@ -22,6 +23,7 @@ import idautils
 
 from .rpc import tool, unsafe, MCP_SERVER
 from .sync import idasync, IDAError, hard_interrupt
+from .sync import ensure_analysis
 from .api_python import _run_code
 from .api_analysis import parse_addr, _cap_lines
 from .discovery import (discover_instances, register_instance,
@@ -117,7 +119,7 @@ def get_functions(filter_pattern: str = "*", limit: int = 1000,
     (``limit=0`` means no cap). A full page means more may follow — advance
     ``offset`` to continue. Use ``filter_pattern`` to narrow instead of paging.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     funcs = []
     for ea in idautils.Functions():
         name = ida_funcs.get_func_name(ea)
@@ -131,7 +133,7 @@ def get_functions(filter_pattern: str = "*", limit: int = 1000,
 @idasync
 def decompile_function(address: str) -> str:
     """Decompile the function at the given address or name using Hex-Rays."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         addr = parse_addr(address)
     except ValueError as e:
@@ -156,7 +158,7 @@ def decompile_function(address: str) -> str:
 @idasync
 def get_disassembly(address: str, count: int = 20) -> str:
     """Get disassembly starting at the given address or name."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -333,8 +335,47 @@ def _init_logging() -> None:
     pkg_logger.addHandler(handler)
 
 
-def start_server(host: str = "127.0.0.1", port: int = 13337) -> None:
-    """Start the MCP HTTP server and register this instance for discovery."""
+# How many ports after the requested one start_server tries when it is taken
+# (typically by another IDA instance), so a second IDA does not just fail.
+PORT_FALLBACK_RANGE = 9
+# Windows: WSAEADDRINUSE, and WSAEACCES (what SO_EXCLUSIVEADDRUSE reports).
+_ADDR_IN_USE_WINERRORS = (10048, 10013)
+
+
+def _addr_in_use(exc: OSError) -> bool:
+    return (exc.errno == errno.EADDRINUSE
+            or getattr(exc, "winerror", None) in _ADDR_IN_USE_WINERRORS)
+
+
+def _serve_with_fallback(host: str, port: int) -> int:
+    """Bind ``port`` or, if it is in use, the next free one in range.
+
+    Returns the port actually bound. Errors other than "address in use"
+    (bad host, permission) are raised at once; exhausting the range raises
+    the last "in use" error with a hint.
+    """
+    last: OSError | None = None
+    for candidate in range(port, min(port + PORT_FALLBACK_RANGE, 65535) + 1):
+        try:
+            MCP_SERVER.serve(host, candidate, background=True)
+            return candidate
+        except OSError as e:
+            if not _addr_in_use(e):
+                raise
+            last = e
+    raise OSError(
+        last.errno if last else errno.EADDRINUSE,
+        f"ports {port}-{port + PORT_FALLBACK_RANGE} on {host} are all in use "
+        f"(other IDA instances?); free one or close an instance") from last
+
+
+def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
+    """Start the MCP HTTP server and register this instance for discovery.
+
+    If ``port`` is taken (e.g. by another IDA instance) the next free port
+    within ``PORT_FALLBACK_RANGE`` is used. Returns the port actually bound;
+    callers must use it (not the requested one) for messages and stop.
+    """
     global _OWN_PORT
     _init_logging()
     cap = os.getenv("IDA_MCP_MAX_OUTPUT", "").strip()
@@ -345,8 +386,15 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> None:
             pass
     token = _init_auth_token()
     MCP_SERVER.auth_token = token
-    MCP_SERVER.serve(host, port, background=True)
+    requested = port
+    port = _serve_with_fallback(host, requested)
     _OWN_PORT = port
+    if port != requested:
+        ida_kernwin.msg(
+            f"[ida-mcp] port {requested} is in use (another IDA instance?); "
+            f"using {port} instead. Point clients at http://{host}:{port}/mcp "
+            f"(list_instances shows every running instance).\n"
+        )
     if token:
         ida_kernwin.msg(
             f"[ida-mcp] auth token for unsafe/debugger tools: {token}\n"
@@ -367,6 +415,7 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> None:
         register_instance(host, port, pid, binary or "", idb_path or "", backend="gui")
     except Exception as e:  # noqa: BLE001 - registration is best-effort
         ida_kernwin.msg(f"[ida-mcp] instance registration failed: {e}\n")
+    return port
 
 
 def stop_server(port: int = 13337) -> None:
@@ -383,16 +432,21 @@ def stop_server(port: int = 13337) -> None:
 # ---- MCP resources / prompts (item 13) ----
 # Read-only resources backed by existing tools. Readers are plain (NOT
 # @idasync) and call the @idasync tool, so there is exactly one main-thread
-# marshal and no nested execute_sync deadlock. Capabilities advertise these
-# only because they are registered here.
+# marshal and no nested execute_sync deadlock. ``tool=`` ties each resource
+# to its backing tool: it is only listed/readable where that tool is
+# (profile / unsafe / ext gates), and reads share the tools/call concurrency
+# gate and output cap. Capabilities advertise these only because they are
+# registered here.
 
-@MCP_SERVER.resource("ida://health", name="server-health", mime="application/json")
+@MCP_SERVER.resource("ida://health", name="server-health", mime="application/json",
+                     tool="server_health")
 def _resource_health():
     """Live server + IDB health (same payload as the server_health tool)."""
     return server_health()
 
 
-@MCP_SERVER.resource("ida://triage", name="binary-triage", mime="application/json")
+@MCP_SERVER.resource("ida://triage", name="binary-triage", mime="application/json",
+                     tool="survey_binary")
 def _resource_triage():
     """One-call binary triage (same payload as the survey_binary tool)."""
     fn = MCP_SERVER.tools.methods.get("survey_binary")

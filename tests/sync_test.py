@@ -269,4 +269,67 @@ except mod.IDAError as e:
     assert "SystemExit" in str(e), e
 print("SystemExit contained OK")
 
+
+# 8f) IDA drops the request (execute_sync never runs the callback, e.g. the
+#     database is closing): the caller must get a clean IDASyncError within
+#     the grace period instead of blocking forever on the result container
+#     (which, holding the tool gate, meant "Server busy" until restart).
+mod._EXECUTE_SYNC_RESULT_GRACE_SEC = 0.2
+_real_execute_sync = fake_idaapi.execute_sync
+_dropped = []
+
+
+def _dropping_execute_sync(runned, reqf):
+    _dropped.append(runned)  # queued, never run
+    return -1
+
+
+fake_idaapi.execute_sync = _dropping_execute_sync
+_side_effects = []
+
+
+@mod.idasync
+def never_runs():
+    _side_effects.append("ran")
+    return "should not happen"
+
+
+t0 = _time.monotonic()
+try:
+    never_runs()
+    raise AssertionError("dropped execute_sync must raise")
+except mod.IDASyncError as e:
+    assert "did not run" in str(e) and "-1" in str(e), e
+assert _time.monotonic() - t0 < 2, _time.monotonic() - t0
+print("dropped execute_sync -> bounded IDASyncError OK")
+
+# 8g) if IDA runs the abandoned request late, the tool body must NOT run
+#     (its result would be lost and the side effects unexpected).
+fake_idaapi.execute_sync = _real_execute_sync
+assert len(_dropped) == 1
+_dropped[0]()
+assert _side_effects == [], _side_effects
+assert ok(4) == 8  # call stack / batch state still clean afterwards
+print("late start of abandoned request is a no-op OK")
+
+# 8h) the profile-hook ticker thread never outlives its tool call (normal
+#     return, exception, or timeout), so nothing accumulates per call.
+import threading as _threading
+
+
+def _tickers():
+    return [t for t in _threading.enumerate()
+            if t.name == "ida-mcp-profile-tick" and t.is_alive()]
+
+
+for _ in range(20):
+    assert ok(1) == 2
+try:
+    bad()
+except ValueError:
+    pass
+_time.sleep(0.3)
+assert _tickers() == [], _tickers()
+print("profile ticker threads cleaned up OK")
+
 print("ALL SYNC RESULT-CONTAINER TESTS PASSED")

@@ -26,7 +26,7 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 For linting/type-checking:
 
 ```bash
-pip install -e ".[dev]"   # ruff (+ optionally mypy/coverage)
+pip install -e ".[dev]"   # ruff, mypy, coverage
 ruff check .
 make test lint            # if you use the Makefile
 pre-commit install        # optional: run lint + inventory on every commit
@@ -67,6 +67,11 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 1. **Implement** it in the right `api_*.py` with `@tool` + `@idasync`, a
    **non-empty docstring** (clients pick tools from it), and `@unsafe` if it
    mutates the IDB, or `@ext("dbg")` (+ `@unsafe`) for debugger tools.
+   If it reads analysis-derived data (functions, xrefs, names, types,
+   decompilation), start the body with `ensure_analysis()` from `.sync`, not
+   a bare `ida_auto.auto_wait()`: it returns at once when analysis is done
+   and fails with a clean, retryable error instead of holding the main thread
+   until the timeout. Tools that only report state must not wait at all.
 2. **Register**: make sure `server.py` imports the module (`from . import
    api_x  # noqa: F401`) so the `@tool` side effect runs.
 3. **Document** it in `README.md` (backtick-quoted, e.g. `` `my_tool` ``) and
@@ -87,9 +92,16 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 - Profiles reference only real tools, stay privilege-free, and triage ⊂ readonly.
 - A tool calling a write sink (patch/rename/define/…) must be `@unsafe`/ext-gated.
 
+### Agent skills (`skills_sync_test.py`)
+
+Edit the skills only under `skills/` (the source of truth), then run
+`make skills` to mirror them into `.pi/skills/` for Pi. The test fails if the
+mirror drifts or a frontmatter value is neither double-quoted nor a plain
+identifier (Cline and the `skills` CLI use a strict YAML parser).
+
 ## Local-only checks (not in CI)
 
-- **Lint**: `ruff check .` (CI enforces pyflakes `F`).
+- **Lint**: `ruff check .` (CI enforces `F`, `E`, `W`, `C4`; see `[tool.ruff.lint]`).
 - **Types** (optional): `mypy` on the pure modules (zeromcp, discovery,
   profiles, regex_guard) — see `[tool.mypy]`. Verified clean, so CI enforces
   it; run `mypy` before pushing changes to those modules.

@@ -197,6 +197,21 @@ p.run(0)
 assert len(start_calls) == 2, f"expected 2 starts total, got {start_calls}"
 print("run toggle OK")
 
+# 6b) the server fell back to another port (requested one in use): the
+#     loader must track the bound port for stop, but keep the requested one
+#     as the IDB setting.
+fake_server.start_server = lambda host, port: (start_calls.append((host, port)), port + 3)[1]
+rpc_mod.MCP_SERVER._running = False
+p.run(0)
+assert start_calls[-1][1] == 13337, start_calls
+assert p.port == 13340 and p.requested_port == 13337, (p.port, p.requested_port)
+rpc_mod.MCP_SERVER._running = True
+p.run(0)
+assert stop_calls[-1] == 13340, stop_calls
+rpc_mod.MCP_SERVER._running = False
+fake_server.start_server = start_server
+print("port fallback tracked by loader OK")
+
 # 7) term() stops and removes hook
 p.term()
 assert hooks_installed == []

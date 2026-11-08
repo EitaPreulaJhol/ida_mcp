@@ -9,7 +9,6 @@ re-calling decompile and hoping for a refresh).
 """
 import json
 
-import ida_auto
 import ida_funcs
 import ida_hexrays
 import ida_lines
@@ -19,6 +18,7 @@ import idautils
 from .rpc import tool
 from .sync import (idasync, tool_timeout, check_cancelled,
                    CancelledError, IDASyncError)
+from .sync import ensure_analysis
 from .api_analysis import parse_addr, _cap_lines
 
 
@@ -55,7 +55,7 @@ def get_microcode(address: str) -> str:
     returns a clean error otherwise. For full C pseudocode use
     ``decompile_function``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -120,7 +120,7 @@ def get_flowchart(address: str) -> str:
     Uncapped-pagination alternative to ``basic_blocks``: returns every block
     up to 2000 (with a truncation flag) including per-block instruction counts.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -170,7 +170,7 @@ def get_basic_blocks(address: str) -> str:
     Unlike ``basic_blocks`` (bounds + edges, paginated), each block carries
     its instruction lines (capped at 200 blocks × 100 instructions).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -223,7 +223,7 @@ def force_recompile(address: str) -> str:
     ``decompile_function`` and hoping the cache was invalidated. Output is
     capped at 500 lines (with ``truncated`` total when cut).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err

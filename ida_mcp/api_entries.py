@@ -6,12 +6,12 @@ in-process IDA SDK access.
 
 import json
 
-import ida_auto
 import ida_entry
 import idaapi
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 
 
@@ -30,7 +30,7 @@ def get_entry_points(limit: int = 1000, offset: int = 0) -> str:
     most ``limit`` entries from ``offset`` (``limit=0`` = no cap); a full page
     means more may follow (large export tables).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
 
     for i in range(ida_entry.get_entry_qty()):
@@ -55,7 +55,7 @@ def get_entry_points(limit: int = 1000, offset: int = 0) -> str:
 @idasync
 def get_entry_point_count() -> str:
     """Get the number of entry points."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     count = ida_entry.get_entry_qty()
     return json.dumps({"count": count})
 
@@ -64,7 +64,7 @@ def get_entry_point_count() -> str:
 @idasync
 def get_entry_point_by_ordinal(ordinal: int) -> str:
     """Get an entry point by its ordinal."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea = ida_entry.get_entry(int(ordinal))
     if ea == idaapi.BADADDR:
         return json.dumps({"error": f"No entry point with ordinal {ordinal}"})
@@ -83,7 +83,7 @@ def get_entry_point_by_ordinal(ordinal: int) -> str:
 @idasync
 def get_entry_point_by_name(name: str) -> str:
     """Get an entry point by its name."""
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     for i in range(ida_entry.get_entry_qty()):
         ordinal = ida_entry.get_entry_ordinal(i)
@@ -104,7 +104,7 @@ def get_entry_point_by_name(name: str) -> str:
 @idasync
 def get_entry_point_at(address: str) -> str:
     """Get the entry point at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -129,7 +129,7 @@ def get_entry_point_at(address: str) -> str:
 @idasync
 def get_entry_forwarders() -> str:
     """Get all entry points that have forwarders."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
 
     for i in range(ida_entry.get_entry_qty()):
@@ -161,7 +161,7 @@ def add_entry_point(
     ``ordinal``: set to 0 for auto-assignment.
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -193,7 +193,7 @@ def rename_entry_point(
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     if ida_entry.rename_entry(int(ordinal), name):
         return json.dumps({
             "ok": True,

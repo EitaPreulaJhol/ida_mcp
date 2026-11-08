@@ -7,7 +7,6 @@ more than a glob lives here. Follows idamcp-extendedtools ``api_xrefs.py``.
 """
 import json
 
-import ida_auto
 import ida_funcs
 import ida_typeinf
 import idaapi
@@ -15,6 +14,7 @@ import idautils
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 from .compat import badaddr
 
@@ -116,7 +116,7 @@ def _data_write_type():
 @idasync
 def get_xrefs(address: str, limit: int = 100) -> str:
     """Get all xrefs (both to and from) for an address, each tagged with direction."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -131,7 +131,7 @@ def get_xrefs(address: str, limit: int = 100) -> str:
 @idasync
 def get_xrefs_from(address: str, limit: int = 100) -> str:
     """Get all cross-references FROM an address (outgoing)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -145,7 +145,7 @@ def get_xrefs_from(address: str, limit: int = 100) -> str:
 @idasync
 def get_code_refs_to(address: str, limit: int = 200) -> str:
     """Get code references TO an address (excludes data refs)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -159,7 +159,7 @@ def get_code_refs_to(address: str, limit: int = 200) -> str:
 @idasync
 def get_code_refs_from(address: str, limit: int = 200) -> str:
     """Get code references FROM an address (excludes data refs)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -173,7 +173,7 @@ def get_code_refs_from(address: str, limit: int = 200) -> str:
 @idasync
 def get_data_refs_to(address: str, limit: int = 200) -> str:
     """Get data references TO an address (excludes code refs)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -187,7 +187,7 @@ def get_data_refs_to(address: str, limit: int = 200) -> str:
 @idasync
 def get_data_refs_from(address: str, limit: int = 200) -> str:
     """Get data references FROM an address (excludes code refs)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -201,7 +201,7 @@ def get_data_refs_from(address: str, limit: int = 200) -> str:
 @idasync
 def get_calls_to(address: str, limit: int = 200) -> str:
     """Get call-type xrefs TO a function (fl_CF/fl_CN only, no plain jumps)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -215,7 +215,7 @@ def get_calls_to(address: str, limit: int = 200) -> str:
 @idasync
 def get_calls_from(address: str, limit: int = 200) -> str:
     """Get call-type xrefs FROM an address (fl_CF/fl_CN only)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -229,7 +229,7 @@ def get_calls_from(address: str, limit: int = 200) -> str:
 @idasync
 def get_jumps_to(address: str, limit: int = 200) -> str:
     """Get jump-type xrefs TO an address (fl_JF/fl_JN only, no calls)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -243,7 +243,7 @@ def get_jumps_to(address: str, limit: int = 200) -> str:
 @idasync
 def get_reads_of(address: str, limit: int = 200) -> str:
     """Get data-read xrefs of an address (dr_R)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -257,7 +257,7 @@ def get_reads_of(address: str, limit: int = 200) -> str:
 @idasync
 def get_writes_to(address: str, limit: int = 200) -> str:
     """Get data-write xrefs of an address (dr_W)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -276,7 +276,7 @@ def get_writes_to(address: str, limit: int = 200) -> str:
 @idasync
 def get_xref_count(address: str) -> str:
     """Count incoming and outgoing xrefs for an address (no item lists)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -293,7 +293,7 @@ def get_xref_count(address: str) -> str:
 @idasync
 def get_caller_count(address: str) -> str:
     """Count call-type callers of the function at an address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -310,7 +310,7 @@ def get_caller_count(address: str) -> str:
 @idasync
 def get_callee_count(address: str) -> str:
     """Count distinct functions called by the function at an address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -340,7 +340,7 @@ def xrefs_to_field(struct_name: str, field_name: str, limit: int = 200) -> str:
     Resolves the field via the local type library (``get_udm_by_fullname``)
     and enumerates xrefs to its type id. Ported from ida-pro-mcp.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     if limit <= 0 or limit > 5000:
         limit = 200
     try:

@@ -6,7 +6,6 @@ in-process IDA SDK access.
 
 import json
 
-import ida_auto
 import ida_bytes
 import ida_lines
 import ida_name
@@ -16,6 +15,7 @@ import idc
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 from .compat import get_reg_name
 
@@ -98,7 +98,7 @@ def get_instruction(address: str) -> str:
 
     Returns a JSON object with full instruction metadata.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -121,7 +121,7 @@ def get_instructions(
 
     ``count``: maximum number of instructions to return (max 500).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -146,7 +146,7 @@ def get_instructions(
 @idasync
 def get_operands(address: str) -> str:
     """Get all operands for an instruction at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -167,7 +167,7 @@ def get_operand(
     index: int = 0,
 ) -> str:
     """Get a specific operand by index for an instruction."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -190,7 +190,7 @@ def get_operand(
 @idasync
 def get_operands_count(address: str) -> str:
     """Get the number of operands for an instruction."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -208,7 +208,7 @@ def get_operands_count(address: str) -> str:
 @idasync
 def get_mnemonic(address: str) -> str:
     """Get the mnemonic of an instruction (e.g., 'mov', 'call', 'jmp')."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -225,7 +225,7 @@ def get_mnemonic(address: str) -> str:
 @idasync
 def get_instruction_size(address: str) -> str:
     """Get the size of an instruction in bytes."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -247,7 +247,7 @@ def get_instruction_size(address: str) -> str:
 @idasync
 def is_call_instruction(address: str) -> str:
     """Check if the instruction at the given address is a call."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -264,7 +264,7 @@ def is_call_instruction(address: str) -> str:
 @idasync
 def is_jump_instruction(address: str) -> str:
     """Check if the instruction is a jump (conditional or unconditional)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -283,7 +283,7 @@ def is_jump_instruction(address: str) -> str:
 @idasync
 def is_ret_instruction(address: str) -> str:
     """Check if the instruction is a return instruction."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -301,7 +301,7 @@ def is_ret_instruction(address: str) -> str:
 @idasync
 def is_conditional_jump(address: str) -> str:
     """Check if the instruction is a conditional jump."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -320,7 +320,7 @@ def is_conditional_jump(address: str) -> str:
 @idasync
 def is_indirect_jump(address: str) -> str:
     """Check if the instruction is an indirect jump (target via register/memory)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -350,7 +350,7 @@ def get_operand_info(address: str, index: int = 0) -> str:
     and whether the operand is read, written or both (via ``specflag`` bits
     when the processor module provides them).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -392,7 +392,7 @@ def get_operand_info(address: str, index: int = 0) -> str:
 @idasync
 def breaks_flow(address: str) -> str:
     """Check if the instruction breaks sequential flow (ret, jmp, call, etc.)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -411,7 +411,7 @@ def breaks_flow(address: str) -> str:
 @idasync
 def get_instruction_bytes(address: str) -> str:
     """Get the raw bytes of an instruction as hex string."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -432,7 +432,7 @@ def get_instructions_in_range(
     end: str,
 ) -> str:
     """Get all instructions in an address range."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)

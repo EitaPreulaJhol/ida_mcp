@@ -6,7 +6,6 @@ in-process IDA SDK access (no router indirection).
 
 import json
 
-import ida_auto
 import ida_bytes
 import ida_funcs
 import ida_nalt
@@ -14,6 +13,7 @@ import ida_typeinf
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr, type_label
 from .compat import get_func_cc, get_type_ordinal_limit
 
@@ -117,7 +117,7 @@ def type_query(
     Returns type names, sizes, and kinds. Paginated: at most ``limit`` types
     from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
     til = _get_idati()
 
@@ -147,7 +147,7 @@ def type_inspect(
     Returns detailed information about a type including its
     size, kind, declaration string, struct/union members, or enum values.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     tif = ida_typeinf.tinfo_t()
     if not tif.get_named_type(_get_idati(), name):
         return json.dumps({"error": f"Type '{name}' not found"})
@@ -165,7 +165,7 @@ def get_type_at(
 
     Checks for function prototype types and data item types.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -207,7 +207,7 @@ def set_type(
     Looks up the type by name and applies it to the address.
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -235,7 +235,7 @@ def declare_type(
     parses them into IDA's type system.
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     return json.dumps(_declare_type_impl(declaration), indent=2)
 
 
@@ -280,7 +280,7 @@ def search_structs(
 
     Returns matching struct type names and basic info.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
     til = _get_idati()
 
@@ -310,7 +310,7 @@ def read_struct(
     Interprets memory at the address as the specified struct/union type
     and returns field names, offsets, types, and values.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -371,7 +371,7 @@ def enum_upsert(
     ``idc.*enum_member*`` helpers are unreliable on the IDA 9.4 build.
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     try:
         member_list = json.loads(members)
@@ -453,7 +453,7 @@ def get_type_by_name(
     declaration and members. Unlike ``type_inspect`` (substring-oriented),
     this resolves one exact name — including struct field layouts.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     tif = ida_typeinf.tinfo_t()
     try:
         found = tif.get_named_type(_get_idati(), name)
@@ -506,7 +506,7 @@ def infer_types(addresses: str) -> str:
     integer guess — reporting method and confidence per address.
     Read-only: use ``set_type`` to apply a result. Ported from ida-pro-mcp.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
     for raw in (a.strip() for a in addresses.split(",") if a.strip()):
         try:

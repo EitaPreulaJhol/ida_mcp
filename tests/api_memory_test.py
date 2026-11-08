@@ -79,6 +79,7 @@ PKG = os.path.join(HERE, "..", "ida_mcp")
 src = open(os.path.join(PKG, "api_memory.py")).read()
 src = src.replace("from .rpc import tool", "tool = lambda f: f")
 src = src.replace("from .sync import idasync", "idasync = lambda f: f")
+src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 src = src.replace(
     "from .api_analysis import parse_addr, read_bytes_bss_safe",
     "def parse_addr(s):\n"

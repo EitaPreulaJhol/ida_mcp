@@ -1,5 +1,5 @@
 # Opt-in local hooks: `pip install pre-commit && pre-commit install`.
-# Mirrors CI (ruff pyflakes `F`) plus the dependency-free drift guard, so you
+# Mirrors CI (ruff with the pyproject rule set) plus the dependency-free drift guard, so you
 # catch issues before pushing. Runtime stays dependency-free.
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit

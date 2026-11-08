@@ -30,7 +30,7 @@ Repository = "https://github.com/EitaPreulaJhol/ida_mcp.git"
 [project.optional-dependencies]
 # Dev-only tooling. Never imported at runtime, so the zero-dependency runtime
 # promise holds: `pip install ida_mcp[dev]` only for linting/CI.
-dev = ["ruff>=0.5"]
+dev = ["ruff>=0.5", "mypy>=1.0", "coverage>=7"]
 
 [tool.setuptools]
 # The plugin is loaded by IDA from the source tree; packaging metadata only.
@@ -47,14 +47,15 @@ line-length = 100
 extend-exclude = ["ida_mcp/zeromcp", "__pycache__", "strix_runs"]
 
 [tool.ruff.lint]
-# Enforced set is pyflakes (F): unused imports, undefined names, f-string and
-# redefinition bugs. High signal, zero reformatting, and the tree already
-# carries `# noqa: F401` markers, so it is clean under F today.
+# Enforced: pyflakes (F: unused imports, undefined names, f-string and
+# redefinition bugs) + pycodestyle errors/warnings (E, W: bare except, None
+# comparisons, invalid escapes...) + flake8-comprehensions (C4). All high
+# signal and zero findings on the tree, so they cost nothing to keep.
 #
-# To tighten later (after a one-off `ruff check --fix` pass), broaden to:
-#   select = ["E", "W", "F", "I", "UP", "B", "C4"]
-# and keep the ignores below.
-select = ["F"]
+# Deliberately NOT enabled (measured with ruff 0.6.9): I (46) and UP (27) are
+# pure restyling churn; B is mostly B904 raise-from (18) plus B023 false
+# positives on synchronous enum_import_names callbacks. Revisit if wanted.
+select = ["F", "E", "W", "C4"]
 ignore = [
     "E501",  # line length is enforced softly; long docstrings/URLs are fine
     "E741",  # ambiguous names (l, O) show up in short RE/loop locals

@@ -121,6 +121,7 @@ sys.modules["calls_test_rpc"] = rpc
 
 sync = types.ModuleType("calls_test_sync")
 sync.idasync = lambda f: f
+sync.ensure_analysis = lambda: None
 sys.modules["calls_test_sync"] = sync
 
 
