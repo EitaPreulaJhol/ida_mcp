@@ -80,6 +80,9 @@ _NATIVE_CANCEL_GRACE_SEC = 5.0
 # work even for scripts that never poll it themselves. IDA_MCP_UI_PUMP=0
 # disables it.
 _UI_PUMP_INTERVAL_SEC = 0.3
+# How often the profile hook runs its cancel/deadline/pump checks (see the
+# ticker in sync_wrapper); between ticks the hook is a single flag read.
+_PROFILE_CHECK_INTERVAL_SEC = 0.05
 # Hard-interrupt watchdog (script tools only): extra time after the soft
 # timeout (or after a cancel request) before an async ToolInterrupt is
 # injected into the main thread, the retry period, and the max attempts.
@@ -581,7 +584,24 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
             pump = _ui_pump()
             next_pump = [time.monotonic() + _UI_PUMP_INTERVAL_SEC]
 
+            # The hook fires on EVERY Python call/return and C call/return of
+            # the tool body (every SDK call is 2-4 events), so its body is
+            # the hot path: running the full checks each time made call-heavy
+            # tools ~10x slower. A ticker thread raises ``tick`` every
+            # _PROFILE_CHECK_INTERVAL_SEC and the hook does real work only
+            # then -- one list read per event otherwise. Latency stays bounded
+            # by time (not by event count, which slow SDK calls would stretch).
+            tick = [True]
+            stop_ticker = threading.Event()
+
+            def _ticker():
+                while not stop_ticker.wait(_PROFILE_CHECK_INTERVAL_SEC):
+                    tick[0] = True
+
             def profilefunc(frame, event, arg):
+                if not tick[0]:
+                    return
+                tick[0] = False
                 # NOTE: CPython unsets the profile hook as soon as it raises,
                 # so each raise below is a one-shot. ToolInterrupt is a
                 # BaseException so `except Exception` in the tool body cannot
@@ -616,6 +636,9 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
                 hard = _HardInterruptWatchdog(deadline, cancel_event)
                 hard.start()
 
+            # Started last, right before the try whose finally stops it.
+            threading.Thread(target=_ticker, name="ida-mcp-profile-tick",
+                             daemon=True).start()
             old_profile = sys.getprofile()
             sys.setprofile(profilefunc)
             # Expose the deadline so tool bodies can self-monitor and
@@ -633,6 +656,7 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
                     hard._done.set()
                     hard.frame = None
                 sys.setprofile(old_profile)
+                stop_ticker.set()
                 _deadline_state.deadline = None
                 if native_timer is not None:
                     native_timer.cancel()

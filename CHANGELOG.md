@@ -39,6 +39,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Bound off-loopback (`IDA_MCP_HOST`) with auth on, the server now requires
   the token on every request (401 otherwise), not only for unsafe/debugger
   tools; CORS preflights are exempt and now allow `X-IDA-MCP-Token`.
+- The per-tool profile hook (timeouts/cancel/wait-box pump) now runs its
+  checks only on a 50 ms tick instead of on every call/return event:
+  call-heavy tool code went from ~9.6x to ~5x the unhooked time and a
+  typical list/JSON tool from ~1.9x to ~1.4x, with cancel/timeout latency
+  still bounded by time.
 - Tools now start with `ensure_analysis()` instead of a bare
   `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
   is done, and a clean retryable "Auto-analysis still in progress" error

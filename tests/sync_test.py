@@ -312,4 +312,24 @@ assert _side_effects == [], _side_effects
 assert ok(4) == 8  # call stack / batch state still clean afterwards
 print("late start of abandoned request is a no-op OK")
 
+# 8h) the profile-hook ticker thread never outlives its tool call (normal
+#     return, exception, or timeout), so nothing accumulates per call.
+import threading as _threading
+
+
+def _tickers():
+    return [t for t in _threading.enumerate()
+            if t.name == "ida-mcp-profile-tick" and t.is_alive()]
+
+
+for _ in range(20):
+    assert ok(1) == 2
+try:
+    bad()
+except ValueError:
+    pass
+_time.sleep(0.3)
+assert _tickers() == [], _tickers()
+print("profile ticker threads cleaned up OK")
+
 print("ALL SYNC RESULT-CONTAINER TESTS PASSED")
