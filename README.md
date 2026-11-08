@@ -26,7 +26,7 @@ An agent running inside the IDA session identifies a SHA-1 transform from its ro
 - **Main-thread safety.** All IDA API calls are marshalled to the IDA main thread via `idaapi.execute_sync` through an `@idasync` layer with a queue-based result container, timeouts and cancellation support.
 - **Simple tool model.** Tools are plain Python functions registered with `@tool` into a single `MCP_SERVER` registry. Unsafe tools are marked with `@unsafe` and hidden/refused unless the client opts in.
 - **Lazy profiles.** Clients start with a 16-tool `triage` profile and escalate to `readonly` and then the full set only as needed, keeping agent context small.
-- **Multi-instance aware.** Running instances register themselves on disk so tooling can discover and address several open IDA sessions.
+- **Multi-instance aware.** A second IDA whose port is taken falls back to the next free one (up to +9), and running instances register themselves on disk so tooling can discover and address several open IDA sessions.
 - **IDA 9.x native.** Uses current APIs (`idaapi.BADADDR`, `insn.get_canon_mnem()`, `ida_bytes.find_bytes()`, `inf_get_min_ea/max_ea`) with shims for 8.3+ in `compat.py`.
 
 ### Request flow

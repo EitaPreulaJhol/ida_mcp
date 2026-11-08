@@ -216,9 +216,10 @@ else:
 # ---------------------------------------------------------------------------
 
 def _start_server(host, port):
-    """Start the MCP server.  Imported lazily."""
+    """Start the MCP server; returns the port actually bound.  Imported lazily."""
     from ida_mcp.server import start_server
-    start_server(host, port)
+    bound = start_server(host, port)
+    return bound if isinstance(bound, int) else port
 
 
 def _stop_server(port):
@@ -253,7 +254,10 @@ class IdaMcp(_PluginBase):
         if ida_kernwin is None:
             return self.flags
         self.host = _get_host(self.DEFAULT_HOST)
-        self.port = _get_port(self.DEFAULT_PORT)
+        # requested_port is what the IDB stores; port is what is bound (it
+        # differs when the requested one was taken and start fell back).
+        self.requested_port = _get_port(self.DEFAULT_PORT)
+        self.port = self.requested_port
         self.autostart = _get_autostart()
         self.ui_hook = MCPUIHooks(self)
         try:
@@ -286,10 +290,12 @@ class IdaMcp(_PluginBase):
             if getattr(mcp, "_running", False):
                 _stop_server(self.port)
             else:
-                _start_server(self.host, self.port)
+                self.port = _start_server(self.host, self.requested_port)
                 if _is_loopback(self.host):
                     _set_host(self.host)
-                _set_port(self.port)
+                # Persist the requested port, not a fallback one: a one-off
+                # collision must not move this IDB's port for good.
+                _set_port(self.requested_port)
                 try:
                     ida_kernwin.msg(
                         f"[ida-mcp] listening on http://{self.host}:{self.port}/mcp"

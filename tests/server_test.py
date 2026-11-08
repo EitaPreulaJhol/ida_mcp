@@ -188,6 +188,53 @@ assert mod._OWN_PORT is None
 assert 13337 in _UNREGISTERED, _UNREGISTERED
 print("start/stop OK")
 
+# 7b) requested port in use -> next free port; other bind errors propagate
+import errno as _errno
+_real_serve = mod.MCP_SERVER.serve
+_tried = []
+
+
+def _serve_busy_until(free_port):
+    def serve(h, p, background=True):
+        _tried.append(p)
+        if p < free_port:
+            raise OSError(_errno.EADDRINUSE, "Address already in use")
+        return _real_serve(h, p, background)
+    return serve
+
+
+mod.MCP_SERVER.serve = _serve_busy_until(13339)
+bound = mod.start_server("127.0.0.1", 13337)
+assert bound == 13339 and _tried == [13337, 13338, 13339], (bound, _tried)
+assert mod._OWN_PORT == 13339, mod._OWN_PORT
+assert _REGISTERED[-1][1] == 13339, _REGISTERED
+mod.stop_server(13339)
+
+_tried.clear()
+mod.MCP_SERVER.serve = _serve_busy_until(10**6)  # whole range busy
+try:
+    mod.start_server("127.0.0.1", 13337)
+    raise AssertionError("exhausted range must raise")
+except OSError as e:
+    assert "13337-13346" in str(e) and len(_tried) == 10, (e, _tried)
+assert mod._OWN_PORT is None
+
+
+def _serve_bad_host(h, p, background=True):
+    _tried.append(p)
+    raise OSError(_errno.EADDRNOTAVAIL, "Cannot assign requested address")
+
+
+_tried.clear()
+mod.MCP_SERVER.serve = _serve_bad_host
+try:
+    mod.start_server("10.255.255.1", 13337)
+    raise AssertionError("non-EADDRINUSE errors must propagate")
+except OSError as e:
+    assert e.errno == _errno.EADDRNOTAVAIL and _tried == [13337], (e, _tried)
+mod.MCP_SERVER.serve = _real_serve
+print("port fallback OK")
+
 # 8) core unsafe marking survived the rewrite
 assert "execute_script" in mod._UNSAFE_NAMES, mod._UNSAFE_NAMES
 assert "close_instance" in mod._UNSAFE_NAMES, mod._UNSAFE_NAMES

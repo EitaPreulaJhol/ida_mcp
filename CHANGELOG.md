@@ -30,6 +30,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `compat.badaddr()` gains a type-checked, documented pre-9.3 fallback.
 
 ### Changed
+- A second IDA instance no longer fails to start when its port is taken:
+  `start_server` falls back to the next free port (up to +9), prints it, and
+  returns it; the loader uses the bound port for stop while the IDB keeps the
+  requested one.
 - Tools now start with `ensure_analysis()` instead of a bare
   `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
   is done, and a clean retryable "Auto-analysis still in progress" error

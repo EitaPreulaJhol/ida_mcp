@@ -69,9 +69,11 @@ signatures). Installation has two halves:
 > The server binds **127.0.0.1 only**. It's only reachable from your machine.
 
 Host, port and autostart persist per-IDB via
-netnodes (defaults `127.0.0.1:13337`, autostart on). Running instances
-register on disk. `list_instances()` from any connected client shows every
-open IDA session.
+netnodes (defaults `127.0.0.1:13337`, autostart on). If the port is taken
+(typically by another IDA), the server falls back to the next free port up
+to +9 and prints the one it bound (`port 13337 is in use ...; using 13338`);
+the IDB keeps the requested port. Running instances register on disk.
+`list_instances()` from any connected client shows every open IDA session.
 
 ---
 
@@ -279,7 +281,7 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 | `is not in profile 'triage'` error | Normal lazy-loading signal: the tool exists but triage hides it. Reconnect with `?profile=readonly` (or drop the profile). |
 | `Invalid Host` (403) | Something reached the server with a non-loopback `Host` (DNS-rebinding guard). Direct MCP clients are unaffected; check proxies. |
 | `Payload Too Large` (413) | A 10 MiB request cap tripped (usually a runaway script). Narrow the query. |
-| Port 13337 already in use | A second IDA (or stale instance) holds it. `list_instances()` via any connected client, or change port in IDA and reconnect. |
+| Port 13337 already in use | A second IDA (or stale instance) holds it. The server falls back to the next free port (up to 13346) and prints it in the Output window; point the client there, or find it with `list_instances()`. Only when all ten are taken does start fail. |
 | Tools work but decompilation fails | Hex-Rays not installed/enabled. Disassembly tools still work; install the decompiler for `decompile_function` & co. |
 | IDA loads the wrong Python | Use `idapyswitch` to point IDA at Python 3.11+. |
 
