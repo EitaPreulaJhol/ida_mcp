@@ -848,6 +848,12 @@ class McpServer:
         self.audit_path: str | None = (os.environ.get("IDA_MCP_AUDIT", "").strip() or None)
 
         self.registry: JsonRpcRegistry = JsonRpcRegistry()
+        # Unexpected exceptions return their full traceback to the client by
+        # default (it helps agents self-correct). IDA_MCP_REDACT_ERRORS=1
+        # sends only "Internal Error: <type>: <msg>" and logs the traceback
+        # server-side instead (e.g. when untrusted clients can connect).
+        self.redact_exceptions = os.environ.get(
+            "IDA_MCP_REDACT_ERRORS", "").strip().lower() in ("1", "true", "yes")
         self.registry.methods["ping"] = self._mcp_ping
         self.registry.methods["initialize"] = self._mcp_initialize
         self.registry.methods["tools/list"] = self._mcp_tools_list
@@ -881,6 +887,16 @@ class McpServer:
         if gate.acquire(blocking=False):
             return True, gate
         return False, None
+
+    @property
+    def redact_exceptions(self) -> bool:
+        return self.tools.redact_exceptions
+
+    @redact_exceptions.setter
+    def redact_exceptions(self, value: bool) -> None:
+        # One switch for every registry that can map an unexpected exception.
+        for reg in (self.tools, self.resources, self.prompts, self.registry):
+            reg.redact_exceptions = bool(value)
 
     # ---- decorators ----
     def tool(self, func: Callable) -> Callable:

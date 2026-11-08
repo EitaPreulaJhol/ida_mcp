@@ -23,6 +23,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Per-tool metrics (call/error/busy counts + p50/p95/max timing) surfaced via
   `server_health` `stats`.
 - Opt-in JSONL audit trail of mutating calls (`IDA_MCP_AUDIT`).
+- `IDA_MCP_REDACT_ERRORS=1`: unexpected tool exceptions reach the client as a
+  one-line `Internal Error` (traceback logged server-side instead).
 - MCP **resources** (`ida://triage`, `ida://health`) and a **prompt**
   (`reverse-engineer`); capabilities advertised only when registered.
 - Tests: metrics/audit, resources/prompts, a skip-if-absent IDAPython-docs

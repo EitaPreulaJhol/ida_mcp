@@ -11,7 +11,8 @@ Covers:
   5. notifications/cancelled is scoped to the caller's session, so one
      client cannot cancel another client's request with the same id;
   6. initialize negotiates protocolVersion and malformed JSON gets -32700;
-  9. bound off-loopback with auth on, every request needs the token.
+  9. bound off-loopback with auth on, every request needs the token;
+ 10. IDA_MCP_REDACT_ERRORS hides tracebacks from clients (logged instead).
 """
 import json
 import os
@@ -353,6 +354,59 @@ try:
 finally:
     mcp_mod._is_loopback_host = _real_is_loopback
     srv2.stop()
+
+# ===================================================================
+# 10. IDA_MCP_REDACT_ERRORS: no traceback to the client, logged instead
+# ===================================================================
+import logging  # noqa: E402
+
+
+def _boom_call(server):
+    return server.registry.dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                     "params": {"name": "explode", "arguments": {}}})
+
+
+def _make_exploding(name):
+    s = McpServer(name)
+
+    @s.tool
+    def explode() -> str:
+        """Unexpected failure inside a tool body."""
+        raise KeyError("secret_internal_key")
+
+    return s
+
+
+plain = _make_exploding("traceback-default")
+text = _boom_call(plain)["result"]["content"][0]["text"]
+check("Traceback" in text, "default: unexpected exception returns the traceback")
+
+os.environ["IDA_MCP_REDACT_ERRORS"] = "1"
+try:
+    redacted = _make_exploding("traceback-redacted")
+finally:
+    del os.environ["IDA_MCP_REDACT_ERRORS"]
+logged = []
+
+
+class _Capture(logging.Handler):
+    def emit(self, record):
+        logged.append(record)
+
+
+_jr_logger = logging.getLogger(sys.modules["zeromcp.jsonrpc"].__name__)
+_cap = _Capture()
+_jr_logger.addHandler(_cap)
+try:
+    res = _boom_call(redacted)["result"]
+finally:
+    _jr_logger.removeHandler(_cap)
+text = res["content"][0]["text"]
+check(res["isError"] is True and "Traceback" not in text
+      and text.startswith("Internal Error: KeyError"), f"redacted: short message only ({text!r})")
+check(any(r.exc_info for r in logged), "redacted: full traceback still logged server-side")
+check(redacted.registry.redact_exceptions and redacted.resources.redact_exceptions,
+      "redaction applies to every registry")
 
 print("\n" + "=" * 50)
 if failures:

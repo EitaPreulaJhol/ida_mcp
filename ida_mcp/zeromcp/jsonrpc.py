@@ -166,7 +166,9 @@ class JsonRpcRegistry:
 
     def map_exception(self, e: Exception) -> JsonRpcError:
         if self.redact_exceptions:
-            return {"code": -32603, "message": f"Internal Error: {str(e)}"}
+            # Keep the traceback for the operator (server log), not the client.
+            logger.error("[MCP] unhandled %s", type(e).__name__, exc_info=e)
+            return {"code": -32603, "message": f"Internal Error: {type(e).__name__}: {e}"}
         return {
             "code": -32603,
             "message": "\n".join(traceback.format_exception(e)).strip(),
