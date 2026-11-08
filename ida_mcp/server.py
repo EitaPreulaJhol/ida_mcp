@@ -419,10 +419,20 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
 
 
 def stop_server(port: int = 13337) -> None:
-    """Stop the MCP HTTP server and unregister this instance."""
+    """Stop the MCP HTTP server, remove agent-installed hooks, unregister.
+
+    Runs on the IDA main thread (plugin run/term, or inside close_instance).
+    """
     global _OWN_PORT
     MCP_SERVER.stop()
     _OWN_PORT = None
+    try:
+        removed = api_hooks.remove_all_hooks()
+        if removed:
+            ida_kernwin.msg(f"[ida-mcp] removed {len(removed)} hook(s) on stop: "
+                            f"{', '.join(removed)}\n")
+    except Exception as e:  # noqa: BLE001 - never block shutdown
+        ida_kernwin.msg(f"[ida-mcp] hook cleanup failed: {e}\n")
     try:
         unregister_instance(port)
     except Exception:  # noqa: BLE001 - unregistration is best-effort

@@ -60,6 +60,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- Hooks installed by agents (`install_hook` & co.) are now removed when the
+  server stops (plugin toggle/term, `close_instance`); they used to stay
+  hooked into IDA with no owner, running orphaned code after a hot reload.
 - `execute_script` / `py_eval` / `py_exec_file` ran scripts with separate
   globals and locals dicts, so any function or comprehension using a name
   defined at the script's top level (a constant, a helper, a variable)

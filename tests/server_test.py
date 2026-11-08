@@ -235,6 +235,21 @@ except OSError as e:
 mod.MCP_SERVER.serve = _real_serve
 print("port fallback OK")
 
+# 7c) stop_server removes agent-installed hooks (they must not outlive the
+#     server, nor run orphaned code after a hot reload)
+_hook_cleanups = []
+mod.__dict__["api_hooks"] = types.SimpleNamespace(
+    remove_all_hooks=lambda: _hook_cleanups.append(True) or ["idb_1"])
+mod.start_server("127.0.0.1", 13337)
+mod.stop_server(13337)
+assert _hook_cleanups == [True], _hook_cleanups
+mod.__dict__["api_hooks"] = types.SimpleNamespace(
+    remove_all_hooks=lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+mod.start_server("127.0.0.1", 13337)
+mod.stop_server(13337)  # a failing cleanup must not break shutdown
+assert mod._OWN_PORT is None and mod.MCP_SERVER._running is False
+print("stop_server hook cleanup OK")
+
 # 8) core unsafe marking survived the rewrite
 assert "execute_script" in mod._UNSAFE_NAMES, mod._UNSAFE_NAMES
 assert "close_instance" in mod._UNSAFE_NAMES, mod._UNSAFE_NAMES

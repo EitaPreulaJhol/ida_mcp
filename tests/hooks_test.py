@@ -108,4 +108,16 @@ r = json.loads(mod.remove_hooks("all"))
 assert r["count"] == 2 and not mod._HOOKS, r
 print("remove one/all OK")
 
+# remove_all_hooks (used by server.stop_server): plain call, unhooks each
+_unhooked = []
+_orig_unhook = _HookBase.unhook
+_HookBase.unhook = lambda self: _unhooked.append(self)
+ids = [json.loads(mod.install_hook(t))["hook_id"] for t in ("idb", "debugger")]
+removed = mod.remove_all_hooks()
+assert sorted(removed) == sorted(ids) and not mod._HOOKS, (removed, mod._HOOKS)
+assert len(_unhooked) == 2, _unhooked
+assert mod.remove_all_hooks() == []  # idempotent
+_HookBase.unhook = _orig_unhook
+print("remove_all_hooks OK")
+
 print("ALL HOOKS TESTS PASSED")
