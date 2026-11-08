@@ -10,7 +10,8 @@ Covers:
      carries the error text, and max_concurrent_tools=N really admits N;
   5. notifications/cancelled is scoped to the caller's session, so one
      client cannot cancel another client's request with the same id;
-  6. initialize negotiates protocolVersion and malformed JSON gets -32700.
+  6. initialize negotiates protocolVersion and malformed JSON gets -32700;
+  9. bound off-loopback with auth on, every request needs the token.
 """
 import json
 import os
@@ -297,6 +298,61 @@ check(post_raw(b"[]").get("error", {}).get("code") == -32600,
       "well-formed non-object stays -32600 invalid request")
 
 srv.stop()
+
+# ===================================================================
+# 9. off-loopback bind: every request needs the token (when auth is on)
+# ===================================================================
+import urllib.error  # noqa: E402
+
+mcp_mod = sys.modules["zeromcp.mcp"]
+PORT2 = PORT + 1
+BASE2 = f"http://127.0.0.1:{PORT2}/mcp"
+srv2 = McpServer("offloopback-test")
+
+
+@srv2.tool
+def harmless() -> str:
+    """Read-only tool."""
+    return "ok"
+
+
+def status_of(method="POST", query="", headers=None):
+    data = (json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                        "params": {"name": "harmless", "arguments": {}}}).encode()
+            if method == "POST" else None)
+    req = urllib.request.Request(BASE2 + query, data=data, method=method,
+                                 headers={"Content-Type": "application/json",
+                                          **(headers or {})})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, dict(r.headers)
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers)
+
+
+srv2.auth_token = "s3cret"
+srv2.serve("127.0.0.1", PORT2, background=True)
+time.sleep(0.3)
+check(status_of()[0] == 200, "loopback bind: read-only call needs no token (unchanged)")
+
+_real_is_loopback = mcp_mod._is_loopback_host
+mcp_mod._is_loopback_host = lambda host: False  # pretend we bound 0.0.0.0
+try:
+    check(status_of()[0] == 401, "off-loopback: request without token -> 401")
+    check(status_of(headers={"X-IDA-MCP-Token": "wrong"})[0] == 401,
+          "off-loopback: wrong token -> 401")
+    check(status_of(headers={"X-IDA-MCP-Token": "s3cret"})[0] == 200,
+          "off-loopback: header token accepted")
+    check(status_of(query="?token=s3cret")[0] == 200, "off-loopback: ?token= accepted")
+    code, hdrs = status_of("OPTIONS", headers={"Origin": "http://localhost:5173"})
+    check(code == 204, "off-loopback: CORS preflight needs no token")
+    allow = hdrs.get("Access-Control-Allow-Headers", "")
+    check("X-IDA-MCP-Token" in allow, "preflight allows the X-IDA-MCP-Token header")
+    srv2.auth_token = None  # IDA_MCP_NO_AUTH
+    check(status_of()[0] == 200, "off-loopback with auth disabled: no token needed")
+finally:
+    mcp_mod._is_loopback_host = _real_is_loopback
+    srv2.stop()
 
 print("\n" + "=" * 50)
 if failures:

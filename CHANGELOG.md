@@ -34,6 +34,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `start_server` falls back to the next free port (up to +9), prints it, and
   returns it; the loader uses the bound port for stop while the IDB keeps the
   requested one.
+- Bound off-loopback (`IDA_MCP_HOST`) with auth on, the server now requires
+  the token on every request (401 otherwise), not only for unsafe/debugger
+  tools; CORS preflights are exempt and now allow `X-IDA-MCP-Token`.
 - Tools now start with `ensure_analysis()` instead of a bare
   `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
   is done, and a clean retryable "Auto-analysis still in progress" error
@@ -43,6 +46,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- pi extension: could not send the auth token, so its `unsafe`/`dbg` levels
+  failed with the default (random-token) setup. It now sends `IDA_MCP_TOKEN`
+  as `X-IDA-MCP-Token`, explains token errors, and joins the ladder query
+  with `&` when `IDA_MCP_URL` already has one.
 - `patch_asm`: `idc.Assemble` (removed in IDA 9.x) replaced with
   `idautils.Assemble` + `ida_bytes.patch_bytes` so the tool still patches.
 - `ida-scripting` skill: `ida_search.find_binary` (removed in 9.x) replaced

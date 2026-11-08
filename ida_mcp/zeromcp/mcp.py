@@ -270,15 +270,27 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE")
             self.send_header(
                 "Access-Control-Allow-Headers",
-                "Content-Type, Accept, X-Requested-With, Mcp-Session-Id, Mcp-Protocol-Version",
+                "Content-Type, Accept, X-Requested-With, Mcp-Session-Id, Mcp-Protocol-Version, "
+                "X-IDA-MCP-Token",
             )
 
-    def _check_api_request(self) -> bool:
+    def _request_token(self) -> str | None:
+        token = (self.headers.get("X-IDA-MCP-Token", "")
+                 or self._get_query_param(self.path, "token", "")).strip()
+        return token or None
+
+    def _check_api_request(self, *, preflight: bool = False) -> bool:
         """Block browser traffic that violates the configured origin policy.
 
         Browsers can bypass passive CORS-only defenses during DNS rebinding
         because same-origin requests do not need CORS. Rejecting unexpected Host
         and Origin headers closes that gap while keeping direct clients working.
+
+        Off loopback (e.g. IDA_MCP_HOST=0.0.0.0) the Host check cannot apply
+        and the network can reach the server, so when auth is enabled EVERY
+        request must carry the token, not only unsafe/extension calls.
+        CORS preflights are exempt: browsers never attach custom headers to
+        them, and they reach no tool.
         """
         bound_host = str(self.server.server_address[0])  # type: ignore[index]
         if not _host_header_allowed_for_bind(bound_host, self.headers.get("Host")):
@@ -288,10 +300,17 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         if origin and not self.mcp_server._origin_allowed(origin):
             self._safe_send_error(403, "Invalid Origin")
             return False
+        if (not preflight and not _is_loopback_host(bound_host)
+                and not self.mcp_server._token_matches(self._request_token())):
+            self._safe_send_error(
+                401, "Auth token required",
+                "This server is bound off-loopback: send the token printed in IDA's "
+                "Output window as the X-IDA-MCP-Token header (or ?token=).")
+            return False
         return True
 
     def do_OPTIONS(self):
-        if not self._check_api_request():
+        if not self._check_api_request(preflight=True):
             return
         try:
             self.send_response(204)
@@ -312,9 +331,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self._get_query_param(self.path, "unsafe", "false").strip().lower() == "true"
         )
         _request_extensions.groups = self._parse_extensions(self.path)
-        token = (self.headers.get("X-IDA-MCP-Token", "")
-                 or self._get_query_param(self.path, "token", "")).strip()
-        _request_auth.token = token or None
+        _request_auth.token = self._request_token()
         profile_name = self._get_query_param(self.path, "profile", "").strip().lower()
         profile_set = None
         if profile_name and _get_profile_fn is not None:
@@ -1013,10 +1030,13 @@ class McpServer:
         Returns True when auth is disabled (``auth_token is None``). Otherwise
         the per-request token (header/query) must match in constant time.
         """
+        return self._token_matches(getattr(_request_auth, "token", None))
+
+    def _token_matches(self, provided: str | None) -> bool:
+        """Constant-time token check; True when auth is disabled."""
         expected = self.auth_token
         if not expected:
             return True
-        provided = getattr(_request_auth, "token", None)
         if not provided:
             return False
         try:

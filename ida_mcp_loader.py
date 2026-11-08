@@ -302,11 +302,19 @@ class IdaMcp(_PluginBase):
                         f" (append ?unsafe=true for write tools)\n"
                     )
                     if not _is_loopback(self.host):
-                        ida_kernwin.msg(
-                            f"[ida-mcp] WARNING: bound to non-loopback {self.host}; "
-                            f"read-only tools are reachable from the network "
-                            f"without a token\n"
-                        )
+                        if getattr(mcp, "auth_token", None):
+                            ida_kernwin.msg(
+                                f"[ida-mcp] bound to non-loopback {self.host}: every "
+                                f"request requires the auth token (traffic is plain "
+                                f"HTTP - use a trusted network or a tunnel)\n"
+                            )
+                        else:
+                            ida_kernwin.msg(
+                                f"[ida-mcp] WARNING: bound to non-loopback {self.host} "
+                                f"with auth DISABLED (IDA_MCP_NO_AUTH): every tool, "
+                                f"including script execution, is reachable from the "
+                                f"network\n"
+                            )
                 except Exception:
                     pass
         except Exception as e:

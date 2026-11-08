@@ -2,7 +2,7 @@
  * IDA Pro MCP bridge for pi.
  *
  * Proxies the IDA plugin's Streamable-HTTP MCP server
- * (http://127.0.0.1:13337/mcp, stdlib only, no auth, loopback-only)
+ * (http://127.0.0.1:13337/mcp, stdlib only, loopback by default)
  * into pi tools. Lazy-loading by default: starts on the 16-tool
  * triage profile and escalates only via the `ida_profile` tool
  * or `/ida <level>`.
@@ -16,6 +16,11 @@
  *
  * Env overrides:
  *   IDA_MCP_URL                (default http://127.0.0.1:13337/mcp)
+ *   IDA_MCP_TOKEN              auth token, sent as the X-IDA-MCP-Token header.
+ *                              Needed for the unsafe/dbg levels (and for every
+ *                              call when IDA binds off-loopback). Same variable
+ *                              the server reads to pin its token, so setting it
+ *                              once in a shared environment configures both.
  *   IDA_MCP_CLIENT_TIMEOUT_MS  per tool call (default 90000). Keep it ABOVE the
  *                              server's IDA_MCP_TOOL_TIMEOUT_SEC (default 60s) +
  *                              ~15s interrupt grace, so the server's own
@@ -38,6 +43,17 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 
 const BASE_URL = (process.env.IDA_MCP_URL ?? "http://127.0.0.1:13337/mcp").replace(/\/$/, "");
+const TOKEN = (process.env.IDA_MCP_TOKEN ?? "").trim();
+
+/** Request headers; carries the auth token when one is configured. */
+function rpcHeaders(): Record<string, string> {
+	const headers: Record<string, string> = {
+		"Content-Type": "application/json",
+		Accept: "application/json, text/event-stream",
+	};
+	if (TOKEN) headers["X-IDA-MCP-Token"] = TOKEN;
+	return headers;
+}
 
 type Level = "triage" | "readonly" | "full" | "unsafe" | "dbg";
 
@@ -95,7 +111,10 @@ class IdaTimeoutError extends Error {
 }
 
 function endpoint(level: Level = currentLevel): string {
-	return `${BASE_URL}${LADDER[level].suffix}`;
+	const suffix = LADDER[level].suffix;
+	// IDA_MCP_URL may already carry a query (e.g. ?token=...): join with "&".
+	if (suffix && BASE_URL.includes("?")) return `${BASE_URL}&${suffix.slice(1)}`;
+	return `${BASE_URL}${suffix}`;
 }
 
 interface McpToolDef {
@@ -125,13 +144,19 @@ async function rpc(
 	try {
 		const res = await fetch(endpoint(level), {
 			method: "POST",
-			headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+			headers: rpcHeaders(),
 			// Unique ids: the server keys cancellation (notifications/cancelled) by request id.
 			body: JSON.stringify({ jsonrpc: "2.0", method, params: params ?? {}, id }),
 			signal: ctrl.signal,
 		});
 		if (!res.ok) {
 			const text = await res.text().catch(() => "");
+			if (res.status === 401) {
+				throw new Error(
+					`IDA MCP at ${endpoint(level)} requires the auth token (HTTP 401). ` +
+						`Set IDA_MCP_TOKEN to the token printed in IDA's Output window.`,
+				);
+			}
 			throw new Error(`IDA MCP HTTP ${res.status} at ${endpoint(level)}: ${text.slice(0, 300)}`);
 		}
 		const data = (await res.json()) as { result?: any; error?: { message?: string; code?: number } };
@@ -174,7 +199,7 @@ async function pingIda(timeoutMs = PING_TIMEOUT_MS): Promise<boolean> {
 function sendCancel(requestId: number, level: Level, reason: string): void {
 	void fetch(endpoint(level), {
 		method: "POST",
-		headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+		headers: rpcHeaders(),
 		body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId, reason } }),
 		signal: AbortSignal.timeout(3_000),
 	}).catch(() => {});
@@ -218,6 +243,11 @@ async function callRemoteTool(
 		const text = result?.content?.map((c: any) => c?.text ?? "").join("\n") ?? "Unknown IDA error";
 		// Routing signals (ladder escalation) are normal flow — return as text,
 		// don't throw, so the model can read the "reconnect with …" hint.
+		if (/requires a valid auth token/i.test(text)) {
+			return TOKEN
+				? `${text}\n(IDA_MCP_TOKEN is set but does not match the server's token: copy the current one from IDA's Output window.)`
+				: `${text}\n(Set IDA_MCP_TOKEN in pi's environment to the token printed in IDA's Output window, then /reload.)`;
+		}
 		if (/requires unsafe|requires extension|not in profile/i.test(text)) return text;
 		if (result?.structuredContent?.busy) return `[IDA busy] ${text} ${BUSY_HINT}`;
 		if (/timed out|cancelled/i.test(text)) {

@@ -101,7 +101,7 @@ debugger tools (total 243, the full registry).
 > require a secret token the server prints to IDA's Output window on startup
 > (loopback binding alone does not stop another local process). Pass it as the
 > `X-IDA-MCP-Token` header or append `&token=<token>` to the URL; read-only
-> steps 1-3 need no token. Pin a stable token with `IDA_MCP_TOKEN`, or set
+> steps 1-3 need no token on loopback (off-loopback, every request does). Pin a stable token with `IDA_MCP_TOKEN`, or set
 > `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user box.
 
 ### Pi Agent
@@ -119,7 +119,9 @@ The extension proxies the Streamable-HTTP server with lazy loading:
 `/ida [status|triage|readonly|full|unsafe|dbg|tools]` switches ladder
 levels, `ida_profile` / `ida_status` manage scope, and a footer indicator
 shows `IDA:online/offline`. Override the URL with `IDA_MCP_URL`
-(default `http://127.0.0.1:13337/mcp`).
+(default `http://127.0.0.1:13337/mcp`); for the `unsafe`/`dbg` levels set
+`IDA_MCP_TOKEN` to the token from IDA's Output window (sent as the
+`X-IDA-MCP-Token` header).
 
 ### Claude Code
 
@@ -279,6 +281,7 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 | `requires a valid auth token` error | Unsafe/debugger call without the startup token. Pass `X-IDA-MCP-Token` (or `?token=`) using the token line in IDA's Output window, pin it with `IDA_MCP_TOKEN`, or set `IDA_MCP_NO_AUTH=1` on a trusted box. |
 | `requires extension 'dbg'` error | Endpoint lacks `?ext=dbg` (debugger tools also need `?unsafe=true`). Reconnect with step 5 URL - debugger must also be configured in IDA. |
 | `is not in profile 'triage'` error | Normal lazy-loading signal: the tool exists but triage hides it. Reconnect with `?profile=readonly` (or drop the profile). |
+| `Auth token required` (401) | The server is bound off-loopback (`IDA_MCP_HOST`), so every request needs the token: send `X-IDA-MCP-Token` (pi: set `IDA_MCP_TOKEN`). |
 | `Invalid Host` (403) | Something reached the server with a non-loopback `Host` (DNS-rebinding guard). Direct MCP clients are unaffected; check proxies. |
 | `Payload Too Large` (413) | A 10 MiB request cap tripped (usually a runaway script). Narrow the query. |
 | Port 13337 already in use | A second IDA (or stale instance) holds it. The server falls back to the next free port (up to 13346) and prints it in the Output window; point the client there, or find it with `list_instances()`. Only when all ten are taken does start fail. |
