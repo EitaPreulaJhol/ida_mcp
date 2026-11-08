@@ -60,6 +60,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- `unload_package` (manual hot reload) now stops the server started from the
+  modules it drops. With the port fallback, the next `run(0)` would
+  otherwise start a second server while the stale one kept serving.
 - Hooks installed by agents (`install_hook` & co.) are now removed when the
   server stops (plugin toggle/term, `close_instance`); they used to stay
   hooked into IDA with no owner, running orphaned code after a hot reload.

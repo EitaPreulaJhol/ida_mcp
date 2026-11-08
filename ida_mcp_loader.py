@@ -161,14 +161,46 @@ def _set_host(host: str) -> None:
         pass
 
 
+def _stop_stale_server(package_name: str) -> None:
+    """Stop the server owned by the loaded ``package_name`` modules, if any."""
+    rpc = sys.modules.get(f"{package_name}.rpc")
+    srv = getattr(rpc, "MCP_SERVER", None)
+    if srv is None or not getattr(srv, "_running", False):
+        return
+    server_mod = sys.modules.get(f"{package_name}.server")
+    stop = getattr(server_mod, "stop_server", None)
+    port = getattr(server_mod, "_OWN_PORT", None)
+    try:
+        if callable(stop):
+            # stop_server also unregisters the instance and removes hooks.
+            stop(port if isinstance(port, int) else 13337)
+        else:
+            srv.stop()
+        msg = f"[ida-mcp] stopped the running server (port {port}) before unloading\n"
+    except Exception as e:  # noqa: BLE001 - unloading must still proceed
+        msg = f"[ida-mcp] could not stop the running server before unloading: {e}\n"
+    try:
+        if ida_kernwin is not None:
+            ida_kernwin.msg(msg)
+        else:
+            print(msg, end="")
+    except Exception:
+        pass
+
+
 def unload_package(package_name: str) -> None:
     """Remove every module belonging to ``package_name`` from ``sys.modules``.
 
     Manual hot-reload helper: call ``unload_package("ida_mcp")`` from the IDA
     console and then ``run(0)`` on the plugin to pick up edited sources
-    without restarting IDA. Never called automatically (the running server
-    holds references to the loaded modules).
+    without restarting IDA. Never called automatically.
+
+    A server started from the modules being dropped is stopped first.
+    Otherwise the next ``run(0)`` imports a fresh, not-running MCP_SERVER and
+    starts a SECOND server (on a fallback port, since the old one still holds
+    the port) while the old one keeps serving the stale code.
     """
+    _stop_stale_server(package_name)
     to_remove = [
         mod_name
         for mod_name in sys.modules
