@@ -22,6 +22,7 @@ import idautils
 
 from .rpc import tool, unsafe, MCP_SERVER
 from .sync import idasync, IDAError, hard_interrupt
+from .sync import ensure_analysis
 from .api_python import _run_code
 from .api_analysis import parse_addr, _cap_lines
 from .discovery import (discover_instances, register_instance,
@@ -117,7 +118,7 @@ def get_functions(filter_pattern: str = "*", limit: int = 1000,
     (``limit=0`` means no cap). A full page means more may follow — advance
     ``offset`` to continue. Use ``filter_pattern`` to narrow instead of paging.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     funcs = []
     for ea in idautils.Functions():
         name = ida_funcs.get_func_name(ea)
@@ -131,7 +132,7 @@ def get_functions(filter_pattern: str = "*", limit: int = 1000,
 @idasync
 def decompile_function(address: str) -> str:
     """Decompile the function at the given address or name using Hex-Rays."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         addr = parse_addr(address)
     except ValueError as e:
@@ -156,7 +157,7 @@ def decompile_function(address: str) -> str:
 @idasync
 def get_disassembly(address: str, count: int = 20) -> str:
     """Get disassembly starting at the given address or name."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:

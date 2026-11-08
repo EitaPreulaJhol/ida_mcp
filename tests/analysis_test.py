@@ -224,6 +224,7 @@ src = src.replace(
     "tool = lambda f: f\nunsafe = lambda f: f\nMCP_SERVER = type('FakeMCP', (), {'unsafe_tools': set()})()",
 )
 src = src.replace("from .sync import idasync", "idasync = lambda f: f")
+src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 mod = types.ModuleType("analysis_test")
 exec(compile(src, "analysis_test", "exec"), mod.__dict__)
 sys.modules["analysis_test"] = mod

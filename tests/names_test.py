@@ -97,6 +97,7 @@ src = src.replace(
     "tool = lambda f: f\nunsafe = lambda f: f",
 )
 src = src.replace("from .sync import idasync", "idasync = lambda f: f")
+src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 src = src.replace(
     "from .api_analysis import parse_addr",
     "def parse_addr(s):\n"

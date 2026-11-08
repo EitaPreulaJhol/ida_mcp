@@ -7,13 +7,13 @@ in-process IDA SDK access.
 import json
 import re
 
-import ida_auto
 import ida_bytes
 import ida_idaapi
 import ida_search
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 try:
     from .sync import check_cancelled, tool_timeout, CancelledError, IDASyncError
 except ImportError:  # standalone harness without package context
@@ -50,7 +50,7 @@ def search_bytes(pattern: str) -> str:
 
     Returns a list of matching addresses.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     pattern = pattern.replace(" ", "")
     if not pattern:
         return json.dumps({"error": "Empty pattern"})
@@ -85,7 +85,7 @@ def search_text(
 
     Returns a list of addresses where the text appears.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[str] = []
     flags = 0 if case_sensitive else ida_search.SEARCH_CASE
     partial = False
@@ -112,7 +112,7 @@ def search_immediate_value(value: int) -> str:
 
     Returns addresses of instructions that reference the given immediate value.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[str] = []
 
     try:
@@ -147,7 +147,7 @@ def find_regex(
 
     ``limit`` caps the number of returned matches (default 30, max 500).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     limit = min(max(int(limit), 1), 500)
 
     try:
@@ -188,7 +188,7 @@ def find_bytes_between(
     ``pattern``: hex string (e.g., ``"55 48 89 E5"``).
     ``start``, ``end``: address bounds (hex or symbol names).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)
@@ -231,7 +231,7 @@ def find_text_between(
 
     ``start``, ``end``: address bounds (hex or symbol names).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)
@@ -271,7 +271,7 @@ def find_immediate_between(
 
     ``start``, ``end``: address bounds (hex or symbol names).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)

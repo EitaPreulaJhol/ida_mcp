@@ -45,6 +45,7 @@ PKG = os.path.join(HERE, "..", "ida_mcp")
 src = open(os.path.join(PKG, "api_hooks.py")).read()
 src = src.replace("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f")
 src = src.replace("from .sync import idasync", "idasync = lambda f: f")
+src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 mod = types.ModuleType("hooks_test")
 exec(compile(src, "hooks_test", "exec"), mod.__dict__)
 sys.modules["hooks_test"] = mod

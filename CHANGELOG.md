@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `compat.badaddr()` gains a type-checked, documented pre-9.3 fallback.
 
 ### Changed
+- Tools now start with `ensure_analysis()` instead of a bare
+  `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
+  is done, and a clean retryable "Auto-analysis still in progress" error
+  instead of holding the IDA main thread until the tool timeout.
+  `wait_for_analysis` keeps its plain wait.
 - `_mcp_initialize` advertises `resources`/`prompts` capabilities only when
   something is registered (previously always).
 
@@ -60,6 +65,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `notifications/cancelled` is scoped to the caller's session
   (`Mcp-Session-Id` / legacy SSE session): a client can no longer cancel
   another client's request that happens to share its JSON-RPC id.
+- `initialize` negotiates `protocolVersion` against the revisions the server
+  speaks (unknown/missing -> `2025-06-18`) instead of echoing any string, and
+  a malformed JSON body now gets `-32700 Parse error` instead of `-32600`.
+- `get_analysis_status` no longer waits for auto-analysis first (it always
+  reported "complete" or hit the timeout); `get_version_info` no longer waits.
 
 ## [0.1.0] - 2025-11-03
 

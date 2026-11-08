@@ -12,7 +12,6 @@ All reads are BSS-safe (unloaded bytes read as zero).
 import json
 import struct
 
-import ida_auto
 import ida_bytes
 import ida_ida
 import ida_lines
@@ -21,6 +20,7 @@ import idautils
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr, read_bytes_bss_safe
 from .compat import inf_get_max_ea, inf_get_min_ea, is_loaded
 
@@ -60,7 +60,7 @@ def _int_value(ea: int, size: int, signed: bool) -> int | None:
 @idasync
 def get_byte(address: str) -> str:
     """Read a single byte at the given address (BSS-safe: unloaded → 0)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -74,7 +74,7 @@ def get_byte(address: str) -> str:
 @idasync
 def get_word(address: str) -> str:
     """Read an unsigned 16-bit word at the given address (BSS-safe)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -88,7 +88,7 @@ def get_word(address: str) -> str:
 @idasync
 def get_dword(address: str) -> str:
     """Read an unsigned 32-bit dword at the given address (BSS-safe)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -102,7 +102,7 @@ def get_dword(address: str) -> str:
 @idasync
 def get_qword(address: str) -> str:
     """Read an unsigned 64-bit qword at the given address (BSS-safe)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -116,7 +116,7 @@ def get_qword(address: str) -> str:
 @idasync
 def get_float(address: str) -> str:
     """Read a 32-bit IEEE-754 float at the given address (BSS-safe)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -139,7 +139,7 @@ def get_float(address: str) -> str:
 @idasync
 def get_double(address: str) -> str:
     """Read a 64-bit IEEE-754 double at the given address (BSS-safe)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -165,7 +165,7 @@ def get_int(address: str, ty: str = "u32") -> str:
 
     ``ty`` is one of ``u8``/``u16``/``u32``/``u64``/``i8``/``i16``/``i32``/``i64``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -188,7 +188,7 @@ def get_cstring(address: str, max_len: int = 4096) -> str:
 
     Unlike ``get_string`` (unbounded), stops after ``max_len`` bytes.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -214,7 +214,7 @@ def get_global_value(address: str, size: int = 0) -> str:
 
     ``size`` defaults to the data item size at the address (min 1).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -235,7 +235,7 @@ def get_global_value(address: str, size: int = 0) -> str:
 @idasync
 def get_data_size(address: str) -> str:
     """Get the data item size in bytes at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -250,7 +250,7 @@ def get_data_size(address: str) -> str:
 @idasync
 def get_data_flags(address: str) -> str:
     """Get the raw IDA flags value at the given address (hex)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -270,7 +270,7 @@ def get_data_flags(address: str) -> str:
 @idasync
 def get_next_head(address: str) -> str:
     """Get the next defined item (head) after the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -287,7 +287,7 @@ def get_next_head(address: str) -> str:
 @idasync
 def get_prev_head(address: str) -> str:
     """Get the previous defined item (head) before the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -304,7 +304,7 @@ def get_prev_head(address: str) -> str:
 @idasync
 def get_next_addr(address: str) -> str:
     """Get the next address (head or tail) after the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -321,7 +321,7 @@ def get_next_addr(address: str) -> str:
 @idasync
 def get_prev_addr(address: str) -> str:
     """Get the previous address (head or tail) before the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -338,7 +338,7 @@ def get_prev_addr(address: str) -> str:
 @idasync
 def get_heads(start: str, end: str, limit: int = 200) -> str:
     """Enumerate defined items (heads) in ``[start, end)`` (capped)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)
@@ -363,7 +363,7 @@ def get_heads(start: str, end: str, limit: int = 200) -> str:
 @idasync
 def is_code(address: str) -> str:
     """Check if the given address holds code."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -381,7 +381,7 @@ def is_code(address: str) -> str:
 @idasync
 def is_data(address: str) -> str:
     """Check if the given address holds data."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err
@@ -403,7 +403,7 @@ def get_disassembly_text(address: str, count: int = 50) -> str:
     Lighter than ``disasm`` (no JSON structure) for token-efficient reads.
     ``count`` is capped at 500.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     ea, err = _resolve(address)
     if err:
         return err

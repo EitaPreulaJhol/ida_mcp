@@ -152,6 +152,7 @@ src = src.replace(
     "class CancelledError(Exception): pass\n"
     "class IDASyncError(Exception): pass",
 )
+src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 src = src.replace(
     "from .api_analysis import parse_addr, read_bytes_bss_safe",
     "def parse_addr(s):\n"

@@ -148,6 +148,7 @@ _src = open(os.path.join(PKG, "api_typeinfo.py"), encoding="utf-8").read()
 _src = _src.replace("from .rpc import tool, unsafe",
                     "tool = lambda f: f\nunsafe = lambda f: f")
 _src = _src.replace("from .sync import idasync", "idasync = lambda f: f")
+_src = _src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 _src = _src.replace(
     "from .compat import get_func_cc, get_type_ordinal_limit",
     "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)\n"

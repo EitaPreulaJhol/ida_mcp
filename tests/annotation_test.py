@@ -169,6 +169,7 @@ src = open(os.path.join(PKG, "api_analysis.py")).read()
 src = src.replace("from .rpc import tool, unsafe",
                    "tool = lambda f: f\nunsafe = lambda f: f\nMCP_SERVER = type('FakeMCP', (), {'unsafe_tools': set()})()")
 src = src.replace("from .sync import idasync", "idasync = lambda f: f")
+src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
 mod = types.ModuleType("annotation_test")
 exec(compile(src, "annotation_test", "exec"), mod.__dict__)
 sys.modules["annotation_test"] = mod

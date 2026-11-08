@@ -131,6 +131,7 @@ def unsafe(func):
     _UNSAFE_NAMES.append(func.__name__)
     return func
 idasync = lambda f: f
+ensure_analysis = lambda: None
 hard_interrupt = lambda f: f
 class IDAError(Exception):
     pass

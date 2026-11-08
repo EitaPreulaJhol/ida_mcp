@@ -14,7 +14,6 @@ import fnmatch
 import json
 import re
 
-import ida_auto
 import ida_funcs
 import ida_lines
 import ida_nalt
@@ -25,6 +24,7 @@ import idautils
 
 from .rpc import tool
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 from .api_functions import _collect_frame_vars
 from .regex_guard import compile_client_regex
@@ -165,7 +165,7 @@ def func_query(filter_pattern: str = "", name_regex: str = "",
     ``\"true\"``/``\"false\"``/``\"\"`` (any). ``sort_by`` is one of
     ``addr``/``name``/``size``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     rows: list[dict] = []
     for ea in idautils.Functions():
         func = idaapi.get_func(ea)
@@ -233,7 +233,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
     ``max_addr`` bound the address range; ``fields`` is a comma-separated
     projection (empty = all fields).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     kind = (kind or "functions").lower()
     if kind not in ("functions", "globals", "imports", "strings", "names"):
         return json.dumps({"kind": kind, "error": f"Unsupported kind: {kind}"})
@@ -287,7 +287,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
 @idasync
 def list_globals(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
     """List global (non-function) names with glob filtering and pagination."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     rows: list[dict] = []
     for ea, name in idautils.Names():
         if name and idaapi.get_func(ea) is None:
@@ -305,7 +305,7 @@ def list_globals(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
 def imports_query(filter: str = "", module: str = "",
                   offset: int = 0, count: int = 100) -> str:
     """Query imports with name and module glob filters plus pagination."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     rows = _collect_imports()
     if filter:
         rows = [r for r in rows if fnmatch.fnmatch(r["imported_name"], filter)]
@@ -322,7 +322,7 @@ def imports_query(filter: str = "", module: str = "",
 @idasync
 def get_local_variable_by_name(address: str, name: str) -> str:
     """Find a stack-frame variable by name in the function at ``address``."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -352,7 +352,7 @@ def get_local_variable_references(address: str, var_name: str) -> str:
     Stack-variable uses render as ``[rbp+var_X]``-style text in the disassembly
     line, so a text scan over the function items reliably locates references.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:

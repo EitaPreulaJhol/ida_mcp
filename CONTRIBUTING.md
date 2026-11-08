@@ -67,6 +67,11 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 1. **Implement** it in the right `api_*.py` with `@tool` + `@idasync`, a
    **non-empty docstring** (clients pick tools from it), and `@unsafe` if it
    mutates the IDB, or `@ext("dbg")` (+ `@unsafe`) for debugger tools.
+   If it reads analysis-derived data (functions, xrefs, names, types,
+   decompilation), start the body with `ensure_analysis()` from `.sync`, not
+   a bare `ida_auto.auto_wait()`: it returns at once when analysis is done
+   and fails with a clean, retryable error instead of holding the main thread
+   until the timeout. Tools that only report state must not wait at all.
 2. **Register**: make sure `server.py` imports the module (`from . import
    api_x  # noqa: F401`) so the `@tool` side effect runs.
 3. **Document** it in `README.md` (backtick-quoted, e.g. `` `my_tool` ``) and

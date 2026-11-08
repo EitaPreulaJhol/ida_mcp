@@ -13,12 +13,12 @@ import fnmatch
 import json
 import re
 
-import ida_auto
 import ida_name
 import idautils
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 from .compat import del_name
 
@@ -51,7 +51,7 @@ def _demangle(name: str) -> str | None:
 @idasync
 def get_name(address: str) -> str:
     """Get the name at the given address (function, data, or auto-generated)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -70,7 +70,7 @@ def get_name(address: str) -> str:
 @idasync
 def get_all_names(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
     """List all names in the IDB with glob filtering and pagination."""
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     if count <= 0 or count > 5000:
         count = 100
@@ -93,7 +93,7 @@ def get_all_names(filter_pattern: str = "*", offset: int = 0, count: int = 100) 
 @idasync
 def get_demangled_name(address: str) -> str:
     """Get the demangled (human-readable) name at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -113,7 +113,7 @@ def get_demangled_name(address: str) -> str:
 @idasync
 def demangle_name(name: str) -> str:
     """Demangle a mangled symbol string (e.g. ``_Z3foov`` → ``foo()``)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     return json.dumps({"name": name, "demangled": _demangle(name)})
 
 
@@ -139,7 +139,7 @@ def validate_name(name: str) -> str:
 @idasync
 def is_name_public(address: str) -> str:
     """Check if the name at the given address is public (exported/global)."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -160,7 +160,7 @@ def is_name_public(address: str) -> str:
 @idasync
 def is_name_weak(address: str) -> str:
     """Check if the name at the given address is weak."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -192,7 +192,7 @@ def set_name(address: str, name: str) -> str:
     and any other address. Use ``force_name`` when the name already exists
     elsewhere, ``validate_name`` to pre-check syntax.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -223,7 +223,7 @@ def force_name(address: str, name: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -253,7 +253,7 @@ def delete_name(address: str) -> str:
     ``del_local_name``; ``compat.del_name`` covers both (and pre-9.4 IDAs).
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -280,7 +280,7 @@ def make_name_public(address: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -305,7 +305,7 @@ def make_name_non_public(address: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:

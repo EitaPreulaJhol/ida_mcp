@@ -10,7 +10,6 @@ Write operations are additionally marked ``@unsafe``.
 import fnmatch
 import json
 
-import ida_auto
 import ida_bytes
 import ida_entry
 import ida_funcs
@@ -28,6 +27,7 @@ import idc
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ def get_xrefs_to(address: str, limit: int = 100) -> str:
     Returns a JSON array of ``{addr, type, function}`` objects.
     ``type`` is ``"code"`` or ``"data"``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -205,7 +205,7 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
     FROM address), or ``"both"``.  ``xref_type``: ``"code"``, ``"data"``,
     or ``"any"``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -265,7 +265,7 @@ def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
     ``"internal"`` or ``"external"``. Paginated: at most ``limit`` entries
     from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -312,7 +312,7 @@ def get_callers(address: str, limit: int = 50) -> str:
     Uses ``CodeRefsTo`` filtered to call instructions only.
     Returns a JSON array of ``{addr, name}`` objects.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -351,7 +351,7 @@ def get_bytes(address: str, size: int = 64) -> str:
     ``size`` defaults to 64, is capped at 4096 and also accepts numeric
     strings (clients sometimes quote it as ``"64"``).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -386,7 +386,7 @@ def get_string(address: str) -> str:
 
     Returns a JSON object with ``addr`` and ``value`` (decoded UTF-8 string).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -421,7 +421,7 @@ def list_imports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     Supports glob-based filtering (e.g. ``"*Create*"``) with fnmatch.
     Pagination via ``offset`` / ``count`` (max 5000).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     if count <= 0 or count > 5000:
         count = 100
@@ -468,7 +468,7 @@ def list_exports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     Supports glob filtering (e.g. ``"*Initialize*"``).
     Pagination via ``offset`` / ``count`` (max 5000).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     if count <= 0 or count > 5000:
         count = 100
@@ -513,7 +513,7 @@ def set_comment(address: str, comment: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -572,7 +572,7 @@ def rename_function(address: str, new_name: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -606,7 +606,7 @@ def lookup_funcs(address: str) -> str:
     Returns JSON with name, address, size, segment, callers/callee counts,
     prototype type info, and stack frame variables.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -707,7 +707,7 @@ def find_bytes(pattern: str, limit: int = 100, offset: int = 0) -> str:
 
     Pagination via ``offset`` / ``limit`` (max ``limit`` = 10000).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     if limit <= 0 or limit > 10000:
         limit = 10000
@@ -765,7 +765,7 @@ def list_strings(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     ``filter_pattern`` uses fnmatch (e.g. ``"*error*"``).
     Pagination via ``offset`` / ``count`` (max 5000).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
 
     if count <= 0 or count > 5000:
         count = 100
@@ -801,7 +801,7 @@ def disasm(address: str, count: int = 50) -> str:
     Returns a JSON array of ``{addr, instruction, label?}`` objects.
     Use ``count`` to limit the number of instructions (max 500).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -843,7 +843,7 @@ def basic_blocks(address: str, max_blocks: int = 100, offset: int = 0) -> str:
     Returns a JSON array of ``{start, end, size, type, successors, predecessors}``
     for each basic block in the function's control-flow graph.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:

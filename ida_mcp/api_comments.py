@@ -6,7 +6,6 @@ in-process IDA SDK access.
 
 import json
 
-import ida_auto
 import ida_bytes
 import ida_lines
 import idautils
@@ -14,6 +13,7 @@ import idc
 
 from .rpc import tool, unsafe
 from .sync import idasync
+from .sync import ensure_analysis
 from .api_analysis import parse_addr
 from .compat import get_extra_cmt, get_extra_cmt_qty
 
@@ -27,7 +27,7 @@ from .compat import get_extra_cmt, get_extra_cmt_qty
 @idasync
 def get_comment(address: str) -> str:
     """Get the regular (non-repeatable) comment at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -45,7 +45,7 @@ def delete_comment(address: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -61,7 +61,7 @@ def delete_comment(address: str) -> str:
 @idasync
 def get_repeatable_comment(address: str) -> str:
     """Get the repeatable comment at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -81,7 +81,7 @@ def get_all_comments(limit: int = 500, offset: int = 0) -> str:
     follow — advance ``offset`` to continue. The scan stops once a full page is
     collected, so it stays cheap on large databases.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
     # Collect one past the page end (when capped) to detect whether more exist.
     hard = None if limit <= 0 else offset + limit + 1
@@ -109,7 +109,7 @@ def get_all_comments(limit: int = 500, offset: int = 0) -> str:
 @idasync
 def get_extra_comments(address: str) -> str:
     """Get extra comments (anterior/before lines) at the given address."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -135,7 +135,7 @@ def set_repeatable_comment(address: str, comment: str) -> str:
 
     **Unsafe** — requires ``?unsafe=true``.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -156,7 +156,7 @@ def set_extra_comment(address: str, comment: str, position: str = "before") -> s
     (anterior lines, shown above the item) or ``"after"`` (posterior lines).
     Appends a line; repeat calls to stack multiple lines.
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -191,7 +191,7 @@ def set_extra_comment(address: str, comment: str, position: str = "before") -> s
 @idasync
 def get_bookmarks() -> str:
     """Get all bookmarks in the binary."""
-    ida_auto.auto_wait()
+    ensure_analysis()
     results: list[dict] = []
 
     for i in range(256):
@@ -211,7 +211,7 @@ def add_bookmark(address: str, description: str = "") -> str:
 
     **Unsafe** — requires ``?unsafe=true``. Uses the first free slot (0-255).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
@@ -248,7 +248,7 @@ def delete_bookmark(target: str) -> str:
     **Unsafe** — requires ``?unsafe=true``. ``target`` accepts a slot number
     (``"3"``) or an address/symbol (the bookmark at that address is removed).
     """
-    ida_auto.auto_wait()
+    ensure_analysis()
     delete = getattr(idc, "del_bookmark", None)
     if delete is None:
         return json.dumps({"error": "del_bookmark unavailable in this IDA version"})
