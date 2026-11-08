@@ -49,7 +49,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tests/skills_sync_test.py` fails on drift or on an unquoted (non-strict
   YAML) frontmatter value. The two copies had already diverged.
 - Lint enforces `F`, `E`, `W` and `C4` (all clean); CI pins ruff 0.6.9 like
-  pre-commit, and runs the suite on Windows (informational for now).
+  pre-commit, and runs the suite on Windows as a required job.
 - `[dev]` extras now install mypy and coverage too.
 - Tools now start with `ensure_analysis()` instead of a bare
   `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
