@@ -2,12 +2,13 @@
 # tools (ruff/mypy/coverage) that you install with: pip install -e ".[dev]"
 PYTHON ?= python3
 
-.PHONY: help test inventory lint fmt typecheck crosscheck coverage package clean
+.PHONY: help test inventory skills lint fmt typecheck crosscheck coverage package clean
 
 help:
 	@echo "Targets:"
 	@echo "  test       - run the standalone test suite (no IDA needed)"
 	@echo "  inventory  - registry <-> README <-> profiles drift guard"
+	@echo "  skills     - mirror skills/ (source of truth) into .pi/skills/"
 	@echo "  lint       - ruff check ."
 	@echo "  fmt        - ruff check --fix ."
 	@echo "  typecheck  - mypy on the pure (non-IDA) modules"
@@ -21,6 +22,14 @@ test:
 
 inventory:
 	$(PYTHON) tests/tool_inventory_test.py
+
+# skills/ is canonical; .pi/skills/ is a byte-for-byte mirror for Pi
+# (tests/skills_sync_test.py fails when they drift).
+skills:
+	rm -rf .pi/skills
+	mkdir -p .pi
+	cp -R skills .pi/skills
+	$(PYTHON) tests/skills_sync_test.py
 
 lint:
 	@command -v ruff >/dev/null 2>&1 && ruff check . || \

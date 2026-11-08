@@ -92,6 +92,13 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 - Profiles reference only real tools, stay privilege-free, and triage ⊂ readonly.
 - A tool calling a write sink (patch/rename/define/…) must be `@unsafe`/ext-gated.
 
+### Agent skills (`skills_sync_test.py`)
+
+Edit the skills only under `skills/` (the source of truth), then run
+`make skills` to mirror them into `.pi/skills/` for Pi. The test fails if the
+mirror drifts or a frontmatter value is neither double-quoted nor a plain
+identifier (Cline and the `skills` CLI use a strict YAML parser).
+
 ## Local-only checks (not in CI)
 
 - **Lint**: `ruff check .` (CI enforces pyflakes `F`).

@@ -44,6 +44,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   call-heavy tool code went from ~9.6x to ~5x the unhooked time and a
   typical list/JSON tool from ~1.9x to ~1.4x, with cancel/timeout latency
   still bounded by time.
+- `skills/` is the single source of truth for the agent skills; `.pi/skills/`
+  is a byte-for-byte mirror refreshed by `make skills`, and
+  `tests/skills_sync_test.py` fails on drift or on an unquoted (non-strict
+  YAML) frontmatter value. The two copies had already diverged.
 - Tools now start with `ensure_analysis()` instead of a bare
   `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
   is done, and a clean retryable "Auto-analysis still in progress" error
