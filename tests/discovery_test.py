@@ -42,4 +42,28 @@ assert found == [], found
 assert not os.path.isfile(path)
 print("discover_instances cleanup OK")
 
+# is_pid_alive: own process alive, a finished one dead (on Windows the
+# Popen object still holds a handle, so an exit-code check is required).
+import subprocess
+assert discovery.is_pid_alive(os.getpid())
+_p = subprocess.Popen([sys.executable, "-c", "pass"])
+_p.wait()
+assert not discovery.is_pid_alive(_p.pid), _p.pid
+if sys.platform == "win32":
+    # PID 4 (System) always exists but is not ours: OpenProcess is denied.
+    assert discovery.is_pid_alive(4), "access-denied process must count as alive"
+else:
+    # EPERM from kill(pid, 0) = the process exists under another user.
+    _real_kill = os.kill
+
+    def _eperm(pid, sig):
+        raise PermissionError(1, "Operation not permitted")
+
+    os.kill = _eperm
+    try:
+        assert discovery.is_pid_alive(12345), "EPERM must count as alive"
+    finally:
+        os.kill = _real_kill
+print("is_pid_alive (dead / foreign-owned) OK")
+
 print("ALL DISCOVERY TESTS PASSED")

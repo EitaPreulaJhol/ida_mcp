@@ -60,6 +60,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- Discovery treated a live instance owned by another user as dead (EPERM /
+  access denied) and deleted its registration. On Windows it also counted
+  exited-but-still-referenced processes as alive, and truncated the
+  process handle on x64 (default `c_int` restype).
 - The release workflow no longer publishes a tag whose version differs from
   `__version__` (e.g. `v0.2.0` shipping `ida_mcp-0.1.0.zip`):
   `scripts/package.py --expect-version` refuses before building.

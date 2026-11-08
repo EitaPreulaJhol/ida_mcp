@@ -70,19 +70,46 @@ def unregister_instance(port: int) -> bool:
     return _quiet_unlink(_instance_file_path(port))
 
 
+_WIN_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_WIN_ERROR_ACCESS_DENIED = 5
+_WIN_STILL_ACTIVE = 259
+
+
+def _is_pid_alive_windows(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    # HANDLE is pointer-sized: the default c_int restype truncates it on x64.
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel32.OpenProcess(_WIN_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        # Access denied means the process exists but belongs to someone else.
+        return ctypes.get_last_error() == _WIN_ERROR_ACCESS_DENIED  # type: ignore[attr-defined]
+    try:
+        code = wintypes.DWORD()
+        if kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+            # An exited process stays openable while anyone holds a handle.
+            return code.value == _WIN_STILL_ACTIVE
+        return True
+    finally:
+        kernel32.CloseHandle(handle)
+
+
 def is_pid_alive(pid: int) -> bool:
-    """Check if a process is still running."""
+    """Check if a process is still running (owned by any user)."""
     if sys.platform == "win32":
-        import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
-        if handle:
-            ctypes.windll.kernel32.CloseHandle(handle)
-            return True
-        return False
+        return _is_pid_alive_windows(pid)
     try:
         os.kill(pid, 0)
         return True
-    except (ProcessLookupError, PermissionError, OSError):
+    except PermissionError:
+        # EPERM: the process exists but belongs to another user. Treating it
+        # as dead made discovery delete that live instance's registration.
+        return True
+    except (ProcessLookupError, OSError):
         return False
 
 
