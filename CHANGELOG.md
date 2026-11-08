@@ -60,6 +60,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- `execute_script` / `py_eval` / `py_exec_file` ran scripts with separate
+  globals and locals dicts, so any function or comprehension using a name
+  defined at the script's top level (a constant, a helper, a variable)
+  failed with `NameError`. Scripts now run in one namespace, like a module
+  or the IDA console; result selection is unchanged.
 - `make lint` / `typecheck` / `coverage` printed "not installed" and exited 0
   when the tool *failed*, so they never failed. They now propagate errors,
   exit 1 when the tool is missing, and also find tools installed as

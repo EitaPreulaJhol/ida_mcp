@@ -200,16 +200,21 @@ def _make_exec_globals() -> dict:
     return g
 
 
-def _pick_result(exec_locals: dict, exec_globals: dict):
-    """Return the value to surface: ``result`` or ``__result__`` if set, else
-    the last locally-assigned variable."""
-    if "result" in exec_locals:
-        return str(exec_locals["result"])
-    if "__result__" in exec_globals:
-        return str(exec_globals["__result__"])
-    if exec_locals:
-        last_key = list(exec_locals.keys())[-1]
-        return str(exec_locals[last_key])
+def _script_bindings(namespace: dict, before: dict) -> dict:
+    """Names the script bound or rebound in ``namespace``, in binding order."""
+    return {k: v for k, v in namespace.items()
+            if k not in before or before[k] is not v}
+
+
+def _pick_result(bound: dict):
+    """Return the value to surface: ``result`` or ``__result__`` if the
+    script set it, else the last variable it assigned."""
+    if "result" in bound:
+        return str(bound["result"])
+    if "__result__" in bound:
+        return str(bound["__result__"])
+    if bound:
+        return str(bound[next(reversed(bound))])
     return None
 
 
@@ -252,17 +257,20 @@ def _run_code(code: str) -> dict:
     try:
         sys.stdout = stdout_capture
         sys.stderr = stderr_capture
+        # ONE namespace for globals and locals, exactly like a module or the
+        # IDA console. With separate dicts, top-level names land in the
+        # locals dict while functions/comprehensions resolve free names via
+        # globals, so `BASE = 1; def f(): return BASE` raised NameError.
         exec_globals = _make_exec_globals()
+        before = dict(exec_globals)
         result_value = None
-        exec_locals = {}
 
         try:
             tree = ast.parse(code)
         except SyntaxError:
-            # Fall back to direct exec on parse failure.
-            exec(code, exec_globals, exec_locals)
-            exec_globals.update(exec_locals)
-            result_value = _pick_result(exec_locals, exec_globals)
+            # Let exec raise the SyntaxError with its usual message/location.
+            exec(code, exec_globals)
+            result_value = _pick_result(_script_bindings(exec_globals, before))
         else:
             if not tree.body:
                 pass
@@ -271,17 +279,13 @@ def _run_code(code: str) -> dict:
                 result_value = str(eval(code, exec_globals))
             elif isinstance(tree.body[-1], ast.Expr):
                 # Multiple statements, last one is an expression (Jupyter-style).
-                if len(tree.body) > 1:
-                    exec_tree = ast.Module(body=tree.body[:-1], type_ignores=[])
-                    exec(compile(exec_tree, "<string>", "exec"), exec_globals, exec_locals)
+                exec_tree = ast.Module(body=tree.body[:-1], type_ignores=[])
+                exec(compile(exec_tree, "<string>", "exec"), exec_globals)
                 eval_tree = ast.Expression(body=tree.body[-1].value)
-                # Pass exec_locals so names bound by the preceding statements are
-                # visible to the trailing expression (Jupyter-style REPL behavior).
-                result_value = str(eval(compile(eval_tree, "<string>", "eval"), exec_globals, exec_locals))
+                result_value = str(eval(compile(eval_tree, "<string>", "eval"), exec_globals))
             else:
-                exec(code, exec_globals, exec_locals)
-                exec_globals.update(exec_locals)
-                result_value = _pick_result(exec_locals, exec_globals)
+                exec(code, exec_globals)
+                result_value = _pick_result(_script_bindings(exec_globals, before))
 
         ida_msgs = _collect_ida_messages(pre_count)
         stderr_text = stderr_capture.getvalue()
