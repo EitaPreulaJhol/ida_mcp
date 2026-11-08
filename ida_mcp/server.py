@@ -244,8 +244,10 @@ def server_warmup() -> str:
                        "health": _health_payload()}, indent=2)
 
 
+# Discovery reads files and probes TCP ports; it never touches the IDA SDK,
+# so these two run on the HTTP worker thread (NOT @idasync): the probes
+# (up to 1 s each) must not freeze the IDA UI on the main thread.
 @tool
-@idasync
 def list_instances() -> str:
     """List running IDA MCP instances found via filesystem discovery."""
     try:
@@ -256,7 +258,6 @@ def list_instances() -> str:
 
 
 @tool
-@idasync
 def get_instance_info(port: int = 13337) -> str:
     """Get discovery info for the instance on ``port`` (host/pid/binary/idb)."""
     try:

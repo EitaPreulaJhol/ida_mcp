@@ -60,6 +60,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- `list_instances` / `get_instance_info` no longer run on the IDA main
+  thread: discovery never touches the SDK, and its TCP probes (up to 1 s
+  each) froze the UI and held the tool gate.
 - `unload_package` (manual hot reload) now stops the server started from the
   modules it drops. With the port fallback, the next `run(0)` would
   otherwise start a second server while the stale one kept serving.
