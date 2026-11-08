@@ -26,7 +26,7 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 For linting/type-checking:
 
 ```bash
-pip install -e ".[dev]"   # ruff (+ optionally mypy/coverage)
+pip install -e ".[dev]"   # ruff, mypy, coverage
 ruff check .
 make test lint            # if you use the Makefile
 pre-commit install        # optional: run lint + inventory on every commit
@@ -101,7 +101,7 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
 
 ## Local-only checks (not in CI)
 
-- **Lint**: `ruff check .` (CI enforces pyflakes `F`).
+- **Lint**: `ruff check .` (CI enforces `F`, `E`, `W`, `C4`; see `[tool.ruff.lint]`).
 - **Types** (optional): `mypy` on the pure modules (zeromcp, discovery,
   profiles, regex_guard) — see `[tool.mypy]`. Verified clean, so CI enforces
   it; run `mypy` before pushing changes to those modules.

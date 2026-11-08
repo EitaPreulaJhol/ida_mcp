@@ -31,28 +31,38 @@ skills:
 	cp -R skills .pi/skills
 	$(PYTHON) tests/skills_sync_test.py
 
+# Each tool is found as a module of $(PYTHON) first (pip/--user installs that
+# put no script on PATH), then on PATH. if/else (not `a && b || c`) so a real
+# lint/type failure fails the target instead of printing "not installed".
+RUFF = $(shell $(PYTHON) -m ruff --version >/dev/null 2>&1 && echo "$(PYTHON) -m ruff" || \
+	(command -v ruff >/dev/null 2>&1 && echo ruff))
+MYPY = $(shell $(PYTHON) -m mypy --version >/dev/null 2>&1 && echo "$(PYTHON) -m mypy" || \
+	(command -v mypy >/dev/null 2>&1 && echo mypy))
+COVERAGE = $(shell $(PYTHON) -m coverage --version >/dev/null 2>&1 && echo "$(PYTHON) -m coverage" || \
+	(command -v coverage >/dev/null 2>&1 && echo coverage))
+
 lint:
-	@command -v ruff >/dev/null 2>&1 && ruff check . || \
-		echo "ruff not installed (pip install -e '.[dev]')"
+	@if [ -n "$(RUFF)" ]; then $(RUFF) check .; \
+	else echo "ruff not installed (pip install -e '.[dev]')"; exit 1; fi
 
 fmt:
-	@command -v ruff >/dev/null 2>&1 && ruff check --fix . || \
-		echo "ruff not installed (pip install -e '.[dev]')"
+	@if [ -n "$(RUFF)" ]; then $(RUFF) check --fix .; \
+	else echo "ruff not installed (pip install -e '.[dev]')"; exit 1; fi
 
 typecheck:
-	@command -v mypy >/dev/null 2>&1 && mypy || \
-		echo "mypy not installed (pip install -e '.[dev]')"
+	@if [ -n "$(MYPY)" ]; then $(MYPY); \
+	else echo "mypy not installed (pip install -e '.[dev]')"; exit 1; fi
 
 crosscheck:
 	$(PYTHON) tests/idadocs_crosscheck_test.py
 
 coverage:
-	@command -v coverage >/dev/null 2>&1 && ( \
-		coverage erase; \
+	@if [ -n "$(COVERAGE)" ]; then \
+		$(COVERAGE) erase; \
 		COVERAGE_PROCESS_START=$(CURDIR)/pyproject.toml $(PYTHON) tests/run_all.py; \
-		coverage combine 2>/dev/null || true; \
-		coverage report ) || \
-		echo "coverage not installed (pip install -e '.[dev]')"
+		$(COVERAGE) combine 2>/dev/null || true; \
+		$(COVERAGE) report; \
+	else echo "coverage not installed (pip install -e '.[dev]')"; exit 1; fi
 
 package:
 	$(PYTHON) scripts/package.py
