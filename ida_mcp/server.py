@@ -383,16 +383,21 @@ def stop_server(port: int = 13337) -> None:
 # ---- MCP resources / prompts (item 13) ----
 # Read-only resources backed by existing tools. Readers are plain (NOT
 # @idasync) and call the @idasync tool, so there is exactly one main-thread
-# marshal and no nested execute_sync deadlock. Capabilities advertise these
-# only because they are registered here.
+# marshal and no nested execute_sync deadlock. ``tool=`` ties each resource
+# to its backing tool: it is only listed/readable where that tool is
+# (profile / unsafe / ext gates), and reads share the tools/call concurrency
+# gate and output cap. Capabilities advertise these only because they are
+# registered here.
 
-@MCP_SERVER.resource("ida://health", name="server-health", mime="application/json")
+@MCP_SERVER.resource("ida://health", name="server-health", mime="application/json",
+                     tool="server_health")
 def _resource_health():
     """Live server + IDB health (same payload as the server_health tool)."""
     return server_health()
 
 
-@MCP_SERVER.resource("ida://triage", name="binary-triage", mime="application/json")
+@MCP_SERVER.resource("ida://triage", name="binary-triage", mime="application/json",
+                     tool="survey_binary")
 def _resource_triage():
     """One-call binary triage (same payload as the survey_binary tool)."""
     fn = MCP_SERVER.tools.methods.get("survey_binary")

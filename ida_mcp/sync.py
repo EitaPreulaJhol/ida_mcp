@@ -86,6 +86,10 @@ _UI_PUMP_INTERVAL_SEC = 0.3
 _HARD_INTERRUPT_EXTRA_SEC = 5.0
 _HARD_INTERRUPT_RETRY_SEC = 2.0
 _HARD_INTERRUPT_MAX_ATTEMPTS = 10
+# How long to wait for the result after execute_sync returned. A blocking
+# execute_sync has already run the callback, so this only matters when IDA
+# dropped the request; it bounds the wait instead of hanging forever.
+_EXECUTE_SYNC_RESULT_GRACE_SEC = 2.0
 
 
 def _get_tool_timeout_seconds() -> float:
@@ -445,8 +449,17 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
     ``execute_sync`` (which would deadlock the main thread).
     """
     res_container = queue.Queue()
+    # Handshake with the waiter below: once the waiter gives up on a request
+    # IDA never started, a late start must not run the tool body (its result
+    # would be dropped and its side effects unexpected).
+    state_lock = threading.Lock()
+    state = {"started": False, "abandoned": False}
 
     def runned():
+        with state_lock:
+            if state["abandoned"]:
+                return
+            state["started"] = True
         if not call_stack.empty():
             # Non-blocking: a concurrent reentrant @idasync call from
             # within another tool's ff() on the same main thread may
@@ -501,8 +514,27 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
             except queue.Empty:
                 pass
 
-    idaapi.execute_sync(runned, _resolve_sync_mode(mode))
-    res = res_container.get()
+    rc = idaapi.execute_sync(runned, _resolve_sync_mode(mode))
+    # execute_sync (without MFF_NOWAIT) returns only after runned() finished,
+    # so the result is normally already queued. If IDA refused/dropped the
+    # request (database closing, shutdown), runned() never runs: an unbounded
+    # get() would then block this HTTP thread forever while it holds the tool
+    # gate, and every later call would answer "Server busy" until restart.
+    try:
+        res = res_container.get(timeout=_EXECUTE_SYNC_RESULT_GRACE_SEC)
+    except queue.Empty:
+        with state_lock:
+            never_started = not state["started"]
+            if never_started:
+                state["abandoned"] = True
+        if never_started:
+            raise IDASyncError(
+                f"IDA did not run '{ff.__name__}' on the main thread "
+                f"(execute_sync returned {rc!r}); the database may be closing. "
+                f"Retry once IDA is idle.")
+        # Started but still running (should not happen for a blocking
+        # execute_sync): the tool timeout / hard interrupt bound it.
+        res = res_container.get()
     if isinstance(res, ToolInterrupt):
         raise res.to_error()
     if isinstance(res, Exception):

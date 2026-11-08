@@ -118,7 +118,7 @@ class _FakeMCP:
         self._running = True
     def stop(self):
         self._running = False
-    def resource(self, uri, *, name=None, mime=None):
+    def resource(self, uri, *, name=None, mime=None, tool=None):
         return lambda fn: fn
     def prompt(self, fn):
         return fn

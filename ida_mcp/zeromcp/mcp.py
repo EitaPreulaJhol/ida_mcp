@@ -36,6 +36,7 @@ from .jsonrpc import (
     register_pending_request,
     unregister_pending_request,
     cancel_request,
+    set_current_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -143,33 +144,45 @@ def _active_profile() -> tuple[str | None, set[str] | None]:
     return getattr(_request_profile, "current", (None, None))
 
 
-def _silent_unraisable(unraisable_args, unraisable_file=None):
+_QUIET_UNRAISABLE = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
+
+
+def _install_unraisable_hook() -> None:
     """Suppress ConnectionResetError / BrokenPipeError from background threads.
 
-    The SSE keep-alive stream runs in its own thread, and a peer
-    closing the connection during the 15s sleep can cause
-    ConnectionResetError to surface in Python's unraisable hook
-    after the thread has already exited.  The per-write try/except
-    in ``do_GET`` catches it at the source, but this hook is a
-    belt-and-suspenders fallback for any background thread that
-    might be added later.
+    The SSE keep-alive stream runs in its own thread, and a peer closing the
+    connection during the sleep can surface ConnectionResetError in Python's
+    unraisable hook after the thread has already exited. The per-write
+    try/except in ``do_GET`` catches it at the source; this hook is a
+    belt-and-suspenders fallback.
+
+    Everything else is forwarded to the hook that was installed before ours
+    (IDA's, pytest's, or the default), never to ``sys.unraisablehook`` itself
+    (that is *this* hook -> infinite recursion). Installed by ``serve()``,
+    not at import, so merely importing zeromcp does not touch the host
+    process; idempotent across restarts and package reloads.
     """
-    exc = unraisable_args.exc_value
-    if isinstance(
-        exc,
-        (BrokenPipeError, ConnectionResetError, ConnectionAbortedError),
-    ):
-        return  # silent
-    # Fall through to the default handler for anything else.
-    sys.unraisablehook(unraisable_args, unraisable_file)
+    current = sys.unraisablehook
+    if getattr(current, "_ida_mcp_quiet", False):
+        prev = getattr(current, "_ida_mcp_prev", sys.__unraisablehook__)
+    else:
+        prev = current
 
+    def _silent_unraisable(unraisable) -> None:
+        if isinstance(unraisable.exc_value, _QUIET_UNRAISABLE):
+            return  # silent
+        prev(unraisable)
 
-# Install the hook only if we can (i.e. when not under pytest, which
-# sets its own unraisable hook).
-try:
+    setattr(_silent_unraisable, "_ida_mcp_quiet", True)
+    setattr(_silent_unraisable, "_ida_mcp_prev", prev)
     sys.unraisablehook = _silent_unraisable
-except Exception:
-    pass
+
+
+def _uninstall_unraisable_hook() -> None:
+    """Restore the previous hook, but only if ours is still the active one."""
+    current = sys.unraisablehook
+    if getattr(current, "_ida_mcp_quiet", False):
+        sys.unraisablehook = getattr(current, "_ida_mcp_prev", sys.__unraisablehook__)
 
 
 class McpToolError(Exception):
@@ -281,8 +294,13 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         except _DISCONNECT_ERRORS:
             logger.debug("[MCP] OPTIONS reply suppressed (client gone)")
 
-    def _parse_request_flags(self) -> None:
-        """Parse per-request ?unsafe= / ?ext= / ?profile= / token into thread-locals."""
+    def _parse_request_flags(self, scope: str | None = None) -> None:
+        """Parse per-request ?unsafe= / ?ext= / ?profile= / token into thread-locals.
+
+        ``scope`` is the transport session this request belongs to; it scopes
+        request-id bookkeeping so cancellations cannot cross sessions.
+        """
+        set_current_scope(scope)
         _unsafe_per_thread.allowed = (
             self._get_query_param(self.path, "unsafe", "false").strip().lower() == "true"
         )
@@ -385,7 +403,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self._safe_send_error(404)
 
     def _handle_mcp_post(self) -> None:
-        self._parse_request_flags()
+        self._parse_request_flags(scope=self.headers.get("Mcp-Session-Id"))
         raw = self._read_body()
         if raw is None:
             return
@@ -445,7 +463,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         if conn is None or not conn.alive:
             self._safe_send_error(400, f"No active SSE connection for session {session_id}")
             return
-        self._parse_request_flags()
+        self._parse_request_flags(scope=f"sse:{session_id}")
         raw = self._read_body()
         if raw is None:
             return
@@ -787,9 +805,11 @@ class McpServer:
         # so a second concurrent tools/call would only extend the UI
         # freeze. Fail fast with a retryable isError instead of piling up
         # execute_sync waiters. tools/list and ping stay ungated (no IDA).
-        # Set max_concurrent_tools to 0/None to disable (unbounded, legacy).
-        self._tool_gate: threading.Semaphore = threading.Semaphore(1)
-        self.max_concurrent_tools: int | None = 1
+        # Set max_concurrent_tools to 0/None to disable (unbounded, legacy);
+        # assigning N > 0 rebuilds the gate with N slots (see the property).
+        self._tool_gate: threading.Semaphore | None = None
+        self._max_concurrent_tools: int | None = None
+        self.max_concurrent_tools = 1
         # Per-tool metrics (item 07): call/error/busy counts + a bounded window
         # of recent durations for percentiles. Pure Python, no IDA; surfaced
         # via server_health. Updates happen in a tiny locked critical section
@@ -802,7 +822,7 @@ class McpServer:
         # IDA_MCP_AUDIT=<path> appends JSONL; unset = disabled (default).
         self.audit_path: str | None = (os.environ.get("IDA_MCP_AUDIT", "").strip() or None)
 
-        self.registry = JsonRpcRegistry()
+        self.registry: JsonRpcRegistry = JsonRpcRegistry()
         self.registry.methods["ping"] = self._mcp_ping
         self.registry.methods["initialize"] = self._mcp_initialize
         self.registry.methods["tools/list"] = self._mcp_tools_list
@@ -815,18 +835,49 @@ class McpServer:
         self.registry.methods["notifications/initialized"] = self._mcp_notifications_initialized
         self.registry.methods["notifications/cancelled"] = self._mcp_notifications_cancelled
 
+    # ---- concurrency gate ----
+    @property
+    def max_concurrent_tools(self) -> int | None:
+        return self._max_concurrent_tools
+
+    @max_concurrent_tools.setter
+    def max_concurrent_tools(self, value: int | None) -> None:
+        # A fresh semaphore per setting: in-flight calls keep (and release)
+        # the semaphore they acquired, so resizing never corrupts a count.
+        n = int(value or 0)
+        self._max_concurrent_tools = value
+        self._tool_gate = threading.Semaphore(n) if n > 0 else None
+
+    def _try_enter_gate(self) -> tuple[bool, threading.Semaphore | None]:
+        """Non-blocking gate entry: ``(admitted, semaphore_to_release)``."""
+        gate = self._tool_gate
+        if gate is None:
+            return True, None
+        if gate.acquire(blocking=False):
+            return True, gate
+        return False, None
+
     # ---- decorators ----
     def tool(self, func: Callable) -> Callable:
         return self.tools.method(func)
 
     def resource(self, uri: str, *, name: str | None = None,
-                 mime: str | None = None) -> Callable[[Callable], Callable]:
+                 mime: str | None = None,
+                 tool: str | None = None) -> Callable[[Callable], Callable]:
+        """Register a resource reader.
+
+        ``tool`` names the tool whose data the resource serves: the resource
+        is then listed/readable only where that tool would be (profile,
+        ``?unsafe=``, ``?ext=`` + token), so it can't widen the surface.
+        """
         def decorator(func: Callable) -> Callable:
             setattr(func, "__resource_uri__", uri)
             if name:
                 setattr(func, "__resource_name__", name)
             if mime:
                 setattr(func, "__resource_mime__", mime)
+            if tool:
+                setattr(func, "__resource_tool__", tool)
             return self.resources.method(func)
         return decorator
 
@@ -868,6 +919,7 @@ class McpServer:
             self._http_server = None
             raise
         self._running = True
+        _install_unraisable_hook()
         logger.info("[MCP] Server started at http://%s:%s/mcp", host, port)
 
         def serve_forever() -> None:
@@ -898,6 +950,7 @@ class McpServer:
         if self._server_thread is not None:
             self._server_thread.join(timeout=5)
             self._server_thread = None
+        _uninstall_unraisable_hook()
         logger.info("[MCP] Server stopped")
 
     def stdio(self, stdin=None, stdout=None) -> None:
@@ -1176,62 +1229,64 @@ class McpServer:
                 coerced[pname] = new_value
         return coerced if coerced is not None else arguments
 
-    def _mcp_tools_call(self, name, arguments=None, _meta=None):
+    def _tool_access_error(self, name: str) -> str | None:
+        """Why the current request may NOT use tool ``name`` (None = allowed).
+
+        Single source of truth for the unsafe / extension / token / profile
+        gates, shared by tools/call and tool-backed resources.
+        """
         auth_ok = self._auth_ok()
+        token_hint = (f"Tool '{name}' requires a valid auth token. Pass it as the "
+                      f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
         unsafe_requested = getattr(_unsafe_per_thread, "allowed", False)
-        unsafe_allowed = unsafe_requested and auth_ok
-        # Gate unsafe tools when unsafe mode is not enabled.
-        if name in self.unsafe_tools and not unsafe_allowed:
+        if name in self.unsafe_tools and not (unsafe_requested and auth_ok):
             if unsafe_requested and not auth_ok:
-                text = (f"Tool '{name}' requires a valid auth token. Pass it as the "
-                        f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
-            else:
-                text = f"Tool '{name}' requires unsafe mode. Add ?unsafe=true to the endpoint URL."
-            return {
-                "content": [{"type": "text", "text": text}],
-                "isError": True,
-            }
+                return token_hint
+            return f"Tool '{name}' requires unsafe mode. Add ?unsafe=true to the endpoint URL."
         tool_group = self._get_tool_extension(name)
         enabled_groups = _enabled_extension_groups() if auth_ok else set()
         if tool_group is not None and tool_group not in enabled_groups:
             if tool_group in _enabled_extension_groups() and not auth_ok:
-                text = (f"Tool '{name}' requires a valid auth token. Pass it as the "
-                        f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
-            else:
-                text = (f"Tool '{name}' requires extension '{tool_group}'. "
-                        f"Add ?ext={tool_group} to the endpoint URL.")
-            return {
-                "content": [{"type": "text", "text": text}],
-                "isError": True,
-            }
-        _profile_name, profile_set = _active_profile()
+                return token_hint
+            return (f"Tool '{name}' requires extension '{tool_group}'. "
+                    f"Add ?ext={tool_group} to the endpoint URL.")
+        profile_name, profile_set = _active_profile()
         if profile_set is not None and name not in profile_set:
-            hint = "Reconnect with ?profile=readonly (or no profile) to unlock more tools."
+            return (f"Tool '{name}' is not in profile '{profile_name}'. "
+                    f"Reconnect with ?profile=readonly (or no profile) to unlock more tools.")
+        return None
+
+    def _is_audited(self, name: str) -> bool:
+        return name in self.unsafe_tools or self._get_tool_extension(name) is not None
+
+    def _mcp_tools_call(self, name, arguments=None, _meta=None):
+        denied = self._tool_access_error(name)
+        if denied is not None:
             return {
-                "content": [{"type": "text", "text": f"Tool '{name}' is not in profile '{_profile_name}'. {hint}"}],
+                "content": [{"type": "text", "text": denied}],
                 "isError": True,
             }
-        gate = self._tool_gate if (self.max_concurrent_tools or 0) > 0 else None
-        gate_acquired = False
-        if gate is not None:
-            gate_acquired = gate.acquire(blocking=False)
-            if not gate_acquired:
-                logger.debug("[MCP] tools/call %s rejected: server busy", name)
-                self._record_call(name, busy=True)
-                return {
-                    "content": [{
-                        "type": "text",
-                        "text": (f"Server busy: another tool is running on the IDA main thread. "
-                                 f"Retry '{name}' shortly (sequential calls, no parallel fan-out).")
-                    }],
-                    "isError": True,
-                    "structuredContent": {"busy": True, "tool": name},
-                }
+        admitted, gate = self._try_enter_gate()
+        if not admitted:
+            logger.debug("[MCP] tools/call %s rejected: server busy", name)
+            self._record_call(name, busy=True)
+            return {
+                "content": [{
+                    "type": "text",
+                    "text": (f"Server busy: another tool is running on the IDA main thread. "
+                             f"Retry '{name}' shortly (sequential calls, no parallel fan-out).")
+                }],
+                "isError": True,
+                "structuredContent": {"busy": True, "tool": name},
+            }
         request_id = get_current_request_id()
         if request_id is not None:
             register_pending_request(request_id)
         _t0 = time.perf_counter()
-        _errored = False
+        # Pessimistic defaults: an unexpected exception escaping below is
+        # still recorded (and audited) as a failure.
+        _errored = True
+        _error_text: str | None = "internal error"
         try:
             arguments = self._coerce_tool_arguments(name, arguments)
             tool_response = self.tools.dispatch({
@@ -1242,9 +1297,9 @@ class McpServer:
             })
             if tool_response and "error" in tool_response:
                 error = tool_response["error"]
-                _errored = True
+                _error_text = error.get("message", "Unknown error")
                 return {
-                    "content": [{"type": "text", "text": error.get("message", "Unknown error")}],
+                    "content": [{"type": "text", "text": _error_text}],
                     "isError": True,
                 }
             result = tool_response.get("result") if tool_response else None
@@ -1259,7 +1314,7 @@ class McpServer:
                 text = json.dumps(result, separators=(",", ":"))
             cap = self.max_output_chars
             if cap and len(text) > cap:
-                _errored = True
+                _error_text = f"output_too_large ({len(text)} > {cap} chars)"
                 return {
                     "content": [{"type": "text", "text": (
                         f"Output too large: {len(text)} chars exceed the {cap}-char cap. "
@@ -1271,6 +1326,7 @@ class McpServer:
                 }
             structured = parsed if isinstance(parsed, dict) else {"result": parsed}
             _errored = _is_tool_error(parsed)
+            _error_text = parsed["error"] if _errored else None
             return {
                 "content": [{"type": "text", "text": text}],
                 "structuredContent": structured,
@@ -1279,18 +1335,19 @@ class McpServer:
         finally:
             if request_id is not None:
                 unregister_pending_request(request_id)
-            if gate_acquired:
+            if gate is not None:
                 try:
                     gate.release()
                 except Exception:
                     pass
-                # Metrics + optional audit, after releasing the gate so file
-                # I/O never extends the main-thread hold.
-                self._record_call(name, errored=_errored,
-                                  duration_ms=(time.perf_counter() - _t0) * 1000.0)
-                if self.audit_path and (name in self.unsafe_tools
-                                        or self._get_tool_extension(name) is not None):
-                    self._write_audit(name, arguments, ok=not _errored)
+            # Metrics + optional audit for every executed call (gate on or
+            # off), after releasing the gate so file I/O never extends the
+            # main-thread hold.
+            self._record_call(name, errored=_errored,
+                              duration_ms=(time.perf_counter() - _t0) * 1000.0)
+            if self.audit_path and self._is_audited(name):
+                self._write_audit(name, arguments, ok=not _errored,
+                                  error=_error_text if _errored else None)
 
     def _mcp_notifications_initialized(self):
         return None
@@ -1300,11 +1357,17 @@ class McpServer:
             cancel_request(requestId)
         return None
 
+    def _resource_access_error(self, func) -> str | None:
+        backing = getattr(func, "__resource_tool__", None)
+        return self._tool_access_error(backing) if backing else None
+
     def _mcp_resources_list(self, _meta=None):
         resources = []
         for func in self.resources.methods.values():
             uri = getattr(func, "__resource_uri__", None)
             if not uri:
+                continue
+            if self._resource_access_error(func) is not None:
                 continue
             resources.append({
                 "uri": uri,
@@ -1325,8 +1388,40 @@ class McpServer:
                 break
         if target is None:
             raise JsonRpcException(-32602, f"Unknown resource: {uri}")
-        result = target()
+        denied = self._resource_access_error(target)
+        if denied is not None:
+            raise JsonRpcException(-32002, f"Resource {uri} unavailable: {denied}")
+        # Same admission as tools/call: readers run IDA work on the main
+        # thread, so they must not overlap a running tool (UI freeze, and a
+        # pumped wait box could re-enter @idasync mid-tool).
+        stat_name = f"resource:{uri}"
+        admitted, gate = self._try_enter_gate()
+        if not admitted:
+            self._record_call(stat_name, busy=True)
+            raise JsonRpcException(
+                -32000, f"Server busy: another tool is running on the IDA main thread. "
+                        f"Retry reading {uri} shortly.", {"busy": True})
+        t0 = time.perf_counter()
+        errored = True
+        try:
+            result = target()
+            errored = False
+        finally:
+            if gate is not None:
+                try:
+                    gate.release()
+                except Exception:
+                    pass
+            self._record_call(stat_name, errored=errored,
+                              duration_ms=(time.perf_counter() - t0) * 1000.0)
         text = result if isinstance(result, str) else json.dumps(result, default=str)
+        cap = self.max_output_chars
+        if cap and len(text) > cap:
+            raise JsonRpcException(
+                -32000, f"Output too large: resource {uri} is {len(text)} chars, over the "
+                        f"{cap}-char cap. Use the backing tool with limit/offset, or raise "
+                        f"IDA_MCP_MAX_OUTPUT.",
+                {"error": "output_too_large", "size": len(text), "cap": cap})
         mime = getattr(target, "__resource_mime__", None)
         if mime is None:
             mime = "application/json"

@@ -43,6 +43,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Removed unused imports flagged by ruff across `api_*` and `server`.
 - `INSTALL.md`: documents the unsafe/debugger auth token (no longer claims "no
   auth") and corrects the harness count.
+- The transport's unraisable-exception hook called itself for anything that
+  was not a client disconnect (infinite recursion, swallowing every such error
+  in the IDA process). It now forwards to the previous hook, is installed by
+  `serve()` instead of at import, and is restored by `stop()`.
+- `@idasync` no longer blocks forever when IDA drops an `execute_sync` request
+  (e.g. while the database closes); it raises a retryable `IDASyncError`
+  instead of holding the tool gate ("Server busy" until restart). An abandoned
+  request that IDA starts late does not run the tool body.
+- `resources/read` now shares the `tools/call` concurrency gate, output cap
+  and metrics, and a resource registered with `tool=` is only listed/readable
+  where its backing tool is (profile / `?unsafe=` / `?ext=` + token).
+- Metrics and the audit log are recorded even with the concurrency gate
+  disabled; failed audited calls record their error text.
+  `max_concurrent_tools = N` now actually admits N concurrent calls.
+- `notifications/cancelled` is scoped to the caller's session
+  (`Mcp-Session-Id` / legacy SSE session): a client can no longer cancel
+  another client's request that happens to share its JSON-RPC id.
 
 ## [0.1.0] - 2025-11-03
 
