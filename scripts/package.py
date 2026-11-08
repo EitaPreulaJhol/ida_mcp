@@ -7,7 +7,9 @@ importing the package (which would require IDA).
 
 Usage:
     python scripts/package.py
+    python scripts/package.py --expect-version 0.2.0   # release: tag guard
 """
+import argparse
 import ast
 import os
 import sys
@@ -45,8 +47,19 @@ def iter_package_files():
             yield full, os.path.relpath(full, ROOT)
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--expect-version", metavar="X.Y.Z",
+        help="fail (before building) unless ida_mcp.__version__ equals this; "
+             "the release workflow passes the pushed tag without its 'v'")
+    args = parser.parse_args(argv)
     version = read_version()
+    if args.expect_version is not None and args.expect_version != version:
+        raise SystemExit(
+            f"version mismatch: tag says {args.expect_version!r} but "
+            f"ida_mcp/__init__.py has __version__ = {version!r}. Bump __version__ "
+            f"(and CHANGELOG) before tagging, or re-tag.")
     dist = os.path.join(ROOT, "dist")
     os.makedirs(dist, exist_ok=True)
     out = os.path.join(dist, f"ida_mcp-{version}.zip")

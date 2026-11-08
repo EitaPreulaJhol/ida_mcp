@@ -60,6 +60,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- The release workflow no longer publishes a tag whose version differs from
+  `__version__` (e.g. `v0.2.0` shipping `ida_mcp-0.1.0.zip`):
+  `scripts/package.py --expect-version` refuses before building.
 - `list_instances` / `get_instance_info` no longer run on the IDA main
   thread: discovery never touches the SDK, and its TCP probes (up to 1 s
   each) froze the UI and held the tool gate.
