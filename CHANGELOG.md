@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-08
+
 ### Added
 - GitHub Actions CI: standalone test suite on Python 3.11/3.12 + ruff lint,
   mypy (pure modules, enforced) and an informational coverage job.
@@ -126,12 +128,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `get_analysis_status` no longer waits for auto-analysis first (it always
   reported "complete" or hit the timeout); `get_version_info` no longer waits.
 
-## [0.1.0] - 2025-11-03
+## [0.1.0] - 2026-11-03
 
 Initial versioned baseline: 243 tools across 22 modules, zero-dependency
 vendored MCP transport, main-thread-safe `@idasync` layer, lazy `triage` /
 `readonly` profiles, token-gated unsafe/debugger surface, and the `/ida` +
 `ida-scripting` agent skills.
 
-[Unreleased]: https://github.com/EitaPreulaJhol/ida_mcp/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.1.0
+[Unreleased]: https://github.com/EitaPreulaJhol/ida_mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.2.0
+[0.1.0]: https://github.com/EitaPreulaJhol/ida_mcp/tree/5d12fb0
