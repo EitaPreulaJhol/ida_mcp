@@ -49,7 +49,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tests/skills_sync_test.py` fails on drift or on an unquoted (non-strict
   YAML) frontmatter value. The two copies had already diverged.
 - Lint enforces `F`, `E`, `W` and `C4` (all clean); CI pins ruff 0.6.9 like
-  pre-commit, and runs the suite on Windows (informational for now).
+  pre-commit, and runs the suite on Windows as a required job.
 - `[dev]` extras now install mypy and coverage too.
 - Tools now start with `ensure_analysis()` instead of a bare
   `ida_auto.auto_wait()` (~200 call sites): an immediate return once analysis
@@ -60,6 +60,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   something is registered (previously always).
 
 ### Fixed
+- Discovery treated a live instance owned by another user as dead (EPERM /
+  access denied) and deleted its registration. On Windows it also counted
+  exited-but-still-referenced processes as alive, and truncated the
+  process handle on x64 (default `c_int` restype).
+- The release workflow no longer publishes a tag whose version differs from
+  `__version__` (e.g. `v0.2.0` shipping `ida_mcp-0.1.0.zip`):
+  `scripts/package.py --expect-version` refuses before building.
+- `list_instances` / `get_instance_info` no longer run on the IDA main
+  thread: discovery never touches the SDK, and its TCP probes (up to 1 s
+  each) froze the UI and held the tool gate.
+- `unload_package` (manual hot reload) now stops the server started from the
+  modules it drops. With the port fallback, the next `run(0)` would
+  otherwise start a second server while the stale one kept serving.
+- Hooks installed by agents (`install_hook` & co.) are now removed when the
+  server stops (plugin toggle/term, `close_instance`); they used to stay
+  hooked into IDA with no owner, running orphaned code after a hot reload.
+- `execute_script` / `py_eval` / `py_exec_file` ran scripts with separate
+  globals and locals dicts, so any function or comprehension using a name
+  defined at the script's top level (a constant, a helper, a variable)
+  failed with `NameError`. Scripts now run in one namespace, like a module
+  or the IDA console; result selection is unchanged.
 - `make lint` / `typecheck` / `coverage` printed "not installed" and exited 0
   when the tool *failed*, so they never failed. They now propagate errors,
   exit 1 when the tool is missing, and also find tools installed as

@@ -20,8 +20,9 @@ jobs:
       # Gate the release on a green suite (dependency-free, IDA stubbed).
       - name: Run test suite
         run: python tests/run_all.py
-      - name: Build plugin zip
-        run: python scripts/package.py
+      # Refuse to publish e.g. tag v0.2.0 as ida_mcp-0.1.0.zip.
+      - name: Build plugin zip (tag must match __version__)
+        run: python scripts/package.py --expect-version "${GITHUB_REF_NAME#v}"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

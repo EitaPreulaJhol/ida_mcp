@@ -252,6 +252,11 @@ def remove_hooks(hook_id: str = "all") -> str:
     """
     ensure_analysis()
     targets = list(_HOOKS.keys()) if hook_id in ("", "all") else [hook_id]
+    removed = _unhook(targets)
+    return json.dumps({"removed": removed, "count": len(removed)}, indent=2)
+
+
+def _unhook(targets) -> list[str]:
     removed: list[str] = []
     for hid in targets:
         entry = _HOOKS.pop(hid, None)
@@ -262,7 +267,17 @@ def remove_hooks(hook_id: str = "all") -> str:
         except Exception:
             pass
         removed.append(hid)
-    return json.dumps({"removed": removed, "count": len(removed)}, indent=2)
+    return removed
+
+
+def remove_all_hooks() -> list[str]:
+    """Unhook every tracer this server installed (plain, NOT @idasync).
+
+    Called by ``server.stop_server`` on the main thread: hooks must not
+    outlive the server that owns their buffers, and after a hot reload
+    (``unload_package``) their callbacks would run orphaned module code.
+    """
+    return _unhook(list(_HOOKS.keys()))
 
 
 __all__ = [

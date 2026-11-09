@@ -244,8 +244,10 @@ def server_warmup() -> str:
                        "health": _health_payload()}, indent=2)
 
 
+# Discovery reads files and probes TCP ports; it never touches the IDA SDK,
+# so these two run on the HTTP worker thread (NOT @idasync): the probes
+# (up to 1 s each) must not freeze the IDA UI on the main thread.
 @tool
-@idasync
 def list_instances() -> str:
     """List running IDA MCP instances found via filesystem discovery."""
     try:
@@ -256,7 +258,6 @@ def list_instances() -> str:
 
 
 @tool
-@idasync
 def get_instance_info(port: int = 13337) -> str:
     """Get discovery info for the instance on ``port`` (host/pid/binary/idb)."""
     try:
@@ -419,10 +420,20 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
 
 
 def stop_server(port: int = 13337) -> None:
-    """Stop the MCP HTTP server and unregister this instance."""
+    """Stop the MCP HTTP server, remove agent-installed hooks, unregister.
+
+    Runs on the IDA main thread (plugin run/term, or inside close_instance).
+    """
     global _OWN_PORT
     MCP_SERVER.stop()
     _OWN_PORT = None
+    try:
+        removed = api_hooks.remove_all_hooks()
+        if removed:
+            ida_kernwin.msg(f"[ida-mcp] removed {len(removed)} hook(s) on stop: "
+                            f"{', '.join(removed)}\n")
+    except Exception as e:  # noqa: BLE001 - never block shutdown
+        ida_kernwin.msg(f"[ida-mcp] hook cleanup failed: {e}\n")
     try:
         unregister_instance(port)
     except Exception:  # noqa: BLE001 - unregistration is best-effort

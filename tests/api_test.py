@@ -100,4 +100,29 @@ assert "before" in r["stdout"] and "exit(3)" in r["stderr"], r
 assert not r.get("error"), r
 print("SystemExit contained OK")
 
+# 8) one namespace: functions/comprehensions see the script's top-level names
+#    (with separate globals/locals dicts every case below raised NameError)
+cases = [
+    ("def f():\n    return helper()\ndef helper():\n    return 41\nresult = f() + 1", "42"),
+    ("BASE = 0x1000\ndef addr(i):\n    return BASE + i\nresult = hex(addr(5))", "0x1005"),
+    ("names = ['a', 'b']\nprefix = 'sub_'\nresult = [prefix + n for n in names]",
+     "['sub_a', 'sub_b']"),
+    ("K = 2\ndef g(x):\n    return x * K\ng(21)", "42"),
+    ("class C:\n    pass\nobj = C()\nresult = type(obj).__name__", "C"),
+]
+for code, want in cases:
+    r = mod._run_code(code)
+    assert r["result"] == want and not r["stderr"], (code, r)
+print("single namespace (helpers/constants/comprehensions) OK")
+
+# 9) without `result`, the last variable the script bound is returned, and
+#    pre-loaded modules never count as script bindings
+r = mod._run_code("a = 1\nb = 2")
+assert r["result"] == "2", r
+r = mod._run_code("import os\nfirst = 'x'\nsecond = 'y'")
+assert r["result"] == "y", r
+r = mod._run_code("for i in range(3):\n    pass")
+assert r["result"] == "2", r  # the loop variable is the last binding
+print("last-binding result OK")
+
 print("ALL API_PYTHON _run_code TESTS PASSED")

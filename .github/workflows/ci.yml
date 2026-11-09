@@ -33,13 +33,11 @@ jobs:
         run: python tests/run_all.py
 
   # The runtime has Windows-only paths (SO_EXCLUSIVEADDRUSE, APPDATA discovery,
-  # OpenProcess liveness) that the Linux matrix never executes. Informational
-  # until a green run confirms the stubbed suite is portable; then drop
-  # continue-on-error to make it a gate.
+  # OpenProcess liveness) that the Linux matrix never executes. A required
+  # gate since its first run came back green.
   test-windows:
-    name: tests (windows, informational)
+    name: tests (windows)
     runs-on: windows-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

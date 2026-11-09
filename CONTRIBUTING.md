@@ -119,7 +119,8 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
    `## [X.Y.Z]` heading.
 2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 3. `release.yml` runs the suite, builds the plugin zip
-   (`scripts/package.py`), and attaches it to the GitHub Release.
+   (`scripts/package.py --expect-version X.Y.Z`, which fails if the tag and
+   `__version__` disagree), and attaches it to the GitHub Release.
 
 ## Commit / PR etiquette
 

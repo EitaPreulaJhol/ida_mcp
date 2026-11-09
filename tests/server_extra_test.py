@@ -196,6 +196,16 @@ r = json.loads(mod.get_instance_info(9999))
 assert "error" in r, r
 print("instances OK")
 
+# Discovery never touches the SDK: its TCP probes (up to 1 s each) must run
+# on the HTTP thread, not be marshalled onto (and freeze) the IDA main thread.
+import ast as _ast
+_tree = _ast.parse(open(os.path.join(PKG, "server.py"), encoding="utf-8").read())
+for _fn in _tree.body:
+    if isinstance(_fn, _ast.FunctionDef) and _fn.name in ("list_instances", "get_instance_info"):
+        _decos = {getattr(d, "id", None) for d in _fn.decorator_list}
+        assert "tool" in _decos and "idasync" not in _decos, (_fn.name, _decos)
+print("discovery tools stay off the main thread OK")
+
 r = json.loads(mod.close_instance(13337))
 assert "error" in r, r  # nothing started yet
 mod.start_server("127.0.0.1", 13337)

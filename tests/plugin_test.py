@@ -212,6 +212,27 @@ rpc_mod.MCP_SERVER._running = False
 fake_server.start_server = start_server
 print("port fallback tracked by loader OK")
 
+# 6c) unload_package stops a server started from the modules it drops, so a
+#     following run(0) cannot start a second server beside the stale one.
+_stopped = []
+_fake_srv = type("Srv", (), {"_running": True, "stop": lambda self: _stopped.append("srv")})()
+_rpc = types.ModuleType("hotpkg.rpc")
+_rpc.MCP_SERVER = _fake_srv
+_srvmod = types.ModuleType("hotpkg.server")
+_srvmod._OWN_PORT = 13341
+_srvmod.stop_server = lambda port: _stopped.append(port)
+sys.modules.update({"hotpkg": types.ModuleType("hotpkg"),
+                    "hotpkg.rpc": _rpc, "hotpkg.server": _srvmod})
+loader_mod.unload_package("hotpkg")
+assert _stopped == [13341], _stopped
+assert not any(m == "hotpkg" or m.startswith("hotpkg.") for m in sys.modules)
+# not running -> nothing to stop, modules still dropped
+_fake_srv._running = False
+sys.modules.update({"hotpkg": types.ModuleType("hotpkg"), "hotpkg.rpc": _rpc})
+loader_mod.unload_package("hotpkg")
+assert _stopped == [13341] and "hotpkg.rpc" not in sys.modules, _stopped
+print("unload_package stops the stale server OK")
+
 # 7) term() stops and removes hook
 p.term()
 assert hooks_installed == []
