@@ -57,9 +57,6 @@ _UNREGISTERED = []
 # Load server.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "server.py")).read()
 
 FAKE_PREAMBLE = '''
 class _FakeTools:
@@ -118,19 +115,10 @@ def unregister_instance(port):
     return True
 '''
 
-src = re.sub(r"from \.rpc import .*", "", src)
-src = re.sub(r"from \.sync import .*", "", src)
-src = re.sub(r"from \.api_python import .*", "", src)
-src = re.sub(r"from \.api_analysis import .*", "", src)
-src = re.sub(r"from \.discovery import \([^)]*\)", "", src, flags=re.DOTALL)
-src = re.sub(r"from \. import \w+.*", "", src)
-src = FAKE_PREAMBLE + src
-
-mod = types.ModuleType("server_test")
-mod.__dict__.update({"_REGISTERED": _REGISTERED,
+from _harness import load_with_preamble  # noqa: E402
+mod = load_with_preamble("server", FAKE_PREAMBLE, alias="server_test",
+                         stub_globals={"_REGISTERED": _REGISTERED,
                      "_UNREGISTERED": _UNREGISTERED})
-exec(compile(src, "server_test", "exec"), mod.__dict__)
-sys.modules["server_test"] = mod
 
 # =========================================================================
 # Tests

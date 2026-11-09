@@ -141,31 +141,21 @@ sys.modules["ida_typeinf"] = ida_typeinf
 # Load api_typeinfo.py (relative imports redirected to inline stubs)
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
 
-_src = open(os.path.join(PKG, "api_typeinfo.py"), encoding="utf-8").read()
-_src = _src.replace("from .rpc import tool, unsafe",
-                    "tool = lambda f: f\nunsafe = lambda f: f")
-_src = _src.replace("from .sync import idasync", "idasync = lambda f: f")
-_src = _src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-_src = _src.replace(
-    "from .compat import get_func_cc, get_type_ordinal_limit",
-    "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)\n"
-    "get_func_cc = lambda ftd: ftd.get_cc() if hasattr(ftd, 'get_cc') else None")
-_src = _src.replace(
-    "from .api_analysis import parse_addr, type_label",
-    "def parse_addr(s):\n"
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+tinfo = load("api_typeinfo", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+    "compat": "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)\n"
+    "get_func_cc = lambda ftd: ftd.get_cc() if hasattr(ftd, 'get_cc') else None",
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'):\n"
     "        return int(s, 16)\n"
     "    return int(s)\n"
     "def type_label(tif):\n"
-    "    return tif.get_type_name() or '<unnamed>'")
-
-tinfo = types.ModuleType("ti_upsert_typeinfo")
-exec(compile(_src, "ti_upsert_typeinfo", "exec"), tinfo.__dict__)
-sys.modules["ti_upsert_typeinfo"] = tinfo
+    "    return tif.get_type_name() or '<unnamed>'",
+}, alias="ti_upsert_typeinfo")
 
 # =========================================================================
 # Tests — declare_type: print_decls removed + error-count semantics

@@ -109,15 +109,12 @@ sys.modules["idautils"] = idautils
 # Load api_query.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_query.py")).read()
-src = src.replace("from .rpc import tool", "tool = lambda f: f")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace(
-    "from .api_analysis import parse_addr",
-    "def parse_addr(s):\n"
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+# regex_guard is IDA-free: api_query imports the real one (not stubbed).
+mod = load("api_query", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -125,24 +122,13 @@ src = src.replace(
     "    table = {'main': 0x1000}\n"
     "    if s in table: return table[s]\n"
     "    raise ValueError(f'Unknown: {s}')",
-)
-src = src.replace(
-    "from .api_functions import _collect_frame_vars",
-    "def _collect_frame_vars(func):\n"
+    "api_functions": "def _collect_frame_vars(func):\n"
     "    if func.start_ea == 0x1000:\n"
     "        return [{'name': 'buf', 'offset': -32, 'size': 64, 'type': 'local', 'type_info': None},\n"
     "                {'name': 'argc', 'offset': 8, 'size': 4, 'type': 'argument', 'type_info': 'int'}]\n"
     "    return []",
-)
-_rg_spec = importlib.util.spec_from_file_location(
-    "regex_guard_under_test", os.path.join(PKG, "regex_guard.py"))
-_rg = importlib.util.module_from_spec(_rg_spec)
-_rg_spec.loader.exec_module(_rg)
-sys.modules["regex_guard_under_test"] = _rg
-src = src.replace("from .regex_guard import", "from regex_guard_under_test import")
-mod = types.ModuleType("query_test")
-exec(compile(src, "query_test", "exec"), mod.__dict__)
-sys.modules["query_test"] = mod
+}, alias="query_test")
+_rg = sys.modules["ida_mcp.regex_guard"]  # the real guard api_query imported
 
 # =========================================================================
 # Tests

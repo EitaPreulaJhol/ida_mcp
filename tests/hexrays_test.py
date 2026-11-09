@@ -98,26 +98,22 @@ sys.modules["idautils"] = idautils
 # Load api_hexrays.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_hexrays.py")).read()
-src = src.replace("from .rpc import tool", "tool = lambda f: f")
-src = src.replace(
-    "from .sync import (idasync, tool_timeout, check_cancelled,\n"
-    "                   CancelledError, IDASyncError)",
-    "idasync = lambda f: f\n"
+from _harness import RPC_STUB, load  # noqa: E402
+mod = load("api_hexrays", {
+    "rpc": RPC_STUB,
+    "sync": (
+        "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
     "    return deco\n"
     "def check_cancelled(): return None\n"
     "class CancelledError(Exception): pass\n"
-    "class IDASyncError(Exception): pass",
-)
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace(
-    "from .api_analysis import parse_addr, _cap_lines",
-    "def parse_addr(s):\n"
+    "class IDASyncError(Exception): pass"
+        "\n"
+        "def ensure_analysis(): return None"
+    ),
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -127,10 +123,7 @@ src = src.replace(
     "    lines = text.split(chr(10))\n"
     "    if len(lines) <= max_lines: return text, None\n"
     "    return chr(10).join(lines[:max_lines]), len(lines)",
-)
-mod = types.ModuleType("hexrays_test")
-exec(compile(src, "hexrays_test", "exec"), mod.__dict__)
-sys.modules["hexrays_test"] = mod
+}, alias="hexrays_test")
 
 # =========================================================================
 # Tests

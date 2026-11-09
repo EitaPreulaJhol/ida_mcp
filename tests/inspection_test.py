@@ -112,16 +112,11 @@ sys.modules["ida_dbg"] = ida_dbg
 # Load api_analysis.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_analysis.py")).read()
-src = src.replace("from .rpc import tool, unsafe",
-                   "tool = lambda f: f\nunsafe = lambda f: f\nMCP_SERVER = type('FakeMCP', (), {'unsafe_tools': set()})()")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-mod = types.ModuleType("inspection_test")
-exec(compile(src, "inspection_test", "exec"), mod.__dict__)
-sys.modules["inspection_test"] = mod
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+mod = load("api_analysis", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+}, alias="inspection_test")
 
 # =========================================================================
 # Tests

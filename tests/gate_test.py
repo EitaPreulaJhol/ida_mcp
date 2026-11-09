@@ -12,28 +12,13 @@ import threading
 import types
 import urllib.request
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ZPKG = os.path.join(HERE, "..", "ida_mcp", "zeromcp")
 
-_zt = types.ModuleType("zt_gate_pkg")
-_zt.__path__ = []
-sys.modules["zt_gate_pkg"] = _zt
+# zeromcp is IDA-free: import the real subpackage (true paths, so coverage
+# attributes the lines).
+from _harness import real  # noqa: E402
 
-
-def _load(name, filename, patch=None):
-    path = os.path.join(ZPKG, filename)
-    src = open(path, "r", encoding="utf-8").read()
-    if patch:
-        src = patch(src)
-    mod = types.ModuleType(name)
-    sys.modules[name] = mod
-    exec(compile(src, name, "exec"), mod.__dict__)
-    return mod
-
-
-jsonrpc = _load("zt_gate_pkg.jsonrpc", "jsonrpc.py")
-mcp = _load("zt_gate_pkg.mcp", "mcp.py",
-            patch=lambda s: s.replace("from .jsonrpc import", "from zt_gate_pkg.jsonrpc import"))
+jsonrpc = real("zeromcp.jsonrpc")
+mcp = real("zeromcp.mcp")
 
 srv = mcp.McpServer("gate-test")
 assert srv.max_concurrent_tools == 1

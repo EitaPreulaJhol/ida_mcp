@@ -99,48 +99,20 @@ for _name in ("idautils", "idc", "ida_nalt", "ida_funcs"):
 # Load compat.py + the four modules (relative imports redirected to stubs)
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
 
-compat = types.ModuleType("calls_test_compat")
-exec(compile(open(os.path.join(PKG, "compat.py"), encoding="utf-8").read(),
-             "calls_test_compat", "exec"), compat.__dict__)
-sys.modules["calls_test_compat"] = compat
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
 
-analysis = types.ModuleType("calls_test_analysis")
+compat = load("compat")  # the real shim, against the 9.4-shaped stubs above
+analysis = types.ModuleType("ida_mcp.api_analysis")
 analysis.parse_addr = lambda s: (int(str(s).strip(), 16) if str(s).strip().startswith("0x")
                                  else int(str(s).strip()))
 analysis.type_label = lambda tif: "<unnamed>"
-sys.modules["calls_test_analysis"] = analysis
+_siblings = {"rpc": RPC_STUB, "sync": SYNC_STUB, "api_analysis": analysis, "compat": compat}
 
-rpc = types.ModuleType("calls_test_rpc")
-rpc.tool = lambda f: f
-rpc.unsafe = lambda f: f
-rpc.MCP_SERVER = type("Fake", (), {"unsafe_tools": set()})()
-sys.modules["calls_test_rpc"] = rpc
-
-sync = types.ModuleType("calls_test_sync")
-sync.idasync = lambda f: f
-sync.ensure_analysis = lambda: None
-sys.modules["calls_test_sync"] = sync
-
-
-def _load(name, filename):
-    src = open(os.path.join(PKG, filename), encoding="utf-8").read()
-    src = src.replace("from .rpc import ", "from calls_test_rpc import ")
-    src = src.replace("from .sync import ", "from calls_test_sync import ")
-    src = src.replace("from .api_analysis import ", "from calls_test_analysis import ")
-    src = src.replace("from .compat import ", "from calls_test_compat import ")
-    mod = types.ModuleType(name)
-    exec(compile(src, name, "exec"), mod.__dict__)
-    sys.modules[name] = mod
-    return mod
-
-
-comments = _load("calls_test_comments", "api_comments.py")
-modify = _load("calls_test_modify", "api_modify.py")
-segments = _load("calls_test_segments", "api_segments.py")
-instructions = _load("calls_test_instructions", "api_instructions.py")
+comments = load("api_comments", _siblings)
+modify = load("api_modify", _siblings)
+segments = load("api_segments", _siblings)
+instructions = load("api_instructions", _siblings)
 
 # =========================================================================
 # Tests

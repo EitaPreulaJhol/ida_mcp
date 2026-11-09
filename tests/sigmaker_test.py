@@ -135,14 +135,11 @@ sys.modules["idautils"] = idautils
 # Load api_sigmaker.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_sigmaker.py")).read()
-src = src.replace("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f")
-src = src.replace(
-    "from .sync import (idasync, tool_timeout, check_cancelled, update_wait_box,\n"
-    "                   CancelledError, IDASyncError)",
-    "idasync = lambda f: f\n"
+from _harness import RPC_STUB, load  # noqa: E402
+mod = load("api_sigmaker", {
+    "rpc": RPC_STUB,
+    "sync": (
+        "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
@@ -150,12 +147,11 @@ src = src.replace(
     "def check_cancelled(): return None\n"
     "def update_wait_box(t): return None\n"
     "class CancelledError(Exception): pass\n"
-    "class IDASyncError(Exception): pass",
-)
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace(
-    "from .api_analysis import parse_addr, read_bytes_bss_safe",
-    "def parse_addr(s):\n"
+    "class IDASyncError(Exception): pass"
+        "\n"
+        "def ensure_analysis(): return None"
+    ),
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -166,15 +162,8 @@ src = src.replace(
     "        if ea + i not in _MEM: return None\n"
     "        out.append(_MEM[ea + i])\n"
     "    return bytes(out)",
-)
-src = src.replace(
-    "from .compat import inf_get_max_ea, inf_get_min_ea",
-    "inf_get_max_ea = lambda: 0x3000\ninf_get_min_ea = lambda: 0x1000",
-)
-mod = types.ModuleType("sigmaker_test")
-mod.__dict__.update({"_MEM": _MEM})
-exec(compile(src, "sigmaker_test", "exec"), mod.__dict__)
-sys.modules["sigmaker_test"] = mod
+    "compat": "inf_get_max_ea = lambda: 0x3000\ninf_get_min_ea = lambda: 0x1000",
+}, alias="sigmaker_test", stub_globals={"_MEM": _MEM})
 
 # =========================================================================
 # Tests

@@ -239,18 +239,10 @@ sys.modules["idc"] = idc
 # Load api_composite.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_composite.py")).read()
-src = src.replace(
-    "from .rpc import tool, unsafe",
-    "tool = lambda f: f\nunsafe = lambda f: f",
-)
-src = src.replace(
-    "from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,\n"
-    "                   update_wait_box, ensure_analysis, CancelledError,\n"
-    "                   IDASyncError)",
-    "idasync = lambda f: f\n"
+from _harness import RPC_STUB, load  # noqa: E402
+mod = load("api_composite", {
+    "rpc": RPC_STUB,
+    "sync": "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
@@ -261,10 +253,7 @@ src = src.replace(
     "def ensure_analysis(): return None\n"
     "class CancelledError(Exception): pass\n"
     "class IDASyncError(Exception): pass",
-)
-src = src.replace(
-    "from .api_analysis import parse_addr",
-    "def parse_addr(s):\n"
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -272,16 +261,10 @@ src = src.replace(
     "    table = {'main': 0x1000, 'sub': 0x2000}\n"
     "    if s in table: return table[s]\n"
     "    raise ValueError(f'Unknown: {s}')",
-)
-src = src.replace(
-    "from .compat import inf_is_64bit, is_loaded as _is_loaded, get_func as _get_func, getseg as _getseg, get_segm_name as _get_segm_name",
-    "inf_is_64bit = lambda: True\n_is_loaded = lambda ea: True\n"
+    "compat": ("inf_is_64bit = lambda: True\n_is_loaded = lambda ea: True\n"
     "import ida_funcs as _cf_f, idaapi as _cf_a, ida_segment as _cf_s\n"
-    "_get_func = _cf_f.get_func\n_getseg = _cf_a.getseg\n_get_segm_name = _cf_s.get_segm_name",
-)
-mod = types.ModuleType("composite_test")
-exec(compile(src, "composite_test", "exec"), mod.__dict__)
-sys.modules["composite_test"] = mod
+    "_get_func = _cf_f.get_func\n_getseg = _cf_a.getseg\n_get_segm_name = _cf_s.get_segm_name" + '\nis_loaded = _is_loaded\nget_func = _get_func\ngetseg = _getseg\nget_segm_name = _get_segm_name'),
+}, alias="composite_test")
 
 # =========================================================================
 # Tests

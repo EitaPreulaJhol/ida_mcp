@@ -188,29 +188,15 @@ for _name in ("ida_bytes", "ida_gdl", "ida_name", "idautils"):
 # Load compat.py + api_functions.py (relative imports redirected to stubs)
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
 
-compat = types.ModuleType("functions_test_compat")
-exec(compile(open(os.path.join(PKG, "compat.py"), encoding="utf-8").read(),
-             "functions_test_compat", "exec"), compat.__dict__)
-sys.modules["functions_test_compat"] = compat
-
-analysis = types.ModuleType("functions_test_analysis")
-analysis.parse_addr = lambda s: (int(str(s).strip(), 16) if str(s).strip().startswith("0x")
-                                 else int(str(s).strip()))
-analysis.type_label = lambda tif: tif.get_type_name() or tif.dstr() or "<unnamed>"
-sys.modules["functions_test_analysis"] = analysis
-
-src = open(os.path.join(PKG, "api_functions.py"), encoding="utf-8").read()
-src = src.replace("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace("from .api_analysis import ", "from functions_test_analysis import ")
-src = src.replace("from .compat import ", "from functions_test_compat import ")
-mod = types.ModuleType("functions_test")
-exec(compile(src, "functions_test", "exec"), mod.__dict__)
-sys.modules["functions_test"] = mod
+compat = load("compat")
+analysis_stub = types.ModuleType("ida_mcp.api_analysis")
+analysis_stub.parse_addr = lambda s: (int(str(s).strip(), 16) if str(s).strip().startswith("0x")
+                                      else int(str(s).strip()))
+analysis_stub.type_label = lambda tif: tif.get_type_name() or tif.dstr() or "<unnamed>"
+mod = load("api_functions", {"rpc": RPC_STUB, "sync": SYNC_STUB,
+                             "api_analysis": analysis_stub, "compat": compat})
 
 # =========================================================================
 # Tests

@@ -99,24 +99,17 @@ sys.modules["idautils"] = idautils
 # Load api_xrefs.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_xrefs.py")).read()
-src = src.replace("from .rpc import tool", "tool = lambda f: f")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace(
-    "from .api_analysis import parse_addr",
-    "def parse_addr(s):\n"
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+mod = load("api_xrefs", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
     "    except ValueError: raise ValueError(f'Unknown: {s}')",
-)
-src = src.replace("from .compat import badaddr", "badaddr = lambda: -1")
-mod = types.ModuleType("xrefs_test")
-exec(compile(src, "xrefs_test", "exec"), mod.__dict__)
-sys.modules["xrefs_test"] = mod
+    "compat": "badaddr = lambda: -1",
+}, alias="xrefs_test")
 
 # =========================================================================
 # Tests

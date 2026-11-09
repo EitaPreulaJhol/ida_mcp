@@ -100,16 +100,11 @@ ida_bytes._strlit_contents_hook = None
 # Load api_analysis.py with patched imports
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_analysis.py")).read()
-src = src.replace("from .rpc import tool, unsafe",
-                   "tool = lambda f: f\nunsafe = lambda f: f\nMCP_SERVER = type('FakeMCP', (), {'unsafe_tools': set()})()")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-mod = types.ModuleType("memory_test")
-exec(compile(src, "memory_test", "exec"), mod.__dict__)
-sys.modules["memory_test"] = mod
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+mod = load("api_analysis", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+}, alias="memory_test")
 
 
 def setup():

@@ -74,15 +74,11 @@ sys.modules["idautils"] = idautils
 # Load api_memory.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_memory.py")).read()
-src = src.replace("from .rpc import tool", "tool = lambda f: f")
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace(
-    "from .api_analysis import parse_addr, read_bytes_bss_safe",
-    "def parse_addr(s):\n"
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+mod = load("api_memory", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -94,16 +90,10 @@ src = src.replace(
     "        if start <= ea < start + len(data):\n"
     "            return data[ea - start:ea - start + size]\n"
     "    return None",
-)
-src = src.replace(
-    "from .compat import inf_get_max_ea, inf_get_min_ea, is_loaded",
-    "inf_get_max_ea = lambda: 0x3000\n"
+    "compat": "inf_get_max_ea = lambda: 0x3000\n"
     "inf_get_min_ea = lambda: 0x1000\n"
     "is_loaded = lambda ea: not (0x2000 <= ea < 0x2100)",
-)
-mod = types.ModuleType("api_memory_test")
-exec(compile(src, "api_memory_test", "exec"), mod.__dict__)
-sys.modules["api_memory_test"] = mod
+}, alias="api_memory_test")
 
 # =========================================================================
 # Tests

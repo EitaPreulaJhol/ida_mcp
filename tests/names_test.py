@@ -89,18 +89,15 @@ sys.modules["idautils"] = idautils
 # Load api_names.py
 # =========================================================================
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_names.py")).read()
-src = src.replace(
-    "from .rpc import tool, unsafe",
-    "tool = lambda f: f\nunsafe = lambda f: f",
-)
-src = src.replace("from .sync import idasync", "idasync = lambda f: f")
-src = src.replace("from .sync import ensure_analysis", "def ensure_analysis(): return None")
-src = src.replace(
-    "from .api_analysis import parse_addr",
-    "def parse_addr(s):\n"
+from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+# The real compat shim runs against the stubbed ida_name above: api_names
+# must go through the same version dispatch it uses in production (9.4 has
+# no ida_name.del_name, only del_global_name/del_local_name).
+compat = load("compat")
+mod = load("api_names", {
+    "rpc": RPC_STUB,
+    "sync": SYNC_STUB,
+    "api_analysis": "def parse_addr(s):\n"
     "    s = s.strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -108,18 +105,8 @@ src = src.replace(
     "    table = {'main': 0x1000, 'foo': 0x2000}\n"
     "    if s in table: return table[s]\n"
     "    raise ValueError(f'Unknown: {s}')",
-)
-# Exec the real compat shim with the stubbed ida_name above: api_names must
-# go through the same version-dispatch it uses in production (9.4 has no
-# ida_name.del_name, only del_global_name/del_local_name).
-compat = types.ModuleType("names_test_compat")
-exec(compile(open(os.path.join(PKG, "compat.py"), encoding="utf-8").read(),
-             "names_test_compat", "exec"), compat.__dict__)
-src = src.replace("from .compat import del_name", "del_name = _compat_del_name")
-mod = types.ModuleType("names_test")
-mod.__dict__["_compat_del_name"] = compat.del_name
-exec(compile(src, "names_test", "exec"), mod.__dict__)
-sys.modules["names_test"] = mod
+    "compat": compat,
+}, alias="names_test")
 
 # =========================================================================
 # Tests
