@@ -227,18 +227,18 @@ idautils.Segments = lambda: iter([0x1000])
 idautils.Strings = lambda: iter([])
 sys.modules["idautils"] = idautils
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
 
 
 def _load(name, filename, replacements):
-    src = open(os.path.join(PKG, filename)).read()
+    """Load the REAL module; each (relative import, stub code) pair becomes
+    (part of) the stub for that sibling module."""
+    import re
+    from _harness import load
+    stubs: dict[str, str] = {}
     for old, new in replacements:
-        src = src.replace(old, new)
-    m = types.ModuleType(name)
-    exec(compile(src, name, "exec"), m.__dict__)
-    sys.modules[name] = m
-    return m
+        sibling = re.match(r"from \.([\w.]+) import ", old).group(1)
+        stubs[sibling] = (stubs[sibling] + "\n" + new) if sibling in stubs else new
+    return load(filename[:-len(".py")], stubs, alias=name)
 
 
 info = _load("info_types_info", "api_info.py", [

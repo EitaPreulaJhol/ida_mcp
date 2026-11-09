@@ -8,8 +8,6 @@ import os
 import sys
 import types
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
 
 IDA_MODULES = ("ida_ida", "ida_entry", "ida_bytes", "ida_name", "ida_typeinf", "idaapi",
                "ida_frame", "ida_funcs", "ida_idp", "ida_lines", "ida_segment", "ida_ua")
@@ -26,12 +24,12 @@ def _install(stubs: dict) -> None:
         sys.modules[name] = mod
 
 
+from _harness import load  # noqa: E402
+
+
 def _load_compat():
-    """Exec compat.py against the ida_* stubs installed right now."""
-    src = open(os.path.join(PKG, "compat.py"), encoding="utf-8").read()
-    mod = types.ModuleType("compat_test_mod")
-    exec(compile(src, "compat_test_mod", "exec"), mod.__dict__)
-    return mod
+    """Run the real compat.py against the ida_* stubs installed right now."""
+    return load("compat")
 
 
 # =========================================================================

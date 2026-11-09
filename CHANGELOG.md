@@ -32,6 +32,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `compat.badaddr()` gains a type-checked, documented pre-9.3 fallback.
 
 ### Changed
+- Test harnesses load the real `ida_mcp` modules through `tests/_harness.py`
+  (stubbed siblings, true file paths) instead of `exec`-ing string-rewritten
+  source under fake names. Same assertions; coverage now attributes the
+  executed lines: the report went from ~10% to ~68% (`sync.py` 0% -> 64%,
+  `server.py` 0% -> 81%), and new import lines no longer break harnesses.
 - A second IDA instance no longer fails to start when its port is taken:
   `start_server` falls back to the next free port (up to +9), prints it, and
   returns it; the loader uses the bound port for stop while the IDB keeps the

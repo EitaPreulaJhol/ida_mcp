@@ -189,21 +189,15 @@ ida_dbg.get_reg_vals = lambda tid: [FakeRV(v) for _, v in _REGVALS[tid]]
 
 EXT_GROUPS = {}
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_debug.py")).read()
-src = src.replace(
-    "from .rpc import tool, unsafe, ext",
-    "tool = lambda f: f\nunsafe = lambda f: f\n"
+from _harness import load  # noqa: E402
+mod = load("api_debug", {
+    "rpc": "tool = lambda f: f\nunsafe = lambda f: f\n"
     "def ext(group):\n"
     "    def deco(fn):\n"
     "        EXT_GROUPS.setdefault(group, set()).add(fn.__name__)\n"
     "        return fn\n"
     "    return deco",
-)
-src = src.replace(
-    "from .sync import idasync, tool_timeout, keep_batch, get_pre_call_batch, IDAError",
-    "idasync = lambda f: f\n"
+    "sync": "idasync = lambda f: f\n"
     "def tool_timeout(s):\n"
     "    def deco(fn):\n"
     "        return fn\n"
@@ -211,25 +205,14 @@ src = src.replace(
     "keep_batch = lambda f: f\n"
     "get_pre_call_batch = lambda: None\n"
     "class IDAError(Exception): pass",
-)
-src = src.replace(
-    "from .api_analysis import parse_addr",
-    "def parse_addr(s):\n"
+    "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
     "    except ValueError: raise ValueError(f'Unknown: {s}')",
-)
-src = src.replace(
-    "from .compat import badaddr, get_entry_qty, get_entry_ordinal, get_entry",
-    "badaddr = lambda: -1\nget_entry_qty = lambda: 1\n"
+    "compat": "badaddr = lambda: -1\nget_entry_qty = lambda: 1\n"
     "get_entry_ordinal = lambda i: 1\nget_entry = lambda o: 0x1000",
-)
-mod = types.ModuleType("debug_test")
-mod.__dict__.update({"EXT_GROUPS": EXT_GROUPS, "_FakeDbgInstance": _FakeDbgInstance})
-exec(compile(src, "debug_test", "exec"), mod.__dict__)
-# point _ensure helpers at the fake dbg object
-sys.modules["debug_test"] = mod
+}, alias="debug_test", stub_globals={"EXT_GROUPS": EXT_GROUPS, "_FakeDbgInstance": _FakeDbgInstance})
 
 # patch: _regs_for_thread needs dbg.regs — our _FakeDbgInstance works via closure
 _orig_regs = mod._regs_for_thread

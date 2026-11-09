@@ -43,16 +43,10 @@ fake_kernwin.set_cancelled = fake_set
 sys.modules["ida_kernwin"] = fake_kernwin
 
 # --- Load sync.py with the relative import patched out ---
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "sync.py")).read()
-src = src.replace(
-    "from .zeromcp.jsonrpc import get_current_cancel_event",
-    "def get_current_cancel_event(): return None",
-)
-mod = types.ModuleType("sync_test")
-exec(compile(src, "sync_test", "exec"), mod.__dict__)
-sys.modules["sync_test"] = mod
+# sync.py's only sibling is the IDA-free zeromcp transport: import it for
+# real (outside a request its cancel event is None, as the old stub faked).
+from _harness import load  # noqa: E402
+mod = load("sync", alias="sync_test")
 
 # Test 1: normal return
 @mod.idasync

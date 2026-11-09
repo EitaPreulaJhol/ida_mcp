@@ -91,7 +91,9 @@ files = [
 
 [tool.coverage.run]
 # Subprocess harnesses (run_all spawns each) need parallel mode + the
-# COVERAGE_PROCESS_START hook to aggregate. Informational only (no threshold).
+# COVERAGE_PROCESS_START hook to aggregate. Harnesses load the real files via
+# tests/_harness.py, so lines are attributed correctly (~68% today; it read
+# ~10% while harnesses exec'd rewritten source). Informational (no threshold).
 branch = true
 parallel = true
 source = ["ida_mcp"]

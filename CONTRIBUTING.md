@@ -81,8 +81,12 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 5. **Profiles**: if it is read-safe and broadly useful, add it to
    `ida_mcp/profiles/readonly.txt` (and `triage.txt` for core triage tools).
    Triage must stay a strict subset of readonly, both privilege-free.
-6. **Test** it: add/extend a `tests/*_test.py` following an existing harness
-   (stub the IDA modules it touches).
+6. **Test** it: add/extend a `tests/*_test.py` following an existing harness.
+   Stub the IDA modules it touches in `sys.modules`, then load the REAL module
+   with `tests/_harness.py`, e.g.
+   `mod = load("api_x", {"rpc": RPC_STUB, "sync": SYNC_STUB, "api_analysis": "def parse_addr(s): ..."})`.
+   Siblings it imports relatively become stub modules; the file itself runs
+   from its true path, so coverage counts it. Never `exec` rewritten source.
 
 ### What the guards enforce (`tool_inventory_test.py`)
 

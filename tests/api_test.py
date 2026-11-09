@@ -28,20 +28,14 @@ def fake_msg_get_lines(count=-1):
 sys.modules["ida_kernwin"].msg_get_lines = fake_msg_get_lines
 
 # --- Load api_python.py with relative imports patched to no-ops ---
-HERE = os.path.dirname(os.path.abspath(__file__))
-PKG = os.path.join(HERE, "..", "ida_mcp")
-src = open(os.path.join(PKG, "api_python.py")).read()
-src = src.replace("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f")
-src = src.replace(
-    "from .sync import idasync, hard_interrupt, ToolInterrupt",
-    "idasync = lambda f: f\nhard_interrupt = lambda f: f\n"
+from _harness import RPC_STUB, load  # noqa: E402
+mod = load("api_python", {
+    "rpc": RPC_STUB,
+    "sync": "idasync = lambda f: f\nhard_interrupt = lambda f: f\n"
     "class ToolInterrupt(BaseException):\n"
     "    def __init__(self, reason='timeout', message='t'):\n"
     "        super().__init__(message); self.reason = reason; self.message = message",
-)
-mod = types.ModuleType("api_test")
-exec(compile(src, "api_test", "exec"), mod.__dict__)
-sys.modules["api_test"] = mod
+}, alias="api_test")
 
 # 1) single expression
 r = mod._run_code("1 + 1")
