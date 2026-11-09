@@ -11,7 +11,7 @@ Architecture (aligned with ida-pro-mcp / idalib-mcp):
 """
 import signal
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Ignore SIGPIPE so the HTTP server writing a response doesn't kill IDA when a
 # client disconnects mid-stream.
