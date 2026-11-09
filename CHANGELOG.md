@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- CI and release workflows move to Node 24 actions (`actions/checkout@v7`,
+  `actions/setup-python@v7`, `softprops/action-gh-release@v3`); the Node 20
+  versions were deprecated and already being forced onto Node 24.
+
 ## [0.2.0] - 2026-11-08
 
 ### Added
