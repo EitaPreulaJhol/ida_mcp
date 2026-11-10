@@ -29,6 +29,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server, bounding a local process that opens sockets to exhaust IDA's threads.
 
 ### Changed
+- Lint now also enforces bugbear's **B904**: an exception raised inside an
+  `except` states its cause explicitly -- `from e` where the wrapper adds
+  context (debugger/FLIRT/hook errors), `from None` where it carries the whole
+  message and a duplicate chain would only add noise (`parse_addr`
+  translations, the dropped-`execute_sync` sync error).
 - CI and `.pre-commit-config.yaml` move to ruff 0.17.4 (from 0.6.9), the version
   the rule set was re-verified with; the `dev` extra now requires `ruff>=0.17`.
   `F`/`E`/`W`/`C4` report nothing on the tree under either version.

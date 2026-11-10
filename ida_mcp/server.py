@@ -139,14 +139,15 @@ def decompile_function(address: str) -> str:
     try:
         addr = parse_addr(address)
     except ValueError as e:
-        raise IDAError(str(e))
+        # The wrapper carries the same text; a chained duplicate adds nothing.
+        raise IDAError(str(e)) from None
     func = ida_funcs.get_func(addr)
     if not func:
         raise IDAError(f"No function at {hex(addr)}")
     try:
         cfunc = ida_hexrays.decompile(func.start_ea)
     except Exception as e:
-        raise IDAError(f"Decompilation failed: {e}")
+        raise IDAError(f"Decompilation failed: {e}") from e
     if cfunc is None:
         raise IDAError(f"Decompilation returned no result for {hex(func.start_ea)}")
     lines = [ida_lines.tag_remove(l.line) for l in cfunc.get_pseudocode()]
@@ -164,7 +165,7 @@ def get_disassembly(address: str, count: int = 20) -> str:
     try:
         ea = parse_addr(address)
     except ValueError as e:
-        raise IDAError(str(e))
+        raise IDAError(str(e)) from None
     lines = []
     for _ in range(count):
         if ea == idaapi.BADADDR:

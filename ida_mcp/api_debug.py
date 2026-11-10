@@ -105,7 +105,7 @@ def _regs_for_thread(dbg, tid: int, only: set | None = None) -> dict:
     try:
         regvals = ida_dbg.get_reg_vals(tid)
     except Exception as e:
-        raise IDAError(f"Could not read registers for thread {tid}: {e}")
+        raise IDAError(f"Could not read registers for thread {tid}: {e}") from e
     regs: list[dict] = []
     for index, rv in enumerate(regvals):
         try:
@@ -282,7 +282,7 @@ def dbg_start() -> str:
     try:
         start_result = idaapi.start_process("", "", "")
     except Exception as e:
-        raise IDAError(f"start_process raised: {e}")
+        raise IDAError(f"start_process raised: {e}") from e
 
     started = _debug_start_result()
     if started is not None:
@@ -327,7 +327,7 @@ def dbg_exit() -> str:
     try:
         ok = idaapi.exit_process()
     except Exception as e:
-        raise IDAError(f"exit_process raised: {e}")
+        raise IDAError(f"exit_process raised: {e}") from e
     if ok:
         return json.dumps({"exited": True, "state": "not_running"})
     raise IDAError("Failed to exit debugger")
@@ -343,7 +343,7 @@ def dbg_continue() -> str:
     try:
         ok = idaapi.continue_process()
     except Exception as e:
-        raise IDAError(f"continue_process raised: {e}")
+        raise IDAError(f"continue_process raised: {e}") from e
     if ok:
         result = _state_result()
         result["continued"] = True
@@ -365,7 +365,7 @@ def dbg_run_to(address: str) -> str:
     try:
         ok = idaapi.run_to(ea)
     except Exception as e:
-        raise IDAError(f"run_to raised: {e}")
+        raise IDAError(f"run_to raised: {e}") from e
     if ok:
         result = _state_result()
         result["continued"] = True
@@ -383,7 +383,7 @@ def dbg_step_into() -> str:
     try:
         ok = idaapi.step_into()
     except Exception as e:
-        raise IDAError(f"step_into raised: {e}")
+        raise IDAError(f"step_into raised: {e}") from e
     if ok:
         result = _state_result()
         result["continued"] = True
@@ -401,7 +401,7 @@ def dbg_step_over() -> str:
     try:
         ok = idaapi.step_over()
     except Exception as e:
-        raise IDAError(f"step_over raised: {e}")
+        raise IDAError(f"step_over raised: {e}") from e
     if ok:
         result = _state_result()
         result["continued"] = True
@@ -662,7 +662,7 @@ def dbg_get_threads() -> str:
         tids = [ida_dbg.getn_thread(i) for i in range(ida_dbg.get_thread_qty())]
         current = ida_dbg.get_current_thread()
     except Exception as e:
-        raise IDAError(f"Could not enumerate threads: {e}")
+        raise IDAError(f"Could not enumerate threads: {e}") from e
     return json.dumps({"threads": tids, "current": current,
                        "count": len(tids)}, indent=2)
 
@@ -706,7 +706,7 @@ def dbg_stacktrace() -> str:
                     info["symbol"] = "<unnamed>"
             frames.append(info)
     except Exception as e:
-        raise IDAError(f"Could not collect stack trace: {e}")
+        raise IDAError(f"Could not collect stack trace: {e}") from e
     return json.dumps({"frames": frames, "count": len(frames)}, indent=2)
 
 

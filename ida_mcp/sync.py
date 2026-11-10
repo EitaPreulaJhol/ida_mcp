@@ -538,10 +538,12 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
             if never_started:
                 state["abandoned"] = True
         if never_started:
+            # The cause is an internal queue timeout; the message below is the
+            # whole story for the caller.
             raise IDASyncError(
                 f"IDA did not run '{ff.__name__}' on the main thread "
                 f"(execute_sync returned {rc!r}); the database may be closing. "
-                f"Retry once IDA is idle.")
+                f"Retry once IDA is idle.") from None
         # Started but still running (should not happen for a blocking
         # execute_sync): the tool timeout / hard interrupt bound it.
         res = res_container.get()

@@ -48,7 +48,7 @@ def _hook_base(modname: str, classname: str):
     try:
         mod = __import__(modname)
     except ImportError as e:
-        raise RuntimeError(f"{modname} unavailable: {e}")
+        raise RuntimeError(f"{modname} unavailable: {e}") from e
     cls = getattr(mod, classname, None)
     if cls is None:
         raise RuntimeError(f"{modname}.{classname} unavailable in this IDA version")

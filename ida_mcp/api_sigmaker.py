@@ -489,7 +489,7 @@ def _plan_apply_sig(sig_path: str) -> None:
             except ValueError:
                 raise
             except Exception as e:
-                raise ValueError(f"plan_to_apply_idasgn failed: {e}")
+                raise ValueError(f"plan_to_apply_idasgn failed: {e}") from e
     try:
         import idaapi
         fn = getattr(idaapi, "plan_to_apply_idasgn", None)
@@ -503,7 +503,7 @@ def _plan_apply_sig(sig_path: str) -> None:
         except ValueError:
             raise
         except Exception as e:
-            raise ValueError(f"plan_to_apply_idasgn failed: {e}")
+            raise ValueError(f"plan_to_apply_idasgn failed: {e}") from e
     raise ValueError("plan_to_apply_idasgn unavailable in this IDA version "
                      "(cannot queue .sig files for FLIRT)")
 
@@ -517,7 +517,7 @@ def _applied_sigs() -> list[dict]:
     try:
         qty = int(qty_fn())
     except Exception as e:
-        raise ValueError(f"get_idasgn_qty failed: {e}")
+        raise ValueError(f"get_idasgn_qty failed: {e}") from e
     desc_fn = getattr(ida_funcs, "get_idasgn_desc_with_matches", None)
     plain_fn = getattr(ida_funcs, "get_idasgn_desc", None)
     out: list[dict] = []

@@ -192,7 +192,7 @@ try:
     assert r.status == 202, r.status
     r.read()
 except urllib.error.HTTPError as e:
-    raise AssertionError(f"SSE POST failed: {e.code}")
+    raise AssertionError(f"SSE POST failed: {e.code}") from e
 # the reply arrives on the GET stream as a message event (skip blanks)
 s.settimeout(10)
 lines = []
