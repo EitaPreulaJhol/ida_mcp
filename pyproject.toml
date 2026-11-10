@@ -30,7 +30,7 @@ Repository = "https://github.com/EitaPreulaJhol/ida_mcp.git"
 [project.optional-dependencies]
 # Dev-only tooling. Never imported at runtime, so the zero-dependency runtime
 # promise holds: `pip install ida_mcp[dev]` only for linting/CI.
-dev = ["ruff>=0.5", "mypy>=1.0", "coverage>=7"]
+dev = ["ruff>=0.17", "mypy>=1.0", "coverage>=7"]
 
 [tool.setuptools]
 # The plugin is loaded by IDA from the source tree; packaging metadata only.
@@ -58,9 +58,14 @@ extend-exclude = ["ida_mcp/zeromcp", "__pycache__", "strix_runs"]
 # comparisons, invalid escapes...) + flake8-comprehensions (C4). All high
 # signal and zero findings on the tree, so they cost nothing to keep.
 #
-# Deliberately NOT enabled (measured with ruff 0.6.9): I (46) and UP (27) are
-# pure restyling churn; B is mostly B904 raise-from (18) plus B023 false
-# positives on synchronous enum_import_names callbacks. Revisit if wanted.
+# Deliberately NOT enabled (counted with ruff 0.17.4, the version CI pins):
+# - I:  70x I001, pure import-order churn.
+# - UP: 18 (UP015 x9, UP031 x4, UP041 x2, UP017, UP045, UP036), restyling.
+# - B:  24 -- B904 x18 (raise-without-from: keeps the cause chain, the only
+#       one with real value, but it is a separate decision), B010 x3 (setattr
+#       with a constant, i.e. the decorator attributes -- intentional), B023
+#       x2 (false positives on synchronous enum_import_names callbacks) and
+#       B007 x1 in a test loop. No bug hides in that list.
 select = ["F", "E", "W", "C4"]
 ignore = [
     "E501",  # line length is enforced softly; long docstrings/URLs are fine

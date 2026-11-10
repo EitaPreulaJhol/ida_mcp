@@ -61,7 +61,7 @@ jobs:
       # Pinned to the version the rule set was verified with (same as
       # .pre-commit-config.yaml), so a ruff release cannot redden CI by itself.
       - name: Install ruff
-        run: python -m pip install "ruff==0.6.9"
+        run: python -m pip install "ruff==0.17.4"
       - name: Lint
         run: ruff check .
 

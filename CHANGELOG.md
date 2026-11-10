@@ -29,6 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server, bounding a local process that opens sockets to exhaust IDA's threads.
 
 ### Changed
+- CI and `.pre-commit-config.yaml` move to ruff 0.17.4 (from 0.6.9), the version
+  the rule set was re-verified with; the `dev` extra now requires `ruff>=0.17`.
+  `F`/`E`/`W`/`C4` report nothing on the tree under either version.
 - CI and release workflows move to Node 24 actions (`actions/checkout@v7`,
   `actions/setup-python@v7`, `softprops/action-gh-release@v3`); the Node 20
   versions were deprecated and already being forced onto Node 24.
