@@ -15,7 +15,7 @@ from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
 from .sync import check_cancelled
-from .api_analysis import clamp_int, parse_addr
+from .api_analysis import clamp_int, paginate, parse_addr
 
 
 # Upper bound on how many entries a single enumeration may scan. Big binaries
@@ -67,14 +67,6 @@ def _row(si) -> dict:
             "strtype": getattr(si, "strtype", None)}
 
 
-def _paginate(rows: list, offset: int, count: int) -> tuple[list, int | None]:
-    if count <= 0:
-        count = len(rows)
-    page = rows[offset:offset + count]
-    nxt = offset + count if offset + count < len(rows) else None
-    return page, nxt
-
-
 def _unicode_types() -> set:
     types = set()
     for attr, fallback in (("STRTYPE_C_16", 1), ("STRTYPE_C_32", 2)):
@@ -101,7 +93,7 @@ def get_strings(limit: int = 100, offset: int = 0, filter_pattern: str = "*") ->
 
     rows, capped = _collect_rows(_match)
     total = len(rows)
-    page, nxt = _paginate(rows, offset, limit)
+    page, nxt = paginate(rows, offset, limit)
     out = {"data": page, "total": total, "offset": offset,
            "count": len(page), "next_offset": nxt, "limit": limit}
     if capped:
@@ -213,7 +205,7 @@ def get_strings_by_length(min_length: int = 1, max_length: int = 0,
         lambda row: row["length"] >= min_length
         and (max_length <= 0 or row["length"] <= max_length))
     total = len(rows)
-    page, nxt = _paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, count)
     out = {"data": page, "total": total, "offset": offset,
            "count": len(page), "next_offset": nxt, "limit": count}
     if capped:
@@ -231,7 +223,7 @@ def get_ascii_strings(limit: int = 200, offset: int = 0) -> str:
     rows, capped = _collect_rows(
         lambda row: row["strtype"] not in uni)
     total = len(rows)
-    page, nxt = _paginate(rows, offset, limit)
+    page, nxt = paginate(rows, offset, limit)
     out = {"data": page, "total": total, "offset": offset,
            "count": len(page), "next_offset": nxt, "limit": limit}
     if capped:
@@ -249,7 +241,7 @@ def get_unicode_strings(limit: int = 200, offset: int = 0) -> str:
     rows, capped = _collect_rows(
         lambda row: row["strtype"] in uni)
     total = len(rows)
-    page, nxt = _paginate(rows, offset, limit)
+    page, nxt = paginate(rows, offset, limit)
     out = {"data": page, "total": total, "offset": offset,
            "count": len(page), "next_offset": nxt, "limit": limit}
     if capped:

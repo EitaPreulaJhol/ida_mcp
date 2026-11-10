@@ -25,7 +25,7 @@ import idautils
 from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import parse_addr
+from .api_analysis import paginate, parse_addr
 from .api_functions import _collect_frame_vars
 from .regex_guard import compile_client_regex
 
@@ -36,14 +36,6 @@ _MAX_ENTITY_STRINGS = 50000
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
-
-def _paginate(rows: list, offset: int, count: int) -> tuple[list, int | None]:
-    if count <= 0:
-        count = len(rows)
-    page = rows[offset:offset + count]
-    nxt = offset + count if offset + count < len(rows) else None
-    return page, nxt
-
 
 def _seg_name(ea: int) -> str:
     try:
@@ -219,7 +211,7 @@ def func_query(filter_pattern: str = "", name_regex: str = "",
     else:
         rows.sort(key=lambda r: int(r["addr"], 16), reverse=bool(descending))
 
-    page, nxt = _paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, count)
     page = [{k: v for k, v in r.items() if k != "size_int"} for r in page]
     return json.dumps({
         "data": page, "total": len(rows),
@@ -282,7 +274,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
         rows.sort(key=lambda r: str(r.get(sort_by, "")).lower(), reverse=bool(descending))
 
     total = len(rows)
-    page, nxt = _paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, count)
     page = [{k: v for k, v in r.items() if k != "size_int"} for r in page]
     if fields:
         wanted = [f.strip() for f in fields.split(",") if f.strip()]
@@ -303,7 +295,7 @@ def list_globals(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
         if name and idaapi.get_func(ea) is None:
             if filter_pattern in ("", "*") or fnmatch.fnmatch(name, filter_pattern):
                 rows.append({"addr": hex(ea), "name": name})
-    page, nxt = _paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, count)
     return json.dumps({
         "data": page, "total": len(rows),
         "offset": offset, "next_offset": nxt,
@@ -321,7 +313,7 @@ def imports_query(filter: str = "", module: str = "",
         rows = [r for r in rows if fnmatch.fnmatch(r["imported_name"], filter)]
     if module:
         rows = [r for r in rows if fnmatch.fnmatch(r["module"], module)]
-    page, nxt = _paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, count)
     return json.dumps({
         "data": page, "total": len(rows),
         "offset": offset, "next_offset": nxt,

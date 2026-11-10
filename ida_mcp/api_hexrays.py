@@ -19,7 +19,7 @@ from .rpc import tool
 from .sync import (idasync, tool_timeout, check_cancelled,
                    CancelledError, IDASyncError)
 from .sync import ensure_analysis
-from .api_analysis import parse_addr, _cap_lines
+from .api_analysis import _cap_lines, resolve_addr
 
 
 _MATURITY_NAMES = {
@@ -30,13 +30,6 @@ _MATURITY_NAMES = {
     4: "MMAT_XMM",
     5: "MMAT_GENERATED",
 }
-
-
-def _resolve(address: str) -> tuple[int | None, str | None]:
-    try:
-        return parse_addr(address), None
-    except ValueError as e:
-        return None, json.dumps({"error": str(e)})
 
 
 # ===========================================================================
@@ -56,7 +49,7 @@ def get_microcode(address: str) -> str:
     ``decompile_function``.
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     func = ida_funcs.get_func(ea)
@@ -121,7 +114,7 @@ def get_flowchart(address: str) -> str:
     up to 2000 (with a truncation flag) including per-block instruction counts.
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     func = ida_funcs.get_func(ea)
@@ -171,7 +164,7 @@ def get_basic_blocks(address: str) -> str:
     its instruction lines (capped at 200 blocks × 100 instructions).
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     func = ida_funcs.get_func(ea)
@@ -224,7 +217,7 @@ def force_recompile(address: str) -> str:
     capped at 500 lines (with ``truncated`` total when cut).
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     func = ida_funcs.get_func(ea)

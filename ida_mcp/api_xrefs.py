@@ -15,15 +15,8 @@ import idautils
 from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import parse_addr
+from .api_analysis import resolve_addr
 from .compat import badaddr
-
-
-def _resolve(address: str) -> tuple[int | None, str | None]:
-    try:
-        return parse_addr(address), None
-    except ValueError as e:
-        return None, json.dumps({"error": str(e)})
 
 
 def _fmt(xref, include_fn: bool = True) -> dict:
@@ -117,7 +110,7 @@ def _data_write_type():
 def get_xrefs(address: str, limit: int = 100) -> str:
     """Get all xrefs (both to and from) for an address, each tagged with direction."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -132,7 +125,7 @@ def get_xrefs(address: str, limit: int = 100) -> str:
 def get_xrefs_from(address: str, limit: int = 100) -> str:
     """Get all cross-references FROM an address (outgoing)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -146,7 +139,7 @@ def get_xrefs_from(address: str, limit: int = 100) -> str:
 def get_code_refs_to(address: str, limit: int = 200) -> str:
     """Get code references TO an address (excludes data refs)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -160,7 +153,7 @@ def get_code_refs_to(address: str, limit: int = 200) -> str:
 def get_code_refs_from(address: str, limit: int = 200) -> str:
     """Get code references FROM an address (excludes data refs)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -174,7 +167,7 @@ def get_code_refs_from(address: str, limit: int = 200) -> str:
 def get_data_refs_to(address: str, limit: int = 200) -> str:
     """Get data references TO an address (excludes code refs)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -188,7 +181,7 @@ def get_data_refs_to(address: str, limit: int = 200) -> str:
 def get_data_refs_from(address: str, limit: int = 200) -> str:
     """Get data references FROM an address (excludes code refs)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -202,7 +195,7 @@ def get_data_refs_from(address: str, limit: int = 200) -> str:
 def get_calls_to(address: str, limit: int = 200) -> str:
     """Get call-type xrefs TO a function (fl_CF/fl_CN only, no plain jumps)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -216,7 +209,7 @@ def get_calls_to(address: str, limit: int = 200) -> str:
 def get_calls_from(address: str, limit: int = 200) -> str:
     """Get call-type xrefs FROM an address (fl_CF/fl_CN only)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -230,7 +223,7 @@ def get_calls_from(address: str, limit: int = 200) -> str:
 def get_jumps_to(address: str, limit: int = 200) -> str:
     """Get jump-type xrefs TO an address (fl_JF/fl_JN only, no calls)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -244,7 +237,7 @@ def get_jumps_to(address: str, limit: int = 200) -> str:
 def get_reads_of(address: str, limit: int = 200) -> str:
     """Get data-read xrefs of an address (dr_R)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -258,7 +251,7 @@ def get_reads_of(address: str, limit: int = 200) -> str:
 def get_writes_to(address: str, limit: int = 200) -> str:
     """Get data-write xrefs of an address (dr_W)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if limit <= 0 or limit > 5000:
@@ -277,7 +270,7 @@ def get_writes_to(address: str, limit: int = 200) -> str:
 def get_xref_count(address: str) -> str:
     """Count incoming and outgoing xrefs for an address (no item lists)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -294,7 +287,7 @@ def get_xref_count(address: str) -> str:
 def get_caller_count(address: str) -> str:
     """Count call-type callers of the function at an address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -311,7 +304,7 @@ def get_caller_count(address: str) -> str:
 def get_callee_count(address: str) -> str:
     """Count distinct functions called by the function at an address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:

@@ -78,7 +78,15 @@ from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
 mod = load("api_memory", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
-    "api_analysis": "def parse_addr(s):\n"
+    "api_analysis": "import json as _json\n"
+    "def resolve_addr(s):\n"
+    "    try: return parse_addr(s), None\n"
+    "    except ValueError as e: return None, _json.dumps({'error': str(e)})\n"
+    "def paginate(rows, offset, count):\n"
+    "    if count <= 0: count = len(rows)\n"
+    "    return (rows[offset:offset + count],\n"
+    "            offset + count if offset + count < len(rows) else None)\n"
+    "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"

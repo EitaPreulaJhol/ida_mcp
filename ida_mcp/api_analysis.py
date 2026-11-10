@@ -118,6 +118,23 @@ def clamp_int(value, default: int, hi: int) -> int:
     return default if n <= 0 else min(n, hi)
 
 
+def resolve_addr(address: str) -> tuple[int | None, str | None]:
+    """Parse ``address`` into an ea; ``(None, error_json)`` when it is not one."""
+    try:
+        return parse_addr(address), None
+    except ValueError as e:
+        return None, json.dumps({"error": str(e)})
+
+
+def paginate(rows: list, offset: int, count: int) -> tuple[list, int | None]:
+    """Slice ``rows``; ``count <= 0`` means "everything from ``offset``"."""
+    if count <= 0:
+        count = len(rows)
+    page = rows[offset:offset + count]
+    nxt = offset + count if offset + count < len(rows) else None
+    return page, nxt
+
+
 def type_label(tif) -> str:
     """Human-readable label for a ``tinfo_t``: its name, else its declaration.
 

@@ -21,16 +21,8 @@ import idautils
 from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import parse_addr, read_bytes_bss_safe
+from .api_analysis import parse_addr, read_bytes_bss_safe, resolve_addr
 from .compat import inf_get_max_ea, inf_get_min_ea, is_loaded
-
-
-def _resolve(address: str) -> tuple[int | None, str | None]:
-    """Parse ``address``; returns (ea, None) or (None, error_json)."""
-    try:
-        return parse_addr(address), None
-    except ValueError as e:
-        return None, json.dumps({"error": str(e)})
 
 
 def _int_value(ea: int, size: int, signed: bool) -> int | None:
@@ -61,7 +53,7 @@ def _int_value(ea: int, size: int, signed: bool) -> int | None:
 def get_byte(address: str) -> str:
     """Read a single byte at the given address (BSS-safe: unloaded → 0)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     val = _int_value(ea, 1, False)
@@ -75,7 +67,7 @@ def get_byte(address: str) -> str:
 def get_word(address: str) -> str:
     """Read an unsigned 16-bit word at the given address (BSS-safe)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     val = _int_value(ea, 2, False)
@@ -89,7 +81,7 @@ def get_word(address: str) -> str:
 def get_dword(address: str) -> str:
     """Read an unsigned 32-bit dword at the given address (BSS-safe)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     val = _int_value(ea, 4, False)
@@ -103,7 +95,7 @@ def get_dword(address: str) -> str:
 def get_qword(address: str) -> str:
     """Read an unsigned 64-bit qword at the given address (BSS-safe)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     val = _int_value(ea, 8, False)
@@ -117,7 +109,7 @@ def get_qword(address: str) -> str:
 def get_float(address: str) -> str:
     """Read a 32-bit IEEE-754 float at the given address (BSS-safe)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     raw = read_bytes_bss_safe(ea, 4)
@@ -140,7 +132,7 @@ def get_float(address: str) -> str:
 def get_double(address: str) -> str:
     """Read a 64-bit IEEE-754 double at the given address (BSS-safe)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     raw = read_bytes_bss_safe(ea, 8)
@@ -166,7 +158,7 @@ def get_int(address: str, ty: str = "u32") -> str:
     ``ty`` is one of ``u8``/``u16``/``u32``/``u64``/``i8``/``i16``/``i32``/``i64``.
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     spec = {"u8": (1, False), "u16": (2, False), "u32": (4, False), "u64": (8, False),
@@ -189,7 +181,7 @@ def get_cstring(address: str, max_len: int = 4096) -> str:
     Unlike ``get_string`` (unbounded), stops after ``max_len`` bytes.
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if max_len <= 0 or max_len > 65536:
@@ -215,7 +207,7 @@ def get_global_value(address: str, size: int = 0) -> str:
     ``size`` defaults to the data item size at the address (min 1).
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if size <= 0:
@@ -236,7 +228,7 @@ def get_global_value(address: str, size: int = 0) -> str:
 def get_data_size(address: str) -> str:
     """Get the data item size in bytes at the given address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -251,7 +243,7 @@ def get_data_size(address: str) -> str:
 def get_data_flags(address: str) -> str:
     """Get the raw IDA flags value at the given address (hex)."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -271,7 +263,7 @@ def get_data_flags(address: str) -> str:
 def get_next_head(address: str) -> str:
     """Get the next defined item (head) after the given address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -288,7 +280,7 @@ def get_next_head(address: str) -> str:
 def get_prev_head(address: str) -> str:
     """Get the previous defined item (head) before the given address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -305,7 +297,7 @@ def get_prev_head(address: str) -> str:
 def get_next_addr(address: str) -> str:
     """Get the next address (head or tail) after the given address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -322,7 +314,7 @@ def get_next_addr(address: str) -> str:
 def get_prev_addr(address: str) -> str:
     """Get the previous address (head or tail) before the given address."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     try:
@@ -364,7 +356,7 @@ def get_heads(start: str, end: str, limit: int = 200) -> str:
 def is_code(address: str) -> str:
     """Check if the given address holds code."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     is_code_fn = getattr(ida_bytes, "is_code", None)
@@ -382,7 +374,7 @@ def is_code(address: str) -> str:
 def is_data(address: str) -> str:
     """Check if the given address holds data."""
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     is_data_fn = getattr(ida_bytes, "is_data", None)
@@ -404,7 +396,7 @@ def get_disassembly_text(address: str, count: int = 50) -> str:
     ``count`` is capped at 500.
     """
     ensure_analysis()
-    ea, err = _resolve(address)
+    ea, err = resolve_addr(address)
     if err:
         return err
     if count <= 0 or count > 500:
