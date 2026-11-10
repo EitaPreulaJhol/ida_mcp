@@ -139,8 +139,10 @@ def _enabled_extension_groups() -> set[str]:
 
 try:
     from ..profiles import get_profile as _get_profile_fn
+    from ..profiles import list_profiles as _list_profiles_fn
 except ImportError:  # standalone zeromcp use (tests) without the ida_mcp package
     _get_profile_fn = None  # type: ignore[assignment]
+    _list_profiles_fn = None  # type: ignore[assignment]
 
 # Thread-local active profile: (name, tool-set or None). None set = unknown
 # or absent profile -> no filtering (fail-open, documented).
@@ -149,6 +151,31 @@ _request_profile = threading.local()
 
 def _active_profile() -> tuple[str | None, set[str] | None]:
     return getattr(_request_profile, "current", (None, None))
+
+
+def _unknown_profile() -> str | None:
+    """The ?profile= value that was requested but does not exist (or None)."""
+    return getattr(_request_profile, "unknown", None)
+
+
+def _unknown_profile_error(name: str) -> str:
+    """Reject an unknown profile instead of silently disabling the filter.
+
+    Before this, a typo (``?profile=readonyl``) made ``get_profile()`` return
+    None, which the gates read as "no filtering": the client silently got
+    every safe tool instead of the requested 16. Naming the valid profiles
+    makes the mistake self-correcting for an agent.
+    """
+    available = ""
+    if _list_profiles_fn is not None:
+        try:
+            available = ", ".join(sorted(_list_profiles_fn()))
+        except Exception:
+            available = ""
+    msg = f"Unknown profile '{name}'."
+    if available:
+        msg += f" Available profiles: {available}."
+    return msg + " Drop ?profile= to use the whole (safe) tool set."
 
 
 _QUIET_UNRAISABLE = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
@@ -340,6 +367,12 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             except Exception:
                 profile_set = None
         _request_profile.current = (profile_name or None, profile_set)
+        # A profile that was asked for but does not exist is a client error,
+        # not "no filtering" (see _unknown_profile_error).
+        _request_profile.unknown = (
+            profile_name
+            if profile_name and _get_profile_fn is not None and profile_set is None
+            else None)
 
     def _read_body(self) -> bytes | None:
         """Read the POST body honoring limits, chunked framing and encoding."""
@@ -1173,6 +1206,9 @@ class McpServer:
         }
 
     def _mcp_tools_list(self, _meta=None):
+        unknown = _unknown_profile()
+        if unknown is not None:
+            raise JsonRpcException(-32602, _unknown_profile_error(unknown))
         # Without a valid token the dangerous surface (unsafe + extension
         # tools) stays hidden, exactly as if ?unsafe=/?ext= were absent.
         auth_ok = self._auth_ok()
@@ -1283,6 +1319,9 @@ class McpServer:
         gates, shared by tools/call and tool-backed resources.
         """
         auth_ok = self._auth_ok()
+        unknown = _unknown_profile()
+        if unknown is not None:
+            return _unknown_profile_error(unknown)
         token_hint = (f"Tool '{name}' requires a valid auth token. Pass it as the "
                       f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
         unsafe_requested = getattr(_unsafe_per_thread, "allowed", False)
@@ -1313,6 +1352,12 @@ class McpServer:
                 "content": [{"type": "text", "text": denied}],
                 "isError": True,
             }
+        # A list/scalar would reach the registry as positional arguments
+        # (`func(*params)`), skipping the schema and the scalar coercion.
+        if arguments is not None and not isinstance(arguments, dict):
+            raise JsonRpcException(
+                -32602, "'arguments' must be a JSON object, got "
+                        f"{type(arguments).__name__}")
         admitted, gate = self._try_enter_gate()
         if not admitted:
             logger.debug("[MCP] tools/call %s rejected: server busy", name)
