@@ -18,6 +18,8 @@ os.environ["APPDATA"] = tmp  # kept for the Windows branch
 
 import discovery
 
+# Capture the real resolver before redirecting it: 14.16 exercises it directly.
+_orig_get_ida_user_dir = discovery._get_ida_user_dir
 discovery._get_ida_user_dir = lambda: os.path.join(tmp, ".idapro")
 
 # Test-local port: 13337 is the plugin default and a real IDA may listen on
@@ -65,5 +67,19 @@ else:
     finally:
         os.kill = _real_kill
 print("is_pid_alive (dead / foreign-owned) OK")
+
+# 14.16: the real resolver must not raise when APPDATA is missing (Windows
+# services / stripped profiles), and must still land in the IDA user dir.
+_real_platform = sys.platform
+_saved_appdata = os.environ.pop("APPDATA", None)
+try:
+    sys.platform = "win32"
+    _path = _orig_get_ida_user_dir()
+finally:
+    sys.platform = _real_platform
+    if _saved_appdata is not None:
+        os.environ["APPDATA"] = _saved_appdata
+assert _path.endswith(os.path.join("Hex-Rays", "IDA Pro")), _path
+print("missing APPDATA falls back to the home profile OK")
 
 print("ALL DISCOVERY TESTS PASSED")

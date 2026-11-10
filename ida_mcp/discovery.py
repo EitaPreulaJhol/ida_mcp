@@ -15,7 +15,11 @@ import tempfile
 
 def _get_ida_user_dir() -> str:
     if sys.platform == "win32":
-        return os.path.join(os.environ["APPDATA"], "Hex-Rays", "IDA Pro")
+        # APPDATA is absent in service contexts and stripped profiles;
+        # a KeyError here broke discovery instead of using the real location.
+        base = os.environ.get("APPDATA") or os.path.expanduser(
+            os.path.join("~", "AppData", "Roaming"))
+        return os.path.join(base, "Hex-Rays", "IDA Pro")
     return os.path.join(os.path.expanduser("~"), ".idapro")
 
 
