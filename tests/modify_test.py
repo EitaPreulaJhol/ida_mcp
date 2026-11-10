@@ -38,9 +38,17 @@ ida_bytes.create_float = _maker(4, "float")
 ida_bytes.create_double = _maker(8, "double")
 ida_bytes.get_item_size = lambda ea: _ITEM_SIZE["value"]
 ida_bytes.is_mapped = lambda ea: ea != 0xBAD
-ida_bytes.get_byte = lambda ea: 0x41
-ida_bytes.create_strlit = lambda ea, length, strtype: _CREATED.append(
-    ("strlit", ea, length))
+_NUL_AT = {0x6000}
+ida_bytes.get_byte = lambda ea: 0 if ea in _NUL_AT else 0x41
+
+
+def _create_strlit(ea, length, strtype):
+    _CREATED.append(("strlit", ea, length))
+    _ITEM_SIZE["value"] = 4          # "abc\0"
+    return True
+
+
+ida_bytes.create_strlit = _create_strlit
 ida_bytes.patch_bytes = lambda ea, buf: _PATCHED.append((ea, bytes(buf)))
 ida_bytes.patch_byte = lambda ea, value: _PATCHED.append((ea, bytes([value])))
 ida_bytes.del_items = lambda ea, flags=0, nbytes=1: True
@@ -85,6 +93,7 @@ _CREATED.clear()
 r = json.loads(mod.make_data("0x1000", "byte", 2))
 assert r.get("ok") is True, r
 assert _CREATED == [("byte", 0x1000, 1), ("byte", 0x1001, 1)], _CREATED
+assert r["addr"] == "0x1000" and r["next_ea"] == "0x1002", r
 print("make_data byte (length passed, items advanced) OK")
 
 _CREATED.clear()
@@ -102,6 +111,20 @@ print("make_data qword OK")
 r = json.loads(mod.make_data("0x4000", "bogus", 1))
 assert "error" in r, r
 print("make_data unknown type OK")
+
+# the string branch reports the START address (it used to return the advanced
+# ea) and stops at a NUL instead of skipping it looking for a string
+_CREATED.clear()
+r = json.loads(mod.make_data("0x5000", "string", 2))
+assert r["addr"] == "0x5000", r
+assert r["next_ea"] == "0x5008", r
+assert r["created"] == 2, r
+assert [c[0] for c in _CREATED] == ["strlit", "strlit"], _CREATED
+_CREATED.clear()
+r = json.loads(mod.make_data("0x6000", "string", 3))  # NUL at the start
+assert r["created"] == 0 and r["next_ea"] == "0x6000", r
+assert _CREATED == [], r
+print("make_data string start/NUL semantics OK")
 
 # =========================================================================
 # patch_bytes: one bulk write, bounded, mapped only (14.13)

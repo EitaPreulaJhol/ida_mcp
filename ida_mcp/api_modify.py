@@ -62,15 +62,23 @@ def make_data(
         "double": (ida_bytes.create_double, 8),
     }
 
+    start_ea = ea
+
     if data_type == "string":
-        # Create a string type
+        created = 0
         for _ in range(min(int(count), 1000)):
+            check_cancelled()
+            # A NUL where a string would start means there is nothing left to
+            # convert: skipping it kept walking and created literals *after* a
+            # terminator.
             if ida_bytes.get_byte(ea) == 0:
-                ea += 1
-                continue
+                break
             ida_bytes.create_strlit(ea, 0, ida_nalt.STRTYPE_C)
-            ea += ida_bytes.get_item_size(ea) if ida_bytes.get_item_size(ea) > 0 else 1
-        return json.dumps({"ok": True, "addr": hex(ea)}, indent=2)
+            size = ida_bytes.get_item_size(ea)
+            ea += size if size > 0 else 1
+            created += 1
+        return json.dumps({"ok": True, "addr": hex(start_ea),
+                           "next_ea": hex(ea), "created": created}, indent=2)
 
     if data_type not in type_map:
         return json.dumps({"error": f"Unknown data type: {data_type}"})
@@ -85,7 +93,10 @@ def make_data(
         sz = ida_bytes.get_item_size(ea)
         ea += sz if sz > 0 else item_size
 
-    return json.dumps({"ok": True, "addr": address}, indent=2)
+    # ``addr`` is the address that was asked for; ``next_ea`` is where the
+    # conversion ended (the string branch used to return only the latter).
+    return json.dumps({"ok": True, "addr": hex(start_ea),
+                       "next_ea": hex(ea)}, indent=2)
 
 
 # ===========================================================================
