@@ -66,18 +66,10 @@ def _collect_imports() -> list[dict]:
             module = ida_nalt.get_import_module_name(i) or "<unnamed>"
         except Exception:
             module = "<unnamed>"
-        collected: list[tuple[int, str]] = []
-
-        def _cb(ea: int, sym, ordinal: int) -> bool:
-            collected.append((ea, sym or f"#{ordinal}"))
-            return True
-
         try:
-            ida_nalt.enum_import_names(i, _cb)
+            out.extend(_module_import_rows(i, module))
         except Exception:
             continue
-        for ea, sym in collected:
-            out.append({"addr": hex(ea), "imported_name": sym, "module": module})
     return out
 
 
@@ -123,6 +115,24 @@ def _collect_entities(kind: str) -> list[dict]:
         for ea, name in idautils.Names():
             if name:
                 rows.append({"addr": hex(ea), "name": name, "segment": _seg_name(ea)})
+    return rows
+
+
+def _module_import_rows(module_index: int, module: str) -> list[dict]:
+    """Rows for one import module.
+
+    The callback lives here rather than inside the caller's loop: it runs
+    synchronously (``enum_import_names``), but a closure over a loop variable
+    is a trap the moment that ever changes.
+    """
+    rows: list[dict] = []
+
+    def _cb(ea: int, sym, ordinal: int) -> bool:
+        rows.append({"addr": hex(ea), "imported_name": sym or f"#{ordinal}",
+                     "module": module})
+        return True
+
+    ida_nalt.enum_import_names(module_index, _cb)
     return rows
 
 

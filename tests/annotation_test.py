@@ -42,7 +42,7 @@ def _fake_get_func(ea):
 
 
 def _fake_get_func_name(ea):
-    for s, (start, _) in _class_fake_funcs.items():
+    for _ea, (start, _) in _class_fake_funcs.items():
         if start == ea:
             return f"func_{ea:x}"
     return None

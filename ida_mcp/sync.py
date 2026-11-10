@@ -734,7 +734,7 @@ def tool_timeout(seconds: float):
     """
 
     def decorator(func):
-        setattr(func, "__ida_mcp_timeout_sec__", seconds)
+        func.__ida_mcp_timeout_sec__ = seconds
         return func
 
     return decorator
@@ -748,9 +748,8 @@ def keep_batch(func):
     batch-mode restoration itself.
     """
 
-    setattr(func, "__ida_mcp_keep_batch__", True)
+    func.__ida_mcp_keep_batch__ = True
     return func
-
 
 def hard_interrupt(func):
     """Decorator: arm the hard-interrupt watchdog for this tool.
@@ -761,5 +760,5 @@ def hard_interrupt(func):
     after ``@idasync``).
     """
 
-    setattr(func, "__ida_mcp_hard_interrupt__", True)
+    func.__ida_mcp_hard_interrupt__ = True
     return func

@@ -55,17 +55,18 @@ extend-exclude = ["ida_mcp/zeromcp", "__pycache__", "strix_runs"]
 [tool.ruff.lint]
 # Enforced: pyflakes (F: unused imports, undefined names, f-string and
 # redefinition bugs) + pycodestyle errors/warnings (E, W: bare except, None
-# comparisons, invalid escapes...) + flake8-comprehensions (C4) + bugbear's
-# B904 (inside an except, `raise X from err|None` makes the cause explicit
-# instead of implicit). All high signal and zero findings on the tree.
+# comparisons, invalid escapes...) + flake8-comprehensions (C4) +
+# flake8-bugbear (B: explicit exception causes, closures over loop variables,
+# mutable defaults...). All high signal and zero findings on the tree.
 #
 # Deliberately NOT enabled (counted with ruff 0.17.4, the version CI pins):
-# - I:  70x I001, pure import-order churn.
-# - UP: 18 (UP015 x9, UP031 x4, UP041 x2, UP017, UP045, UP036), restyling.
-# - B, the rest of the set: B010 x3 (setattr with a constant, i.e. the
-#   decorator attributes -- intentional), B023 x2 (false positives on
-#   synchronous enum_import_names callbacks) and B007 x1 in a test loop.
-select = ["F", "E", "W", "C4", "B904"]
+# - I:  70x I001, import-order churn -- and `ida_mcp/__init__.py` has a
+#       load-bearing, documented import order (rpc/sync before the rest) that
+#       isort would invert.
+# - UP: 19 (UP015 x7, UP031 x4, UP041 x2, UP017, UP039, UP045, UP036),
+#       restyling with no behavioral gain; UP036's "fix" would delete a version
+#       guard that documents 3.11-only regex syntax.
+select = ["F", "E", "W", "C4", "B"]
 ignore = [
     "E501",  # line length is enforced softly; long docstrings/URLs are fine
     "E741",  # ambiguous names (l, O) show up in short RE/loop locals

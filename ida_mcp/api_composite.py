@@ -200,6 +200,23 @@ def _normalize_addr_list(value) -> list[str]:
     return [str(value)]
 
 
+def _import_rows(module_index: int) -> list[tuple[int, str]]:
+    """``(ea, name)`` rows for one import module.
+
+    The callback lives here rather than inside the caller's loop: it runs
+    synchronously (``enum_import_names``), but a closure over a loop variable
+    is a trap the moment that ever changes.
+    """
+    rows: list[tuple[int, str]] = []
+
+    def _cb(ea: int, sym: str | None, ordinal: int) -> bool:
+        rows.append((ea, sym or f"#{ordinal}"))
+        return True
+
+    ida_nalt.enum_import_names(module_index, _cb)
+    return rows
+
+
 # ===========================================================================
 # Tools
 # ===========================================================================
@@ -907,14 +924,7 @@ def _fetch_survey_raw(detail_level: str) -> dict:
             nimps = ida_nalt.get_import_module_qty()
             for i in range(nimps):
                 mod_name = ida_nalt.get_import_module_name(i) or "<unnamed>"
-                collected: list[tuple[int, str]] = []
-
-                def _cb(ea: int, sym: str | None, ordinal: int) -> bool:
-                    collected.append((ea, sym or f"#{ordinal}"))
-                    return True
-
-                ida_nalt.enum_import_names(i, _cb)
-                imports_raw.append((mod_name, collected))
+                imports_raw.append((mod_name, _import_rows(i)))
         except Exception:
             pass
         result["_imports_raw"] = imports_raw
