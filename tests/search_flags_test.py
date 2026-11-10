@@ -61,6 +61,7 @@ from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
 mod = load("api_search", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
+    "compat": "inf_get_min_ea = lambda: 0x1000\ninf_get_max_ea = lambda: 0x3000",
     "api_analysis": "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
@@ -105,5 +106,20 @@ r = json.loads(mod.find_text_between("hello", "0x1000", "0x2000"))
 assert r["count"] == 0 and r["matches"] == [], r
 assert len(_CALLS) == 1, _CALLS
 print("find_text_between flags + range guard OK")
+
+# --- search_bytes scans the image, not the whole address space (6.1) ---
+_FIND_CALLS = []
+
+
+def _fake_find(pattern, start, range_end=None):
+    _FIND_CALLS.append((start, range_end))
+    return ida_idaapi.BADADDR
+
+
+ida_bytes.find_bytes = _fake_find
+r = json.loads(mod.search_bytes("55 48"))
+assert r["count"] == 0, r
+assert _FIND_CALLS == [(0x1000, 0x3000)], _FIND_CALLS
+print("search_bytes uses the image range OK")
 
 print("ALL SEARCH FLAG TESTS PASSED")

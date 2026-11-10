@@ -31,6 +31,7 @@ except ImportError:  # standalone harness without package context
     class IDASyncError(Exception):
         pass
 from .api_analysis import parse_addr
+from .compat import inf_get_max_ea, inf_get_min_ea
 from .regex_guard import compile_client_regex
 
 
@@ -70,14 +71,18 @@ def search_bytes(pattern: str) -> str:
 
     norm = " ".join(pattern[i:i+2] for i in range(0, len(pattern), 2))
 
+    # Scan the image like every other search tool: the old fixed
+    # 0x0..0xFFFFFFFFFFFFFFFF range relied on IDA clamping it to the database.
+    min_ea = inf_get_min_ea()
+    max_ea = inf_get_max_ea()
     matches: list[str] = []
     partial = False
     try:
-        ea = ida_bytes.find_bytes(norm, 0x00000000, range_end=0xFFFFFFFFFFFFFFFF)
+        ea = ida_bytes.find_bytes(norm, min_ea, range_end=max_ea)
         while ea != ida_idaapi.BADADDR and len(matches) < 200:
             check_cancelled()
             matches.append(hex(ea))
-            ea = ida_bytes.find_bytes(norm, ea + 1, range_end=0xFFFFFFFFFFFFFFFF)
+            ea = ida_bytes.find_bytes(norm, ea + 1, range_end=max_ea)
     except (CancelledError, IDASyncError):
         partial = True
 
