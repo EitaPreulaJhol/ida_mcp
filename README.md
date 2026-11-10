@@ -50,6 +50,7 @@ In one line: **client → HTTP (gated) → registry (serialized) → `@idasync` 
 Tools signal a **hard failure** in one of two equivalent ways, both surfaced to the client as `isError: true` on the `tools/call` result:
 
 - **Raise `IDAError(msg)`** - used by plain-text tools (e.g. `decompile_function`, `get_disassembly`) where an error string would otherwise be indistinguishable from a successful result. It maps to a clean JSON-RPC `-32000` with no traceback leak.
+- **Sync-layer failures use the same path** - timeouts, dropped `execute_sync` requests and aborted tools raise `IDASyncError`, which is also a tool error: the client sees `isError: true` with the plain message (e.g. `Tool timed out after 60.00s`), never a traceback of the sync wrapper.
 - **Return a JSON object with a non-empty top-level `error` string** - used by the JSON tools. The MCP boundary parses the result and promotes a top-level `error` to `isError: true`, also exposing the parsed object as `structuredContent`.
 
 Deliberately **not** treated as failures: `error: null` on an otherwise-successful payload, soft notes under a separate key (`warning`), and per-item errors nested inside a list/batch result (the top level is then a list, not an `error` object). This lets an agent detect failures programmatically instead of string-matching the content.
@@ -60,7 +61,7 @@ Listing tools that can grow with the binary (`get_functions`, `get_callees`, `ge
 ## Long-running tools & timeouts
 Every tool runs on the IDA main thread, so while one runs the IDA UI is frozen and other calls get a retryable `Server busy`. To keep that bounded:
 
-- **Soft timeout** - `IDA_MCP_TOOL_TIMEOUT_SEC` (default 60s). At the deadline IDA's cancel flag is set (SDK loops bail), and after a 5s grace a `BaseException` is raised in the tool body, so a script's `try/except Exception` cannot swallow it. `execute_script` / `py_eval` return the output printed so far, plus an error.
+- **Soft timeout** - `IDA_MCP_TOOL_TIMEOUT_SEC` (default 60s). At the deadline IDA's cancel flag is set (SDK loops bail), and after a 5s grace a `BaseException` is raised in the tool body, so a script's `try/except Exception` cannot swallow it. `execute_script` / `py_eval` return the output printed so far, plus an error; every other tool returns `isError: true` with `Tool timed out after Ns`.
 - **Hard interrupt** (script tools only) - if a script still runs about 5s later (bare `except:`, or a call-free `while True` loop), a watchdog injects the interrupt asynchronously, retrying up to 10 times. Long SDK calls are interrupted as soon as they return to Python. Disable with `IDA_MCP_NO_HARD_INTERRUPT=1`.
 - **Cancellation** - `notifications/cancelled` for the request id interrupts the tool the same way. The IDA wait box's Cancel button works too, because the server polls it every 300 ms while a tool runs, which also repaints the box. Disable that polling with `IDA_MCP_UI_PUMP=0`.
 - **Clients** - set the client's tool-call timeout above the server's (pi bridge: `IDA_MCP_CLIENT_TIMEOUT_MS`, default 90000). A client that gives up first should send `notifications/cancelled` and report "busy", not "offline". Health checks should use JSON-RPC `ping`, which does not need the main thread.

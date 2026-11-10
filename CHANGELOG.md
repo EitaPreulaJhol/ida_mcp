@@ -6,10 +6,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Regression tests for the review batch: `tests/search_flags_test.py`
+  (`search_text`/`find_text_between` flag bits), `tests/modify_test.py`
+  (`make_data` arity), `tests/packaging_test.py` (profile files in a wheel),
+  plus new cases in `tests/query_test.py` (deep-nesting regex),
+  `tests/composite_test.py` (`callgraph` depth clamp) and `tests/sync_test.py`
+  (`IDASyncError` mapping, cross-thread request cancellation).
+
 ### Changed
 - CI and release workflows move to Node 24 actions (`actions/checkout@v7`,
   `actions/setup-python@v7`, `softprops/action-gh-release@v3`); the Node 20
   versions were deprecated and already being forced onto Node 24.
+
+### Fixed
+- `search_text` and `find_text_between` sent `0` (= `SEARCH_UP`) for
+  `case_sensitive=True` and `SEARCH_CASE` for `case_sensitive=False`: they
+  searched towards lower addresses (so `search_text` returned no matches at
+  all) and had the case flag inverted. Both now OR `SEARCH_DOWN` in and only
+  add `SEARCH_CASE` when requested; `find_text_between` also drops matches
+  outside `[start, end)`.
+- `make_data` called `create_byte(ea)` (and friends) without the byte count,
+  which is a required argument on IDA 9.x: every scalar type raised
+  `TypeError` before creating the item. It now passes the item size and also
+  refuses unmapped addresses.
+- `callgraph` clamps `max_depth` to 20 like `trace_data_flow` instead of
+  accepting an unbounded depth that recursed into `RecursionError`.
+- Sync-layer failures (timeouts, dropped `execute_sync` requests, aborted
+  tools) map to a clean JSON-RPC `-32000` with the plain message instead of
+  `-32603` with the sync wrapper's traceback.
+- `check_cancelled()` now sees request cancellation: the cancel event is
+  published into the main-thread state by `sync_wrapper`, instead of being
+  read from an HTTP-thread-local that is empty on the IDA main thread.
+- `compile_client_regex` turns a `RecursionError` from deeply nested client
+  patterns into a `re.error`, so the query tools answer `Invalid regex`
+  instead of returning a traceback.
+- A packaged wheel now includes `ida_mcp/profiles/*.txt`
+  (`[tool.setuptools.package-data]`); without them `?profile=` was silently
+  ignored after `pip install`, widening the tool list from 16 to 186.
 
 ## [0.2.0] - 2026-11-08
 
