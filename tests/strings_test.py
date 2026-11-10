@@ -62,7 +62,11 @@ mod = load("api_strings", {
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
-    "    except ValueError: raise ValueError(f'Unknown: {s}')",
+    "    except ValueError: raise ValueError(f'Unknown: {s}')\n"
+    "def clamp_int(value, default, hi):\n"
+    "    try: n = int(value)\n"
+    "    except (TypeError, ValueError): return default\n"
+    "    return default if n <= 0 else min(n, hi)",
 }, alias="strings_test")
 
 # =========================================================================
@@ -114,5 +118,33 @@ assert r["total"] == 3 and all(s["value"] != "wide" for s in r["data"]), r
 r = json.loads(mod.get_unicode_strings())
 assert r["total"] == 1 and r["data"][0]["value"] == "wide", r
 print("ascii/unicode OK")
+
+# --- oversized pagination is clamped and reported, not reset (14.11) ---
+r = json.loads(mod.get_strings(limit=99999))
+assert r["limit"] == 5000, r          # clamped to the cap
+assert r["count"] == 4, r            # all four fake strings fit
+r = json.loads(mod.get_strings(limit=0))
+assert r["limit"] == 100, r           # non-positive -> documented default
+r = json.loads(mod.get_ascii_strings(limit=99999))
+assert r["limit"] == 5000, r
+r = json.loads(mod.get_strings_by_length(count=99999))
+assert r["limit"] == 5000, r
+r = json.loads(mod.get_strings_in_range("0x1000", "0x2000", limit=99999))
+assert r["limit"] == 10000, r
+print("string limits clamped OK")
+
+# --- iteration cap + cancellation poll (14.14) ---
+_cancel_polls = []
+mod.check_cancelled = lambda: _cancel_polls.append(1)
+try:
+    _STRS.extend(FakeStr(0x20000 + i, "s%d" % i) for i in range(60_000))
+    assert len(_STRS) > mod._MAX_STRINGS
+    r = json.loads(mod.get_strings(limit=5))
+    assert r["count"] == 5, r
+    assert r["iterated_cap_reached"] is True, r
+    assert _cancel_polls, "check_cancelled() was never polled"
+finally:
+    del _STRS[4:]
+print("string iteration cap + cancel poll OK")
 
 print("ALL STRINGS TESTS PASSED")
