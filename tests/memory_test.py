@@ -2,6 +2,7 @@
 
 Stubs IDA modules and loads api_analysis.py via exec.
 """
+import json
 import os
 import sys
 import types
@@ -20,6 +21,7 @@ sys.modules["ida_ida"] = ida_ida
 
 _fake_bytes_data: dict[int, bytes] = {}
 _fake_string_data: dict[int, bytes | None] = {}
+_fake_bss: set[int] = set()  # mapped but uninitialized (BSS-like)
 
 
 def _fake_get_bytes(ea, size):
@@ -30,12 +32,23 @@ def _fake_get_bytes(ea, size):
     return data[:size]
 
 
+def _fake_get_bytes_and_mask(ea, size, *args, **kwargs):
+    """Real 9.x API: (bytes, mask) or None; mask bit 0 = uninitialized byte."""
+    data = _fake_bytes_data.get(ea)
+    if data is None:
+        return None
+    chunk = data[:size]
+    mask = b"\x00" * len(chunk) if ea in _fake_bss else b"\x01" * len(chunk)
+    return chunk, mask
+
+
 def _fake_strlit_contents(ea, length=-1, strtype=0):
     return _fake_string_data.get(ea)
 
 
 ida_bytes = types.ModuleType("ida_bytes")
 ida_bytes.get_bytes = _fake_get_bytes
+ida_bytes.get_bytes_and_mask = _fake_get_bytes_and_mask
 ida_bytes.get_strlit_contents = _fake_strlit_contents
 sys.modules["ida_bytes"] = ida_bytes
 
@@ -110,6 +123,7 @@ mod = load("api_analysis", {
 def setup():
     _fake_bytes_data.clear()
     _fake_string_data.clear()
+    _fake_bss.clear()
 
 # =========================================================================
 # Tests
@@ -141,11 +155,29 @@ print("get_bytes string size OK")
 # 2c) unparsable / out-of-range sizes fall back to the default (64)
 r = mod.get_bytes("0x1000", size="bogus")
 assert '"size": 64' in r, f"unparsable size must default to 64: {r}"
-r = mod.get_bytes("0x1000", size="99999")
-assert '"size": 64' in r, f"oversized size must default to 64: {r}"
 r = mod.get_bytes("0x1000", size="-8")
 assert '"size": 64' in r, f"negative size must default to 64: {r}"
 print("get_bytes size fallbacks OK")
+
+# an oversized request is CLAMPED (4096) and reported, not reset to 64: an
+# agent that asks for 8 KiB and silently gets 64 bytes reads it as EOF.
+setup()
+_fake_bytes_data[0x2000] = bytes(5000)
+r = json.loads(mod.get_bytes("0x2000", size="99999"))
+assert r["size"] == 4096, r                      # clamped to the hard cap
+assert r["requested"] == 99999, r                # the ask is echoed back
+assert r["truncated"] is True, r
+print("get_bytes oversized clamps to 4096 (not 64) OK")
+
+# unmapped != uninitialized: BSS reads as zeros, a bad address is an error
+setup()
+_fake_bytes_data[0x3000] = b"\xff" * 8           # sentinel for unloaded bytes
+_fake_bss.add(0x3000)
+r = json.loads(mod.get_bytes("0x3000", size=4))
+assert r["hex"] == "00 00 00 00", r              # BSS -> zeros, not 0xFF
+r = json.loads(mod.get_bytes("0xDEAD", size=4))
+assert "error" in r and r["data"] is None, r      # unmapped -> clean error
+print("get_bytes unmapped vs BSS OK")
 
 # 3) unreachable address
 setup()

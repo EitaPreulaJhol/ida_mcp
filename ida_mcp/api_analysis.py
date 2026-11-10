@@ -106,6 +106,18 @@ def _as_int(value, default: int = 0) -> int:
         return default
 
 
+def clamp_int(value, default: int, hi: int) -> int:
+    """Clamp a client-supplied count to ``[1, hi]``; ``<= 0`` means default.
+
+    Oversized values used to be *reset* to the default (``size=8192`` on
+    ``get_bytes`` silently read 64 bytes), which an agent cannot distinguish
+    from "the data ends here". Clamp to the documented maximum instead and
+    report the applied value, so the truncation is visible in the payload.
+    """
+    n = _as_int(value, default)
+    return default if n <= 0 else min(n, hi)
+
+
 def type_label(tif) -> str:
     """Human-readable label for a ``tinfo_t``: its name, else its declaration.
 
@@ -131,15 +143,38 @@ def type_label(tif) -> str:
 
 
 def read_bytes_bss_safe(ea: int, size: int) -> bytes | None:
-    """Read ``size`` bytes starting at ``ea``, substituting 0 for unloaded bytes.
+    """Read ``size`` bytes at ``ea``; unloaded bytes read as 0, unmapped as None.
 
-    Unloaded bytes in BSS-like sections are zero at runtime by every mainstream
-    loader, but ``ida_bytes.get_byte()`` returns 0xFF as a sentinel for them.
-    Check ``ida_bytes.is_loaded`` per byte so reads of globals in ``.bss``
-    return the real zero-initialized value instead of 0xFF garbage.
-    Falls back to bulk ``ida_bytes.get_bytes`` when the per-byte API is
-    unavailable (older IDA / stubbed environments).
+    Uninitialized bytes in BSS-like sections are zero at runtime by every
+    mainstream loader, but ``ida_bytes.get_byte()`` returns 0xFF as a sentinel
+    for them, so they are substituted with 0.
+
+    ``None`` (not a zero-filled block) is returned when the address is not
+    mapped: ``ida_bytes.is_loaded()`` is false both for "in BSS" and for "not
+    in the program at all", which used to make ``get_bytes("0xdeadbeef")``
+    look like a valid 64-byte block of zeros. ``get_bytes_and_mask()`` is the
+    API that distinguishes the two (``None`` on failure, mask bit 0 =
+    uninitialized).
     """
+    get_mask = getattr(ida_bytes, "get_bytes_and_mask", None)
+    if get_mask is not None:
+        try:
+            res = get_mask(ea, size)
+        except Exception:
+            res = None
+        if res is None:
+            return None
+        raw, mask = res
+        # The 9.x signature documents both as ``str``; older/other builds
+        # hand back ``bytes``. Accept either.
+        if isinstance(raw, str):
+            raw = raw.encode("latin-1")
+        if isinstance(mask, str):
+            mask = mask.encode("latin-1")
+        return bytes(b if i < len(mask) and mask[i] else 0
+                     for i, b in enumerate(bytes(raw)))
+
+    # Fallback for older IDA / stubbed environments without the mask API.
     is_loaded = getattr(ida_bytes, "is_loaded", None)
     get_byte = getattr(ida_bytes, "get_byte", None)
     if is_loaded is not None and get_byte is not None:
@@ -357,9 +392,8 @@ def get_bytes(address: str, size: int = 64) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    size = _as_int(size, 64)
-    if size <= 0 or size > 4096:
-        size = 64
+    asked = _as_int(size, 64)
+    size = clamp_int(asked, 64, 4096)
 
     try:
         raw = read_bytes_bss_safe(ea, size)
@@ -371,12 +405,18 @@ def get_bytes(address: str, size: int = 64) -> str:
 
     hex_str = " ".join(f"{b:02X}" for b in raw)
     ascii_repr = "".join(chr(b) if 32 <= b < 127 else "." for b in raw)
-    return json.dumps({
+    out: dict = {
         "addr": hex(ea),
         "size": len(raw),
         "hex": hex_str,
         "ascii": ascii_repr,
-    }, indent=2)
+    }
+    if asked != len(raw):
+        # Say why the block is shorter than what was asked for (the cap, or
+        # the end of the mapped range) instead of silently returning less.
+        out["requested"] = asked
+        out["truncated"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
@@ -423,8 +463,7 @@ def list_imports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     """
     ensure_analysis()
 
-    if count <= 0 or count > 5000:
-        count = 100
+    count = clamp_int(count, 100, 5000)
 
     imports_list: list[dict] = []
     nimps = ida_nalt.get_import_module_qty()
@@ -470,8 +509,7 @@ def list_exports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     """
     ensure_analysis()
 
-    if count <= 0 or count > 5000:
-        count = 100
+    count = clamp_int(count, 100, 5000)
 
     exports_list: list[dict] = []
     for i in range(ida_entry.get_entry_qty()):
@@ -767,8 +805,7 @@ def list_strings(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     """
     ensure_analysis()
 
-    if count <= 0 or count > 5000:
-        count = 100
+    count = clamp_int(count, 100, 5000)
 
     strings_list: list[dict] = []
     for si in idautils.Strings():
@@ -790,6 +827,7 @@ def list_strings(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
         "total": len(filtered),
         "offset": offset,
         "count": len(page),
+        "limit": count,
     }, indent=2)
 
 
