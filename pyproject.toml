@@ -112,8 +112,8 @@ omit = ["ida_mcp/__init__.py"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-# Floor for `coverage report` (CI + `make coverage`). The measured value was
-# ~68% when the suite loaded the real modules; 60 leaves headroom for an
+# Floor for `coverage report` (CI + `make coverage`). Measured 66% by the v0.2.1
+# CI run (42 harnesses, subprocess aggregation); 60 leaves headroom for an
 # unrelated refactor while still catching a real regression. Re-measure with
 # `make coverage` before raising it.
 fail_under = 60
