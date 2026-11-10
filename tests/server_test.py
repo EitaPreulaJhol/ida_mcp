@@ -264,4 +264,27 @@ if hasattr(_signal, "SIGPIPE"):
         _signal.signal(_signal.SIGPIPE, _before)
     print("SIGPIPE scoped to start/stop OK")
 
+# 10) IDA_MCP_REQUIRE_TOKEN is read at startup and reported by server_health
+import os as _os  # noqa: E402
+
+_prev_flag = _os.environ.get("IDA_MCP_REQUIRE_TOKEN")
+try:
+    _os.environ["IDA_MCP_REQUIRE_TOKEN"] = "1"
+    _p = mod.start_server("127.0.0.1", 13343)
+    assert mod.MCP_SERVER.require_token is True, mod.MCP_SERVER.require_token
+    assert mod._health_payload()["require_token"] is True
+    mod.stop_server(_p)
+
+    _os.environ["IDA_MCP_REQUIRE_TOKEN"] = "0"
+    _p = mod.start_server("127.0.0.1", 13343)
+    assert mod.MCP_SERVER.require_token is False, mod.MCP_SERVER.require_token
+    assert mod._health_payload()["require_token"] is False
+    mod.stop_server(_p)
+finally:
+    if _prev_flag is None:
+        _os.environ.pop("IDA_MCP_REQUIRE_TOKEN", None)
+    else:
+        _os.environ["IDA_MCP_REQUIRE_TOKEN"] = _prev_flag
+print("IDA_MCP_REQUIRE_TOKEN startup plumbing OK")
+
 print("ALL SERVER TOOL TESTS PASSED")

@@ -341,6 +341,24 @@ srv2.serve("127.0.0.1", PORT2, background=True)
 time.sleep(0.3)
 check(status_of()[0] == 200, "loopback bind: read-only call needs no token (unchanged)")
 
+# 9b) IDA_MCP_REQUIRE_TOKEN=1: the token is required on loopback too
+srv2.require_token = True
+check(status_of()[0] == 401, "require_token: loopback without token -> 401")
+check(status_of(headers={"X-IDA-MCP-Token": "wrong"})[0] == 401,
+      "require_token: wrong token -> 401")
+check(status_of(headers={"X-IDA-MCP-Token": "s3cret"})[0] == 200,
+      "require_token: header token accepted")
+check(status_of(query="?token=s3cret")[0] == 200, "require_token: ?token= accepted")
+check(status_of("OPTIONS", headers={"Origin": "http://localhost:5173"})[0] == 204,
+      "require_token: CORS preflight stays exempt")
+srv2.require_token = False
+check(status_of()[0] == 200, "require_token off: no token needed again")
+srv2.require_token = True
+srv2.auth_token = None  # IDA_MCP_NO_AUTH wins; the requirement cannot apply
+check(status_of()[0] == 200,
+      "require_token with auth disabled: request passes (documented no-op)")
+srv2.auth_token = "s3cret"
+
 _real_is_loopback = mcp_mod._is_loopback_host
 mcp_mod._is_loopback_host = lambda host: False  # pretend we bound 0.0.0.0
 try:

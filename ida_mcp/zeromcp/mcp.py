@@ -327,12 +327,17 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         if origin and not self.mcp_server._origin_allowed(origin):
             self._safe_send_error(403, "Invalid Origin")
             return False
-        if (not preflight and not _is_loopback_host(bound_host)
+        if (not preflight
+                and (not _is_loopback_host(bound_host)
+                     or self.mcp_server.require_token)
                 and not self.mcp_server._token_matches(self._request_token())):
+            where = ("bound off-loopback"
+                     if not _is_loopback_host(bound_host)
+                     else "running with IDA_MCP_REQUIRE_TOKEN")
             self._safe_send_error(
                 401, "Auth token required",
-                "This server is bound off-loopback: send the token printed in IDA's "
-                "Output window as the X-IDA-MCP-Token header (or ?token=).")
+                f"This server is {where}: send the token printed in IDA's Output "
+                f"window as the X-IDA-MCP-Token header (or ?token=).")
             return False
         return True
 
@@ -894,6 +899,11 @@ class McpServer:
         # for unsafe/ext tools to be listed or callable. Read-only tools are
         # unaffected. Set by the host (see server.start_server).
         self.auth_token: str | None = None
+        # When True, EVERY request needs the token, loopback included (read-only
+        # tools too), not just the unsafe/extension surface. Off by default:
+        # the loopback read-only surface is open by design (see README).
+        # Set by the host from IDA_MCP_REQUIRE_TOKEN (server.start_server).
+        self.require_token: bool = False
         # Output backstop: a tool result whose text exceeds this many chars is
         # refused with an actionable isError instead of flooding the client's
         # context. 0 disables. Tweak via server.start_server / IDA_MCP_MAX_OUTPUT.

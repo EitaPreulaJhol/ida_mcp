@@ -205,6 +205,7 @@ def _health_payload() -> dict:
         "idb_path": idb_path,
         "input_path": input_path,
         "imagebase": imagebase,
+        "require_token": bool(getattr(MCP_SERVER, "require_token", False)),
         "auto_analysis_ready": _auto_analysis_ready(),
         "hexrays_ready": _hexrays_ready(),
     }
@@ -289,6 +290,11 @@ def close_instance(port: int = 13337) -> str:
     return json.dumps({"ok": True, "port": port})
 
 
+def _env_flag(name: str) -> bool:
+    """True for ``1``/``true``/``yes`` (the convention used by every flag)."""
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
 def _init_auth_token() -> str | None:
     """Resolve the auth token gating unsafe/debugger tools.
 
@@ -300,7 +306,7 @@ def _init_auth_token() -> str | None:
     file cannot escalate to the unsafe surface.
     """
     import secrets
-    if os.getenv("IDA_MCP_NO_AUTH", "").strip().lower() in ("1", "true", "yes"):
+    if _env_flag("IDA_MCP_NO_AUTH"):
         return None
     env_token = os.getenv("IDA_MCP_TOKEN", "").strip()
     return env_token or secrets.token_urlsafe(24)
@@ -422,6 +428,7 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
             pass
     token = _init_auth_token()
     MCP_SERVER.auth_token = token
+    MCP_SERVER.require_token = _env_flag("IDA_MCP_REQUIRE_TOKEN")
     requested = port
     port = _serve_with_fallback(host, requested)
     _OWN_PORT = port
@@ -442,6 +449,17 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
             "[ida-mcp] auth DISABLED (IDA_MCP_NO_AUTH): unsafe tools reachable "
             "by any local client via ?unsafe=true\n"
         )
+    if MCP_SERVER.require_token:
+        if token:
+            ida_kernwin.msg(
+                "[ida-mcp] IDA_MCP_REQUIRE_TOKEN: every request needs the token "
+                "(read-only tools included)\n"
+            )
+        else:
+            ida_kernwin.msg(
+                "[ida-mcp] WARNING: IDA_MCP_REQUIRE_TOKEN is set but auth is "
+                "DISABLED (IDA_MCP_NO_AUTH); no token can be required\n"
+            )
     try:
         pid = os.getpid()
         get_input_path = getattr(idc, "get_input_file_path", None)
