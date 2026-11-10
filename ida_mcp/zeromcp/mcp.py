@@ -6,6 +6,7 @@ legacy SSE transport (GET /sse, POST /sse?session=) on top of
 ThreadingHTTPServer, so no external ASGI/uvicorn dependency is required.
 """
 import inspect
+import hashlib
 import json
 import logging
 import os
@@ -1160,8 +1161,19 @@ class McpServer:
                 "tool": name,
                 "ok": bool(ok),
                 "unsafe": True,
+                # "unsafe" is kept for log consumers written against it; the
+                # level tells the two gated surfaces apart.
+                "level": "dbg" if self._get_tool_extension(name) else "unsafe",
                 "args": _sanitize_audit_args(args),
             }
+            # The args preview is deliberately short, but for the script tools
+            # the code IS the record: keep an integrity hash and the real
+            # length so "what ran" can still be identified and verified.
+            code = args.get("code") if isinstance(args, dict) else None
+            if isinstance(code, str):
+                rec["code_sha256"] = hashlib.sha256(
+                    code.encode("utf-8", "replace")).hexdigest()
+                rec["code_len"] = len(code)
             if error:
                 rec["error"] = str(error)[:500]
             line = json.dumps(rec, separators=(",", ":"), default=str)

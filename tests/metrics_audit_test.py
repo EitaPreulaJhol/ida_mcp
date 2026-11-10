@@ -4,6 +4,7 @@ Pure zeromcp — no IDA. Drives a background McpServer over in-process HTTP so
 the real request path (thread-local ?unsafe parsing, dispatch, metrics, audit)
 is exercised.
 """
+import hashlib
 import json
 import os
 import sys
@@ -107,8 +108,13 @@ if audited:
     rec = audited[0]
     check(rec["ok"] is True, "audit ok=True")
     check(rec["unsafe"] is True, "audit marks unsafe")
+    check(rec["level"] == "unsafe", "audit records the level (unsafe vs dbg)")
     check(rec["args"]["code"].endswith("\u2026"), "audit truncates large arg")
     check(len(rec["args"]["code"]) < 5000, "audit arg is bounded")
+    check(rec.get("code_len") == len(big),
+          "audit records the full code length (preview is truncated)")
+    check(rec.get("code_sha256") == hashlib.sha256(big.encode()).hexdigest(),
+          "audit records the code hash")
 check(all(r["tool"] != "ping_ok" for r in lines), "safe tool not audited")
 
 # --- audit disabled by default (no path) ---
