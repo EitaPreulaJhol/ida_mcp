@@ -69,7 +69,57 @@ class _DisconnectQuietMixin:
 
 
 class _McpThreadingHTTPServer(_DisconnectQuietMixin, ThreadingHTTPServer):
-    pass
+    """Threaded server with a hard cap on concurrent connections.
+
+    ``ThreadingHTTPServer`` spawns one thread per accepted connection with no
+    bound, so a local process can exhaust memory by opening sockets. Over the
+    cap the connection gets a bare ``503`` and is closed on the accept thread,
+    before any worker exists. The counter is decremented in
+    ``shutdown_request()``, which socketserver calls exactly once per accepted
+    request (including the rejected one).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._active = 0
+        self._active_lock = threading.Lock()
+
+    def _cap(self) -> int:
+        srv = getattr(self, "mcp_server", None)
+        try:
+            return int(getattr(srv, "max_connections", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def process_request(self, request, client_address) -> None:  # noqa: ANN001
+        cap = self._cap()
+        with self._active_lock:
+            self._active += 1
+            over = cap > 0 and self._active > cap
+        if over:
+            logger.warning("[MCP] connection cap (%d) reached; refusing %s",
+                           cap, client_address)
+            try:
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\n"
+                                b"Connection: close\r\n"
+                                b"Content-Length: 0\r\n\r\n")
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            # No worker will own this request; release the slot ourselves.
+            self.shutdown_request(request)
+            raise
+
+    def shutdown_request(self, request) -> None:  # noqa: ANN001
+        try:
+            super().shutdown_request(request)
+        finally:
+            with self._active_lock:
+                self._active = max(0, self._active - 1)
 
 
 class _McpHTTPServer(_DisconnectQuietMixin, HTTPServer):
@@ -923,6 +973,11 @@ class McpServer:
         self._tool_gate: threading.Semaphore | None = None
         self._max_concurrent_tools: int | None = None
         self.max_concurrent_tools = 1
+        # Transport limits (plan 15, item 15.3). max_connections caps how many
+        # sockets the threaded server will serve at once (0 = no cap);
+        # idle_timeout_sec closes a connection that sends no request (0 = off).
+        self.max_connections = 64
+        self.idle_timeout_sec = 30.0
         # Per-tool metrics (item 07): call/error/busy counts + a bounded window
         # of recent durations for percentiles. Pure Python, no IDA; surfaced
         # via server_health. Updates happen in a tiny locked critical section
@@ -1020,6 +1075,11 @@ class McpServer:
             logger.info("[MCP] Server already running")
             return
         assert issubclass(request_handler, McpHttpRequestHandler)
+        # socketserver applies this to the socket in StreamRequestHandler.setup().
+        # Set it explicitly (including None) so a previous server in the same
+        # process cannot leak its idle timeout into this one.
+        request_handler.timeout = (float(self.idle_timeout_sec)
+                                   if self.idle_timeout_sec else None)
         self._http_server = (_McpThreadingHTTPServer if background else _McpHTTPServer)(
             (host, port), request_handler, bind_and_activate=False
         )
