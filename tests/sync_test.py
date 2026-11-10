@@ -326,4 +326,119 @@ _time.sleep(0.3)
 assert _tickers() == [], _tickers()
 print("profile ticker threads cleaned up OK")
 
+# Test 9: IDASyncError is a tool error, so a timeout is a clean -32000
+#         instead of -32603 with a full traceback (review 14.4).
+from _harness import real  # noqa: E402
+
+_mcp = real("zeromcp.mcp")
+assert issubclass(mod.IDASyncError, _mcp.McpToolError), mod.IDASyncError.__mro__
+
+_errsrv = _mcp.McpServer("sync-error-map")
+
+
+@_errsrv.tool
+def _boom():
+    """Raise a sync-level failure."""
+    raise mod.IDASyncError("Tool timed out after 1.00s")
+
+
+_resp = _errsrv.tools.dispatch({"jsonrpc": "2.0", "id": 1,
+                                "method": "_boom"})
+assert _resp["error"]["code"] == -32000, _resp
+assert "Traceback" not in _resp["error"]["message"], _resp
+assert "timed out" in _resp["error"]["message"], _resp
+
+# the user-visible path (tools/call) must carry the plain message too
+_call = _errsrv.registry.dispatch({"jsonrpc": "2.0", "id": 2,
+                                   "method": "tools/call",
+                                   "params": {"name": "_boom",
+                                              "arguments": {}}})
+assert _call["result"]["isError"] is True, _call
+_text = _call["result"]["content"][0]["text"]
+assert "Traceback" not in _text, _text
+assert "timed out" in _text, _text
+print("IDASyncError maps to a clean -32000 OK")
+
+# Test 10: check_cancelled() sees a request cancellation raised on another
+#          thread, i.e. the HTTP thread vs. the IDA main thread (review 14.5).
+#          The profile hook is silenced (huge tick interval): it would raise
+#          ToolInterrupt for normal code anyway, hiding the bug this covers.
+import queue as _queue  # noqa: E402
+import threading as _th  # noqa: E402
+
+jsonrpc = real("zeromcp.jsonrpc")
+REQ_ID = 4242
+_go = _th.Event()
+_registered = _th.Event()
+_out = {}
+_orig_check_interval = mod._PROFILE_CHECK_INTERVAL_SEC
+mod._PROFILE_CHECK_INTERVAL_SEC = 60.0
+
+
+def _spin():
+    _go.wait(5)
+    for _ in range(50):
+        mod.check_cancelled()  # must raise once the request is cancelled
+        _time.sleep(0.01)
+    return "not cancelled"
+
+
+def _call_in_thread(fn):
+    """Run ``fn`` on a fresh thread; return (kind, value)."""
+    q = _queue.Queue()
+
+    def _worker():
+        try:
+            q.put(("ok", fn()))
+        except BaseException as exc:  # noqa: BLE001 - the point of the test
+            q.put(("err", exc))
+
+    t = _th.Thread(target=_worker)
+    t.start()
+    t.join(10)
+    return q.get_nowait()
+
+
+_orig_execute_sync = fake_idaapi.execute_sync
+
+
+def _threaded_execute_sync(runned, reqf):
+    # Emulate IDA: the callback runs on the MAIN thread, not on the caller's.
+    kind, value = _call_in_thread(runned)
+    if kind == "err":
+        raise value
+    return 0
+
+
+fake_idaapi.execute_sync = _threaded_execute_sync
+
+
+def _run_tool():
+    jsonrpc.register_pending_request(REQ_ID)
+    _registered.set()
+    try:
+        _out["ret"] = mod.idasync(_spin)()
+    except BaseException as exc:  # noqa: BLE001 - asserted below
+        _out["exc"] = exc
+    finally:
+        jsonrpc.unregister_pending_request(REQ_ID)
+
+
+try:
+    _tool_thread = _th.Thread(target=_run_tool)
+    _tool_thread.start()
+    assert _registered.wait(5), "tool thread never registered its request"
+    _time.sleep(0.2)          # let it reach execute_sync (the fake main thread)
+    assert jsonrpc.cancel_request(REQ_ID) is True, "could not cancel the request"
+    _go.set()
+    _tool_thread.join(10)
+finally:
+    fake_idaapi.execute_sync = _orig_execute_sync
+    mod._PROFILE_CHECK_INTERVAL_SEC = _orig_check_interval
+
+assert "exc" in _out, (f"cancellation was not observed on the main thread: "
+                        f"tool returned {_out.get('ret')!r}")
+assert isinstance(_out["exc"], mod.CancelledError), _out
+print("check_cancelled sees the request cancel event OK")
+
 print("ALL SYNC RESULT-CONTAINER TESTS PASSED")

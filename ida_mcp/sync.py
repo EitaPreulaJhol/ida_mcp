@@ -33,8 +33,13 @@ _TOOL_TIMEOUT_ENV = "IDA_MCP_TOOL_TIMEOUT_SEC"
 _DEFAULT_TOOL_TIMEOUT_SEC = 60.0
 
 
-class IDASyncError(Exception):
-    pass
+class IDASyncError(McpToolError):
+    """A tool failed at the sync layer (timeout, dropped request, abort).
+
+    Inherits ``McpToolError`` so it maps to a clean JSON-RPC ``-32000`` with
+    just the message: a timeout is a tool error, not an internal crash, and a
+    traceback of the sync wrapper tells the client nothing actionable.
+    """
 
 
 class IDAError(McpToolError):
@@ -213,18 +218,24 @@ def check_cancelled() -> None:
         from .zeromcp.jsonrpc import get_current_cancel_event
     except ImportError:
         get_current_cancel_event = None  # type: ignore[assignment]
-    if get_current_cancel_event is not None:
+    # The request's cancel event is registered on the HTTP worker thread, but
+    # this function runs on the IDA main thread, where that thread-local is
+    # unset. sync_wrapper publishes the same event into _sync_state (which is
+    # set on the main thread); the thread-local stays as a fallback for
+    # direct, same-thread callers.
+    event = getattr(_sync_state, "cancel_event", None)
+    if event is None and get_current_cancel_event is not None:
         try:
             event = get_current_cancel_event()
         except Exception:
             event = None
-        if event is not None:
-            try:
-                is_set = event.is_set()
-            except Exception:
-                is_set = False
-            if is_set:
-                raise CancelledError("Request was cancelled")
+    if event is not None:
+        try:
+            is_set = event.is_set()
+        except Exception:
+            is_set = False
+        if is_set:
+            raise CancelledError("Request was cancelled")
     try:
         deadline = getattr(_deadline_state, "deadline", None)
     except Exception:
@@ -643,7 +654,11 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
             sys.setprofile(profilefunc)
             # Expose the deadline so tool bodies can self-monitor and
             # return partial results gracefully (independent of the Timer).
+            # The cancel event travels with it: check_cancelled() runs on
+            # this (main) thread, where the HTTP thread's thread-local is
+            # invisible.
             _deadline_state.deadline = deadline
+            _sync_state.cancel_event = cancel_event
             try:
                 return _guarded_body(ff, hard)
             except ToolInterrupt as e:
@@ -658,6 +673,7 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
                 sys.setprofile(old_profile)
                 stop_ticker.set()
                 _deadline_state.deadline = None
+                _sync_state.cancel_event = None
                 if native_timer is not None:
                     native_timer.cancel()
                 # Sticky flag: clear unconditionally so the next tool starts
