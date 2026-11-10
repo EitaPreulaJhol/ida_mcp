@@ -459,6 +459,32 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         else:
             self._safe_send_error(404)
 
+    def _send_unknown_session(self, session_id: str) -> None:
+        """404 for an Mcp-Session-Id this server never issued.
+
+        The Streamable HTTP spec makes 404 the signal for "the session is gone,
+        initialize again"; the body repeats that in words for humans.
+        """
+        try:
+            data = json.dumps({
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32001,
+                    "message": (f"Unknown or expired session id {session_id!r}; "
+                                f"send initialize to start a new session."),
+                },
+            }).encode("utf-8")
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_cors_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            self.wfile.flush()
+        except _DISCONNECT_ERRORS:
+            logger.debug("[MCP] session 404 reply suppressed (client gone)")
+
     def _handle_mcp_post(self) -> None:
         self._parse_request_flags(scope=self.headers.get("Mcp-Session-Id"))
         raw = self._read_body()
@@ -472,6 +498,17 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             # Let the registry produce the spec'd -32700 Parse error (it
             # re-parses bytes) instead of masking it as -32600 via {}.
             request = None
+        is_initialize = (isinstance(request, dict)
+                         and request.get("method") == "initialize")
+        # A session id we did not issue (stale, expired, pruned, or from a
+        # previous IDA run) means "re-initialize": 404, as the spec requires.
+        # initialize establishes the session, so it is exempt (otherwise a
+        # client holding a stale id could never recover).
+        if (mcp_session_id and not is_initialize
+                and not self.mcp_server.has_http_session(mcp_session_id)):
+            self._send_unknown_session(mcp_session_id)
+            return
+        if request is None:
             response = self.mcp_server.registry.dispatch(body)
         else:
             response = self.mcp_server.registry.dispatch(request)
@@ -550,6 +587,12 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_mcp_get(self) -> None:
         # Streamable HTTP SSE stream (server -> client notifications).
+        session_id = self.headers.get("Mcp-Session-Id")
+        if session_id and not self.mcp_server.has_http_session(session_id):
+            # Opening a stream for a dead session is a stale client: tell it to
+            # re-initialize instead of accepting a stream nobody will route to.
+            self._send_unknown_session(session_id)
+            return
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -655,6 +698,10 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path != "/mcp":
                 self._safe_send_error(404)
+                return
+            session_id = self.headers.get("Mcp-Session-Id")
+            if session_id and not self.mcp_server.remove_http_session(session_id):
+                self._send_unknown_session(session_id)
                 return
             self.send_response(200)
             self.send_header("Content-Length", "0")
@@ -1050,6 +1097,24 @@ class McpServer:
             self._http_sessions.pop(session_id, None)
             self._http_sessions[session_id] = now
             self._prune_sessions(now)
+
+    def has_http_session(self, session_id: str) -> bool:
+        """Is ``session_id`` one of ours (and not expired)? Refreshes its TTL."""
+        now = time.monotonic()
+        with self._http_sessions_lock:
+            self._prune_sessions(now)
+            if session_id not in self._http_sessions:
+                return False
+            self._http_sessions.pop(session_id, None)
+            self._http_sessions[session_id] = now
+            return True
+
+    def remove_http_session(self, session_id: str) -> bool:
+        """Terminate ``session_id``; True when it existed."""
+        now = time.monotonic()
+        with self._http_sessions_lock:
+            self._prune_sessions(now)
+            return self._http_sessions.pop(session_id, None) is not None
 
     def _prune_sessions(self, now: float) -> None:
         if self.http_session_ttl_sec > 0:

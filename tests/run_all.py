@@ -48,6 +48,7 @@ TESTS = [
     "debug_test.py",
     "hooks_test.py",
     "sigmaker_test.py",
+    "session_test.py",
     "profile_http_test.py",
     "transport_test.py",
     "disconnect_test.py",

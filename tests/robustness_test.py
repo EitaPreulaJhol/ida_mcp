@@ -242,6 +242,11 @@ srv.max_concurrent_tools = 1
 # 5. cancellation is scoped to the session
 # ===================================================================
 outcome = []
+# The server only accepts session ids it issued (plan 15, item 15.1), so these
+# two "clients" are registered up front -- the point here is the cancellation
+# scope, not session validation (tests/session_test.py covers that).
+srv.register_http_session("session-A")
+srv.register_http_session("session-B")
 SA = {"Mcp-Session-Id": "session-A"}
 SB = {"Mcp-Session-Id": "session-B"}
 
