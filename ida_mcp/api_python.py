@@ -240,6 +240,12 @@ def _run_code(code: str) -> dict:
 
     Must be called from within an ``@idasync`` context (i.e. on the main
     thread). Never raises -- failures are returned in ``stderr``.
+
+    ``sys.stdout``/``sys.stderr`` are swapped for the duration (that is what
+    makes a script's ``print()`` come back in the result), so they are
+    process-wide: a concurrent IDA plugin or HTTP thread writing to stdout
+    during the call also lands in the capture. The call is serialized on the
+    main thread and short by contract, which is why this is acceptable.
     """
     stdout_capture = io.StringIO()
     stderr_capture = io.StringIO()

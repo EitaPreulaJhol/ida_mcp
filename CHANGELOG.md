@@ -21,6 +21,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - CI and release workflows move to Node 24 actions (`actions/checkout@v7`,
   `actions/setup-python@v7`, `softprops/action-gh-release@v3`); the Node 20
   versions were deprecated and already being forced onto Node 24.
+- `tests/run_all.py` gives every harness a 300 s wall-clock limit and counts a
+  timeout as a failure; the CI and release jobs set `timeout-minutes`, so a
+  stuck harness can no longer hold a runner.
 
 ### Fixed
 - `search_text` and `find_text_between` sent `0` (= `SEARCH_UP`) for
@@ -67,6 +70,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The string enumerators honour `_MAX_STRINGS` and poll `check_cancelled()`
   every 2048 entries instead of materializing the whole string table before
   paginating, which froze the main thread on a large binary.
+- `make_data` reports the requested address (`addr`) plus where the conversion
+  ended (`next_ea`); the string branch used to return only the end address, and
+  skipped a NUL byte looking for strings *after* a terminator.
+- `discovery` no longer raises `KeyError` when `%APPDATA%` is missing (service
+  contexts, stripped Windows profiles): it falls back to `~/AppData/Roaming`.
+- `SIGPIPE` is ignored only while the HTTP server runs and the previous handler
+  is restored on stop. Importing `ida_mcp` used to change the signal
+  disposition of the whole IDA process, for every other plugin.
+- A tool body that replaces `sys.setprofile()` (e.g. a script) is detected: the
+  soft timeout is no longer silently unenforced there, a warning is logged and
+  the host's pre-call profiler is restored instead of leaking the script's.
+- The audit log distinguishes the `unsafe` and `dbg` surfaces (`level`) and
+  keeps `code_sha256`/`code_len` for the script tools, whose code was otherwise
+  cut off by the 200-char args preview.
 
 ## [0.2.0] - 2026-11-08
 
