@@ -17,6 +17,7 @@ import idautils
 from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
+from .sync import check_cancelled
 from .api_analysis import parse_addr
 # aliased: this module's own ``get_original_bytes`` tool would shadow it
 from .compat import get_original_bytes as _compat_original_bytes
@@ -49,6 +50,9 @@ def make_data(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
+    if not ida_bytes.is_mapped(ea):
+        return json.dumps({"error": f"Address not mapped: {hex(ea)}"})
+
     type_map = {
         "byte": (ida_bytes.create_byte, 1),
         "word": (ida_bytes.create_word, 2),
@@ -71,9 +75,13 @@ def make_data(
     if data_type not in type_map:
         return json.dumps({"error": f"Unknown data type: {data_type}"})
 
+    # ``create_byte(ea, length, force=False)`` (and friends) take the byte
+    # count as a REQUIRED second argument in IDA 9.x: calling ``create_fn(ea)``
+    # raised TypeError before the byte was ever created.
     create_fn, item_size = type_map[data_type]
     for _ in range(min(int(count), 1000)):
-        create_fn(ea)
+        check_cancelled()
+        create_fn(ea, item_size)
         sz = ida_bytes.get_item_size(ea)
         ea += sz if sz > 0 else item_size
 

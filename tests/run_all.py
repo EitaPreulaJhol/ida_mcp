@@ -25,6 +25,7 @@ TESTS = [
     "memory_test.py",
     "inspection_test.py",
     "annotation_test.py",
+    "modify_test.py",
     "names_test.py",
     "functions_test.py",
     "ida94_calls_test.py",
