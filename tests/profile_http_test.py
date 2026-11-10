@@ -107,4 +107,15 @@ assert res.get("isError") is False, resp
 assert _CALLS == [("0x1000", 16)], _CALLS
 print("object arguments still work (string scalar coerced) OK")
 
+# =========================================================================
+# 14.28 -- list_profiles() must not hand out the cached sets
+# =========================================================================
+
+_loaded = profiles.list_profiles()
+assert "triage" in _loaded, sorted(_loaded)
+_loaded["triage"].add("definitely_not_a_tool")
+assert "definitely_not_a_tool" not in (profiles.get_profile("triage") or set()), \
+    "mutating list_profiles() corrupted the cache"
+print("list_profiles returns copies OK")
+
 print("ALL PROFILE/CONTRACT TESTS PASSED")

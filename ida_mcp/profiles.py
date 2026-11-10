@@ -46,10 +46,14 @@ def _load_all() -> dict[str, set[str]]:
 
 
 def list_profiles() -> dict[str, set[str]]:
-    """Return {profile_name: tool_names}, loading from disk once."""
+    """Return {profile_name: tool_names}, loading from disk once.
+
+    The cached sets are copied: a caller that mutates the result must not be
+    able to change what the next request sees.
+    """
     if not _cache_complete:
-        return _load_all()
-    return dict(_cache)
+        return {name: set(tools) for name, tools in _load_all().items()}
+    return {name: set(tools) for name, tools in _cache.items()}
 
 
 def get_profile(name: str) -> set[str] | None:
