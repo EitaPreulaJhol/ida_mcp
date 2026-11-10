@@ -242,4 +242,18 @@ assert "nested quantifiers" in r["error"], r
 assert mod._match_glob("aaaa!", "/(a+)+b/") is False
 print("client regex guard OK")
 
+# deep nesting raised RecursionError (not re.error) -> -32603 + traceback
+deep = "(" * 495 + "a" + ")" * 495
+assert len(deep) <= _rg.MAX_PATTERN_LEN
+try:
+    _rg.compile_client_regex(deep)
+    raise AssertionError("deep nesting should be rejected")
+except re.error:
+    pass
+r = json.loads(mod.func_query(name_regex=deep))
+assert "Invalid name_regex" in r["error"], r
+r = json.loads(mod.entity_query(kind="strings", regex=deep))
+assert "Invalid regex" in r["error"], r
+print("deep-nesting regex rejected cleanly OK")
+
 print("ALL QUERY TESTS PASSED")

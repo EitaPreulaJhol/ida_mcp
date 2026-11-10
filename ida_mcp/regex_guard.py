@@ -72,5 +72,14 @@ def compile_client_regex(pattern: str, flags: int = 0) -> "re.Pattern":
     """
     if len(pattern) > MAX_PATTERN_LEN:
         raise re.error(f"pattern longer than {MAX_PATTERN_LEN} characters")
-    _check(_sre_parse.parse(pattern, flags), None)
-    return re.compile(pattern, flags)
+    try:
+        _check(_sre_parse.parse(pattern, flags), None)
+        # re.compile() parses the pattern again internally, a few frames
+        # deeper: a pattern just under the recursion limit passes the first
+        # parse and overflows here, so both calls must share the handler.
+        return re.compile(pattern, flags)
+    except RecursionError:
+        # Deeply nested groups (still under MAX_PATTERN_LEN) overflow the
+        # parser's recursion before any nesting check runs. Callers only
+        # catch re.error, so this must not escape as RecursionError.
+        raise re.error("pattern nesting too deep (rejected)") from None
