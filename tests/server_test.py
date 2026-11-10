@@ -287,4 +287,33 @@ finally:
         _os.environ["IDA_MCP_REQUIRE_TOKEN"] = _prev_flag
 print("IDA_MCP_REQUIRE_TOKEN startup plumbing OK")
 
+# 11) close_instance replies before the server stops (15.4): stopping inline
+#     joined the serve thread on the IDA main thread, freezing the UI before
+#     the reply was even written.
+import time as _time  # noqa: E402
+
+_stopped = []
+_orig_stop = mod.stop_server
+_orig_grace = mod._CLOSE_INSTANCE_GRACE_SEC
+mod.stop_server = lambda port=13337: _stopped.append(port)
+mod._CLOSE_INSTANCE_GRACE_SEC = 0.05
+_close_port = 0
+try:
+    _close_port = mod.start_server("127.0.0.1", 13345)
+    _r = json.loads(mod.close_instance(_close_port))
+    assert _r["ok"] is True and _r["port"] == _close_port, _r
+    assert _stopped == [], f"stop_server ran inline: {_stopped}"
+    _time.sleep(0.3)
+    assert _stopped == [_close_port], _stopped
+    # a second call while the first is pending must not schedule another stop
+    _r = json.loads(mod.close_instance(_close_port))
+    assert _r["ok"] is True, _r
+finally:
+    mod.stop_server = _orig_stop
+    mod._CLOSE_INSTANCE_GRACE_SEC = _orig_grace
+    if _close_port:
+        mod.stop_server(_close_port)     # real cleanup of the fake server
+    mod._CLOSE_PENDING = False
+print("close_instance stops after replying OK")
+
 print("ALL SERVER TOOL TESTS PASSED")

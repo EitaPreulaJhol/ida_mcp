@@ -11,6 +11,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 
 import ida_auto
@@ -272,6 +273,22 @@ def get_instance_info(port: int = 13337) -> str:
     return json.dumps({"port": port, "error": "No live instance on this port"})
 
 
+# Grace period before the deferred stop runs: long enough for the
+# close_instance reply to be written and flushed, short enough that the client
+# sees the server go away almost immediately. Overridden by tests.
+_CLOSE_INSTANCE_GRACE_SEC = 1.0
+_CLOSE_PENDING = False
+
+
+def _deferred_stop(port: int) -> None:
+    """Stop the server after the close_instance reply has been delivered."""
+    global _CLOSE_PENDING
+    try:
+        stop_server(port)
+    finally:
+        _CLOSE_PENDING = False
+
+
 @tool
 @idasync
 @unsafe
@@ -282,12 +299,25 @@ def close_instance(port: int = 13337) -> str:
     serving this request) can be closed; other ports return an error since
     each IDA process owns exactly one server. Save the IDB first
     (``idb_save``) — closing does not save.
+
+    Returns before stopping (the server goes away about a second later):
+    stopping inline joined the HTTP thread on the IDA main thread, freezing the
+    UI before the reply could even be written.
     """
+    global _CLOSE_PENDING
     if _OWN_PORT is None or port != _OWN_PORT:
         return json.dumps({"port": port,
                            "error": "Can only close the local instance serving this request"})
-    stop_server(port)
-    return json.dumps({"ok": True, "port": port})
+    if _CLOSE_PENDING:
+        return json.dumps({"ok": True, "port": port, "stopping": True,
+                           "note": "already stopping"})
+    _CLOSE_PENDING = True
+    timer = threading.Timer(_CLOSE_INSTANCE_GRACE_SEC, _deferred_stop,
+                            args=(port,))
+    timer.daemon = True
+    timer.start()
+    return json.dumps({"ok": True, "port": port,
+                       "stopping_in_ms": int(_CLOSE_INSTANCE_GRACE_SEC * 1000)})
 
 
 def _env_flag(name: str) -> bool:

@@ -202,8 +202,22 @@ mod.start_server("127.0.0.1", 13337)
 assert mod.MCP_SERVER._running is True
 r = json.loads(mod.close_instance(9999))
 assert "error" in r and mod.MCP_SERVER._running is True, r
-r = json.loads(mod.close_instance(13337))
-assert r["ok"] is True and mod.MCP_SERVER._running is False, r
+
+# close_instance answers first and stops after the grace period (plan 15, item
+# 15.4): stopping inline joined the HTTP thread on the IDA main thread. Shrink
+# the grace so this runs fast; the timer captures it at scheduling time.
+import time as _time  # noqa: E402
+
+_orig_grace = mod._CLOSE_INSTANCE_GRACE_SEC
+mod._CLOSE_INSTANCE_GRACE_SEC = 0.05
+try:
+    r = json.loads(mod.close_instance(13337))
+    assert r["ok"] is True and "stopping_in_ms" in r, r
+    assert mod.MCP_SERVER._running is True, "close_instance must return before stopping"
+    _time.sleep(0.3)
+finally:
+    mod._CLOSE_INSTANCE_GRACE_SEC = _orig_grace
+assert mod.MCP_SERVER._running is False, "the deferred stop did not run"
 assert 13337 in _UNREGISTERED, _UNREGISTERED
 print("close_instance OK")
 
