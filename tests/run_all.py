@@ -13,6 +13,11 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
+# Per-harness wall-clock limit. The slowest harness (sync_test, with its
+# timeout/cancel timing knobs) runs in ~15 s; 300 s catches a hang without
+# ever failing a slow-but-healthy machine.
+TEST_TIMEOUT_SEC = 300
+
 TESTS = [
     "discovery_test.py",
     "compat_test.py",
@@ -62,7 +67,13 @@ def main() -> int:
     for name in TESTS:
         path = os.path.join(HERE, name)
         print(f"\n=== {name} ===")
-        rc = subprocess.call([sys.executable, path])
+        # A hanging harness (deadlock, wait box, an infinite loop in stubbed
+        # IDA code) used to hang the whole run and with it CI.
+        try:
+            rc = subprocess.call([sys.executable, path], timeout=TEST_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT after {TEST_TIMEOUT_SEC}s")
+            rc = -1
         if rc != 0:
             failures.append(name)
 
