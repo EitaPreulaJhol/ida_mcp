@@ -16,6 +16,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`callgraph` depth clamp), `tests/sync_test.py` (`IDASyncError` mapping,
   cross-thread request cancellation), `tests/memory_test.py` (clamped reads,
   BSS vs unmapped) and `tests/strings_test.py` (clamped limits, bounded scan).
+- MCP **session enforcement**: a request that carries an `Mcp-Session-Id` the
+  server did not issue (stale, expired, pruned, or from a previous IDA run) is
+  answered `404`, the Streamable HTTP signal to `initialize` again; `DELETE
+  /mcp` terminates the session and `GET /mcp` validates the id too. Requests
+  without an id (the `curl` examples, stateless clients) are unaffected.
+- `IDA_MCP_REQUIRE_TOKEN=1` requires the auth token on **every** request,
+  read-only tools and loopback included, without binding off-loopback. Off by
+  default; `server_health` reports the mode.
+- A connection cap (`McpServer.max_connections`, default 64, `503` beyond it)
+  and an idle timeout (`idle_timeout_sec`, default 30 s) on the threaded HTTP
+  server, bounding a local process that opens sockets to exhaust IDA's threads.
 
 ### Changed
 - CI and release workflows move to Node 24 actions (`actions/checkout@v7`,
@@ -24,6 +35,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `tests/run_all.py` gives every harness a 300 s wall-clock limit and counts a
   timeout as a failure; the CI and release jobs set `timeout-minutes`, so a
   stuck harness can no longer hold a runner.
+- `close_instance` replies before stopping: the server now goes away about a
+  second later instead of joining the HTTP thread on the IDA main thread
+  (which froze the UI before the reply was written).
+- The SigMaker uniqueness probe runs every 8 instructions and bisects the last
+  chunk instead of after every instruction: building a signature no longer
+  costs one database-wide scan per instruction, with an identical result.
 
 ### Removed
 - `idasync_read` (MFF_READ) and the dead `EXTERNAL_BASE_HEADER`,

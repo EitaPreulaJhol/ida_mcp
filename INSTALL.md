@@ -34,7 +34,7 @@ signatures). Installation has two halves:
 ## A. Install the IDA plugin
 
 1. Copy **both** items into the IDA plugins directory:
-   - the `ida_mcp/` folder 
+   - the `ida_mcp/` folder
    - `ida_mcp_loader.py` (this is the file IDA actually loads)
 
    | OS | Plugins directory |
@@ -103,6 +103,14 @@ debugger tools (total 243, the full registry).
 > `X-IDA-MCP-Token` header or append `&token=<token>` to the URL; read-only
 > steps 1-3 need no token on loopback (off-loopback, every request does). Pin a stable token with `IDA_MCP_TOKEN`, or set
 > `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user box.
+>
+> On a shared or potentially compromised machine, `IDA_MCP_REQUIRE_TOKEN=1`
+> requires the token on every request (read-only tools included) without
+> binding off-loopback.
+>
+> The `curl` probes below send no `Mcp-Session-Id`, which is allowed: the
+> server only validates a session id when one is sent (`404` for one it did not
+> issue, e.g. after an IDA restart).
 
 ### Pi Agent
 
