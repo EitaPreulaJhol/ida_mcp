@@ -24,8 +24,34 @@ jobs:
       # Refuse to publish e.g. tag v0.2.0 as ida_mcp-0.1.0.zip.
       - name: Build plugin zip (tag must match __version__)
         run: python scripts/package.py --expect-version "${GITHUB_REF_NAME#v}"
+      # Release notes come from CHANGELOG.md. GitHub's generated notes list only
+      # merged PRs, and this repo's commits go straight to main, so the tag
+      # section is the only place that describes the batch. A tag without a
+      # matching section fails here instead of publishing empty notes.
+      - name: Extract release notes (CHANGELOG section for the tag)
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          python - "$TAG" > release-notes.md <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          version = sys.argv[1].lstrip("v")
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          match = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |\Z)",
+                            text, re.M | re.S)
+          if match is None:
+              sys.exit(f"CHANGELOG.md has no section for {version}")
+          print(match.group(1).strip())
+          PY
+          {
+            echo
+            echo "**Full changelog**: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md"
+          } >> release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/ida_mcp-*.zip
-          generate_release_notes: true
+          body_path: release-notes.md
