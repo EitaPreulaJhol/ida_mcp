@@ -34,6 +34,19 @@ from .api_analysis import parse_addr
 from .regex_guard import compile_client_regex
 
 
+def _text_flags(case_sensitive: bool) -> int:
+    """Search flags for ``ida_search.find_text()``.
+
+    ``SEARCH_DOWN`` is mandatory: ``SEARCH_UP`` is 0, so a call without the
+    down bit walks towards *lower* addresses. ``SEARCH_CASE`` means
+    case-SENSITIVE, so it is only OR'ed in when the caller asked for it.
+    """
+    flags = ida_search.SEARCH_DOWN
+    if case_sensitive:
+        flags |= ida_search.SEARCH_CASE
+    return flags
+
+
 # ===========================================================================
 # Tools
 # ===========================================================================
@@ -87,7 +100,7 @@ def search_text(
     """
     ensure_analysis()
     results: list[str] = []
-    flags = 0 if case_sensitive else ida_search.SEARCH_CASE
+    flags = _text_flags(case_sensitive)
     partial = False
     try:
         ea = ida_search.find_text(0, 0, 0, text, flags)
@@ -238,7 +251,7 @@ def find_text_between(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    flags = 0 if case_sensitive else ida_search.SEARCH_CASE
+    flags = _text_flags(case_sensitive)
     results: list[str] = []
     partial = False
     ea = start_ea
@@ -246,7 +259,8 @@ def find_text_between(
         while ea < end_ea and len(results) < 200:
             check_cancelled()
             ea = ida_search.find_text(ea, 0, 0, text, flags)
-            if ea == ida_idaapi.BADADDR or ea >= end_ea:
+            # Defensive: a match outside the window would desync the walk.
+            if ea == ida_idaapi.BADADDR or not (start_ea <= ea < end_ea):
                 break
             results.append(hex(ea))
             ea += 1

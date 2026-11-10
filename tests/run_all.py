@@ -29,6 +29,7 @@ TESTS = [
     "functions_test.py",
     "ida94_calls_test.py",
     "query_test.py",
+    "search_flags_test.py",
     "composite_test.py",
     "tool_inventory_test.py",
     "api_memory_test.py",
