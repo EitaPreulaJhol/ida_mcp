@@ -243,4 +243,25 @@ assert "execute_script" in mod._UNSAFE_NAMES, mod._UNSAFE_NAMES
 assert "close_instance" in mod._UNSAFE_NAMES, mod._UNSAFE_NAMES
 print("unsafe marking OK")
 
+# 9) SIGPIPE is ignored only while the server runs (14.17): importing ida_mcp
+#    must not change the handler of the host process, and stop_server restores
+#    whatever was there before.
+import signal as _signal
+
+if hasattr(_signal, "SIGPIPE"):
+    _before = _signal.getsignal(_signal.SIGPIPE)
+    try:
+        # Start from a distinguishable state, so this proves the switch happens
+        # (Python's default SIG_IGN would make the assertions vacuous).
+        _signal.signal(_signal.SIGPIPE, _signal.SIG_DFL)
+        _port = mod.start_server("127.0.0.1", 13341)
+        assert _signal.getsignal(_signal.SIGPIPE) == _signal.SIG_IGN, \
+            "running server must ignore SIGPIPE"
+        mod.stop_server(_port)
+        assert _signal.getsignal(_signal.SIGPIPE) == _signal.SIG_DFL, \
+            "stop_server must restore the previous SIGPIPE handler"
+    finally:
+        _signal.signal(_signal.SIGPIPE, _before)
+    print("SIGPIPE scoped to start/stop OK")
+
 print("ALL SERVER TOOL TESTS PASSED")

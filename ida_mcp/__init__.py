@@ -13,13 +13,9 @@ import signal
 
 __version__ = "0.2.0"
 
-# Ignore SIGPIPE so the HTTP server writing a response doesn't kill IDA when a
-# client disconnects mid-stream.
-if hasattr(signal, "SIGPIPE"):
-    try:
-        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
-    except (ValueError, OSError):
-        pass
+# SIGPIPE is ignored only while the HTTP server runs (`server.start_server`),
+# not at package import: importing ida_mcp should not change the signal
+# disposition of the whole host process (all other IDA plugins included).
 
 # Import order is carefully chosen:
 #   1. Core infrastructure (rpc, sync) — no IDA-version-specific imports.

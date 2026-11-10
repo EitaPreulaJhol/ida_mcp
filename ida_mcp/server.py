@@ -9,6 +9,7 @@ import fnmatch
 import json
 import logging
 import os
+import signal
 import sys
 import time
 
@@ -348,6 +349,39 @@ def _addr_in_use(exc: OSError) -> bool:
             or getattr(exc, "winerror", None) in _ADDR_IN_USE_WINERRORS)
 
 
+# SIGPIPE handling is scoped to the running server (not done at package
+# import): a client disconnecting mid-write must not kill IDA, but merely
+# importing ida_mcp must not change the signal disposition of every other
+# plugin in the process either. The HTTP layer additionally swallows
+# BrokenPipe/ConnectionReset, so this is belt-and-braces.
+_PREV_SIGPIPE: object = None
+_SIGPIPE_SAVED = False
+
+
+def _ignore_sigpipe() -> None:
+    global _PREV_SIGPIPE, _SIGPIPE_SAVED
+    if _SIGPIPE_SAVED or not hasattr(signal, "SIGPIPE"):
+        return
+    try:
+        _PREV_SIGPIPE = signal.getsignal(signal.SIGPIPE)
+        _SIGPIPE_SAVED = True
+        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+    except (ValueError, OSError):
+        _SIGPIPE_SAVED = False
+
+
+def _restore_sigpipe() -> None:
+    global _PREV_SIGPIPE, _SIGPIPE_SAVED
+    if not _SIGPIPE_SAVED or not hasattr(signal, "SIGPIPE"):
+        return
+    try:
+        signal.signal(signal.SIGPIPE, _PREV_SIGPIPE)  # type: ignore[arg-type]
+    except (ValueError, OSError):
+        pass
+    _PREV_SIGPIPE = None
+    _SIGPIPE_SAVED = False
+
+
 def _serve_with_fallback(host: str, port: int) -> int:
     """Bind ``port`` or, if it is in use, the next free one in range.
 
@@ -379,6 +413,7 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
     """
     global _OWN_PORT
     _init_logging()
+    _ignore_sigpipe()
     cap = os.getenv("IDA_MCP_MAX_OUTPUT", "").strip()
     if cap:
         try:
@@ -426,6 +461,7 @@ def stop_server(port: int = 13337) -> None:
     """
     global _OWN_PORT
     MCP_SERVER.stop()
+    _restore_sigpipe()
     _OWN_PORT = None
     try:
         removed = api_hooks.remove_all_hooks()
