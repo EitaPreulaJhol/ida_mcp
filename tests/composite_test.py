@@ -383,4 +383,24 @@ r = json.loads(mod.diff_before_after("0x9999", "rename_func", '{"name": "x"}'))
 assert "error" in r, r
 print("diff_before_after OK")
 
+# --- callgraph: max_depth is clamped like trace_data_flow (14.3) ---
+_seen = {}
+
+def _fake_fetch(root, max_depth, max_nodes, max_edges, max_edges_per_func,
+                progress=""):
+    _seen["max_depth"] = max_depth
+    return {"root": root, "nodes": [], "edges": []}
+
+_orig_fetch = mod._fetch_callgraph_root
+mod._fetch_callgraph_root = _fake_fetch
+try:
+    r = json.loads(mod.callgraph("main", max_depth=10000))
+    assert r["graphs"], r
+    assert _seen["max_depth"] == 20, _seen
+    r = json.loads(mod.callgraph("main", max_depth=3))
+    assert _seen["max_depth"] == 3, _seen
+finally:
+    mod._fetch_callgraph_root = _orig_fetch
+print("callgraph max_depth clamped OK")
+
 print("ALL COMPOSITE TESTS PASSED")

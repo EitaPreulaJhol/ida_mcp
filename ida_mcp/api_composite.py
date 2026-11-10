@@ -690,7 +690,9 @@ def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
     rendering runs here on the HTTP worker thread. A 120 s worker-side
     budget bounds the whole call (previously the single-hop timeout).
     """
-    max_depth = max(0, int(max_depth))
+    # Clamped like trace_data_flow: ``traverse()`` is recursive, so an
+    # unclamped depth raised RecursionError (a traceback, not a clean error).
+    max_depth = max(0, min(int(max_depth), 20))
     max_nodes = min(max(int(max_nodes), 1), 100000)
     max_edges = min(max(int(max_edges), 1), 200000)
     max_edges_per_func = min(max(int(max_edges_per_func), 1), 5000)
