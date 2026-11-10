@@ -107,11 +107,11 @@ def _find_nth(pattern: str, start_ea: int, n: int):
         min_ea = inf_get_min_ea()
         max_ea = inf_get_max_ea()
         ea = max(start_ea, min_ea)
-        for _ in range(n):
+        for step in range(n):
             ea = ida_bytes.find_bytes(pattern, ea, range_end=max_ea)
             if ea == idaapi.BADADDR:
                 return idaapi.BADADDR
-            if _ != n - 1:
+            if step != n - 1:
                 ea += 1
         return ea
     except Exception:

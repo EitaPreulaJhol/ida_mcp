@@ -29,12 +29,9 @@ _VALID_NAME_RE = re.compile(r"^[A-Za-z_?$][\w?$@#]*$")
 def _demangle(name: str) -> str | None:
     """Demangle ``name``; return None when it is not mangled / on failure."""
     try:
-        dem = ida_name.demangle_name(name)
-    except TypeError:
-        try:
-            dem = ida_name.demangle_name(name, 0)
-        except Exception:
-            return None
+        # ``disable_mask`` is required (no default in any supported IDA) and
+        # ``demreq`` defaults to DQT_FULL, so two arguments are portable.
+        dem = ida_name.demangle_name(name, 0)
     except Exception:
         return None
     if not dem or dem == name:
