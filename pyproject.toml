@@ -36,6 +36,12 @@ dev = ["ruff>=0.5", "mypy>=1.0", "coverage>=7"]
 # The plugin is loaded by IDA from the source tree; packaging metadata only.
 packages = ["ida_mcp", "ida_mcp.zeromcp"]
 
+[tool.setuptools.package-data]
+# A pip-installed wheel must carry the profile allowlists: without them
+# get_profile() returns None for every name and ?profile= silently means
+# "no filter" (186 tools instead of the documented triage set).
+ida_mcp = ["profiles/*.txt"]
+
 [tool.setuptools.dynamic]
 version = { attr = "ida_mcp.__version__" }
 
