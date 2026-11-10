@@ -36,6 +36,12 @@ ida_dbg = types.ModuleType("ida_dbg")
 ida_dbg.DBG_Hooks = _HookBase
 sys.modules["ida_dbg"] = ida_dbg
 
+# 6.3: hooks remember which database they were installed in.
+_IDB = {"path": "/tmp/a.idb"}
+idc = types.ModuleType("idc")
+idc.get_idb_path = lambda: _IDB["path"]
+sys.modules["idc"] = idc
+
 # =========================================================================
 # Load api_hooks.py
 # =========================================================================
@@ -150,5 +156,23 @@ finally:
 assert _failed["ok"] is False, _failed
 assert mod._HOOKS == {}, mod._HOOKS
 print("hook registry ordering + failed hook OK")
+
+# 6.3: a tracer must not keep feeding the buffer of another database (IDA keeps
+# the process, and the hook, alive across File > Open).
+_IDB["path"] = "/tmp/a.idb"
+r = json.loads(mod.install_hook("idb"))
+cross_id = r["hook_id"]
+entry = mod._HOOKS[cross_id]
+entry["hook"].renamed(0x1000, "in_a", True)
+_IDB["path"] = "/tmp/b.idb"
+entry["hook"].renamed(0x2000, "in_b", True)
+r = json.loads(mod.get_hook_info(cross_id))
+assert r["event_count"] == 1, r
+assert r["recent_events"][0]["detail"]["new_name"] == "in_a", r
+assert r["stale"] is True, r
+assert r["idb"] == "/tmp/a.idb", r
+print("hook does not record events from another IDB OK")
+_IDB["path"] = "/tmp/a.idb"
+mod.remove_hooks(cross_id)
 
 print("ALL HOOKS TESTS PASSED")

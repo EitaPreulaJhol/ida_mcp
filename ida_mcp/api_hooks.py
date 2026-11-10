@@ -15,6 +15,8 @@ import json
 import time
 from collections import deque
 
+import idc
+
 
 from .rpc import tool, unsafe
 from .sync import idasync
@@ -31,9 +33,23 @@ def _next_hook_id(hook_type: str) -> str:
     return f"{hook_type}_{_HOOK_SEQ[0]}"
 
 
+def _current_idb() -> str:
+    """Path of the database open in IDA right now ("" when unknown)."""
+    try:
+        return idc.get_idb_path() or ""
+    except Exception:
+        return ""
+
+
 def _log(hook_id: str, event: str, detail: dict) -> None:
     entry = _HOOKS.get(hook_id)
     if entry is None:
+        return
+    # IDA keeps the process -- and the hook -- alive across File > Open. Events
+    # from another database would land in a buffer the agent attributes to the
+    # previous binary, so they are dropped and the hook is flagged stale.
+    if entry.get("idb") and entry["idb"] != _current_idb():
+        entry["stale"] = True
         return
     try:
         entry["events"].append({"event": event, "detail": detail,
@@ -165,6 +181,7 @@ def _install(hook_type: str) -> dict:
     # Register BEFORE hook(): an event delivered inside hook() is only logged
     # if _log() finds the entry, and the id is the only handle the caller gets.
     _HOOKS[hook_id] = {"type": hook_type, "hook": hook,
+                       "idb": _current_idb(),
                        "events": deque(maxlen=_EVENTS_PER_HOOK),
                        "event_count": 0, "installed_at": round(time.monotonic(), 3)}
     try:
@@ -234,11 +251,15 @@ def get_hook_info(hook_id: str = "") -> str:
         return json.dumps({
             "hook_id": hook_id,
             "type": entry["type"],
+            "idb": entry.get("idb", ""),
+            "stale": bool(entry.get("stale")),
             "event_count": entry.get("event_count", 0),
             "recent_events": list(entry["events"])[-20:],
         }, indent=2)
     return json.dumps({
         "hooks": [{"hook_id": hid, "type": e["type"],
+                   "idb": e.get("idb", ""),
+                   "stale": bool(e.get("stale")),
                    "event_count": e.get("event_count", 0)}
                   for hid, e in _HOOKS.items()],
         "count": len(_HOOKS),
