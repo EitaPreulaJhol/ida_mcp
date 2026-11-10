@@ -7,7 +7,7 @@ importing the package (which would require IDA).
 
 Usage:
     python scripts/package.py
-    python scripts/package.py --expect-version 0.2.0   # release: tag guard
+    python scripts/package.py --expect-version 0.2.1   # release: tag guard
 """
 import argparse
 import ast

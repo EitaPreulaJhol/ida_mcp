@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-10
+
 ### Added
 - Regression tests for the review batch: `tests/search_flags_test.py`
   (`search_text`/`find_text_between` flag bits), `tests/modify_test.py`
@@ -256,6 +258,7 @@ vendored MCP transport, main-thread-safe `@idasync` layer, lazy `triage` /
 `readonly` profiles, token-gated unsafe/debugger surface, and the `/ida` +
 `ida-scripting` agent skills.
 
-[Unreleased]: https://github.com/EitaPreulaJhol/ida_mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/EitaPreulaJhol/ida_mcp/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/EitaPreulaJhol/ida_mcp/tree/5d12fb0
