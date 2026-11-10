@@ -117,10 +117,36 @@ if audited:
           "audit records the code hash")
 check(all(r["tool"] != "ping_ok" for r in lines), "safe tool not audited")
 
+# --- IDA_MCP_AUDIT_FULL: the untruncated payload goes to a sidecar -----------
+server.audit_full = True
+FULL_CODE = "# " + "B" * 600 + "\nresult = 1"
+_, full_resp = call("mutate", {"code": FULL_CODE}, query="?unsafe=true")
+check(full_resp["result"]["isError"] is False, "mutate ran with audit_full")
+time.sleep(0.1)
+with open(AUDIT, encoding="utf-8") as f:
+    lines = [json.loads(ln) for ln in f if ln.strip()]
+with_full = [r for r in lines if r["tool"] == "mutate" and "args_full" in r]
+check(len(with_full) == 1, "main record points at the full-args sidecar")
+if with_full:
+    check(with_full[0]["args"]["code"].endswith("\u2026"),
+          "main record still carries the short preview")
+    sidecar = with_full[0]["args_full"]
+    check(os.path.isfile(os.path.join(os.path.dirname(AUDIT), sidecar)), sidecar)
+    with open(os.path.join(os.path.dirname(AUDIT), sidecar), encoding="utf-8") as f:
+        side = [json.loads(ln) for ln in f if ln.strip()]
+    check(len(side) == 1, "one sidecar record")
+    check(side[0]["tool"] == "mutate", "sidecar names the tool")
+    check(side[0]["args"]["code"] == FULL_CODE,
+          "sidecar carries the untruncated code")
+    check(len(side[0]["args"]["code"]) > 500, "sidecar is not size-bounded")
+server.audit_full = False
+
 # --- audit disabled by default (no path) ---
 server2 = McpServer("no-audit")
 check(server2.audit_path is None or os.environ.get("IDA_MCP_AUDIT"),
       "audit disabled by default when IDA_MCP_AUDIT unset")
+check(server2.audit_full is False or os.environ.get("IDA_MCP_AUDIT_FULL"),
+      "audit_full disabled by default when IDA_MCP_AUDIT_FULL unset")
 
 server.stop()
 

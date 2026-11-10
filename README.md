@@ -83,6 +83,7 @@ Everything is configured through environment variables - there is no config file
 | `IDA_MCP_MAX_OUTPUT` | `524288` (512 KiB) | Max characters in a tool result before it is refused with an actionable `isError`. Accepts `0x` hex; `0` disables the cap. |
 | `IDA_MCP_LOG` | off | `debug`/`info`/`warning` (or `1`/`true`) routes `ida_mcp` package logs (per-tool main-thread hold times, lifecycle) to the IDA output window. |
 | `IDA_MCP_AUDIT` | off | Path to a JSONL file. When set, every mutating (unsafe/debugger) tool call appends an audit record (`ts`, `tool`, `ok`, `level` = `unsafe`/`dbg`, size-bounded `args`, plus `code_sha256`/`code_len` for the script tools and `error` on failure). Read-only tools are not logged. |
+| `IDA_MCP_AUDIT_FULL` | off | `1`/`true`/`yes`: with `IDA_MCP_AUDIT` set, also append the **untruncated** tool arguments to `<audit_path>.args.jsonl`, and point the main record at the sidecar (`args_full`). The page of the full `execute_script` body is there; the main file stays small. |
 | `IDA_MCP_REDACT_ERRORS` | unset | `1`/`true`/`yes`: an unexpected exception in a tool returns only `Internal Error: <type>: <message>` instead of the full traceback, which is logged in IDA instead (see `IDA_MCP_LOG`). Consider it when untrusted clients can connect. |
 
 **Client (pi bridge, set in the pi/agent environment):**

@@ -989,6 +989,11 @@ class McpServer:
         # Optional audit trail of mutating (unsafe/ext) tool calls (item 08).
         # IDA_MCP_AUDIT=<path> appends JSONL; unset = disabled (default).
         self.audit_path: str | None = (os.environ.get("IDA_MCP_AUDIT", "").strip() or None)
+        # IDA_MCP_AUDIT_FULL=1 also appends the *untruncated* args to
+        # `<audit_path>.args.jsonl`: the main record keeps a short preview (plus
+        # a hash for the script tools), which is useless for forensics.
+        self.audit_full: bool = os.environ.get(
+            "IDA_MCP_AUDIT_FULL", "").strip().lower() in ("1", "true", "yes")
 
         self.registry: JsonRpcRegistry = JsonRpcRegistry()
         # Unexpected exceptions return their full traceback to the client by
@@ -1298,11 +1303,41 @@ class McpServer:
                 rec["code_len"] = len(code)
             if error:
                 rec["error"] = str(error)[:500]
+            if self.audit_full and args:
+                sidecar = self._write_audit_full(name, args)
+                if sidecar:
+                    rec["args_full"] = sidecar
             line = json.dumps(rec, separators=(",", ":"), default=str)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
         except Exception:
             pass
+
+    def _write_audit_full(self, name, args) -> str | None:
+        """Append the untruncated args to ``<audit_path>.args.jsonl``.
+
+        Opt-in (``IDA_MCP_AUDIT_FULL``): the main audit file stays small and
+        readable, while the sidecar keeps exactly what was sent -- including the
+        full body of ``execute_script``. Returns the sidecar's file name so the
+        main record can point at it, or None when the write failed.
+        """
+        path = self.audit_path
+        if not path:
+            return None
+        sidecar = path + ".args.jsonl"
+        try:
+            import datetime
+            rec = {
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "tool": name,
+                "args": args,
+            }
+            line = json.dumps(rec, separators=(",", ":"), default=str)
+            with open(sidecar, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+            return os.path.basename(sidecar)
+        except Exception:
+            return None
 
     def _origin_allowed(self, origin: str) -> bool:
         if not origin:
