@@ -25,6 +25,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   timeout as a failure; the CI and release jobs set `timeout-minutes`, so a
   stuck harness can no longer hold a runner.
 
+### Removed
+- `idasync_read` (MFF_READ) and the dead `EXTERNAL_BASE_HEADER`,
+  `_enabled_extensions`, `require_streamable_http_session` and
+  `has_http_session` members. No tool can run under MFF_READ (every read tool
+  calls `ensure_analysis()`, which mutates the database), and the rest had no
+  readers. Unused until now, so no client is affected.
+
 ### Fixed
 - `search_text` and `find_text_between` sent `0` (= `SEARCH_UP`) for
   `case_sensitive=True` and `SEARCH_CASE` for `case_sensitive=False`: they
@@ -84,6 +91,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The audit log distinguishes the `unsafe` and `dbg` surfaces (`level`) and
   keeps `code_sha256`/`code_len` for the script tools, whose code was otherwise
   cut off by the 200-char args preview.
+- The managed hook registry now stores a tracer *before* calling `hook()`, so
+  an event delivered from inside `hook()` is no longer dropped, and a `hook()`
+  that fails removes its entry instead of leaving a dead one behind.
+- `list_profiles()` returns copies of the cached sets: mutating the result used
+  to change the profile gate for every later request.
 
 ## [0.2.0] - 2026-11-08
 
