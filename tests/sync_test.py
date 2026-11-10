@@ -441,4 +441,35 @@ assert "exc" in _out, (f"cancellation was not observed on the main thread: "
 assert isinstance(_out["exc"], mod.CancelledError), _out
 print("check_cancelled sees the request cancel event OK")
 
+# Test 11: a tool body that replaces sys.setprofile must not leak its own hook
+#          into the host, and the wrapper must notice (14.18).
+import logging as _logging  # noqa: E402
+
+_prev_profile = sys.getprofile()
+_warnings = []
+
+
+class _Collect(_logging.Handler):
+    def emit(self, record):
+        _warnings.append(record.getMessage())
+
+
+_log = _logging.getLogger(mod.__name__)
+_handler = _Collect()
+_log.addHandler(_handler)
+_log.setLevel(_logging.WARNING)
+try:
+    @mod.idasync
+    def _replaces_profile():
+        sys.setprofile(None)
+        return "done"
+
+    assert _replaces_profile() == "done"
+finally:
+    _log.removeHandler(_handler)
+
+assert sys.getprofile() is _prev_profile, "the tool's hook leaked into the host"
+assert any("setprofile" in m for m in _warnings), _warnings
+print("profile-hook replacement is detected and cleaned up OK")
+
 print("ALL SYNC RESULT-CONTAINER TESTS PASSED")

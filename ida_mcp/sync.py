@@ -670,6 +670,16 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
                     # gone now, so the watchdog can no longer inject anyway.
                     hard._done.set()
                     hard.frame = None
+                if sys.getprofile() is not profilefunc:
+                    # The tool body (typically execute_script) installed its
+                    # own hook, which also removed our soft-timeout hook for
+                    # the rest of the call. Restore the host's hook anyway: a
+                    # script must not leave a global profiler behind. Script
+                    # tools are still bounded by the hard-interrupt watchdog.
+                    logger.warning(
+                        "[MCP] tool %s replaced sys.setprofile; the soft "
+                        "timeout was not enforced for the rest of the call",
+                        ff.__name__)
                 sys.setprofile(old_profile)
                 stop_ticker.set()
                 _deadline_state.deadline = None
