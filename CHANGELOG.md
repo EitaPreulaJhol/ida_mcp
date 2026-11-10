@@ -9,10 +9,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - Regression tests for the review batch: `tests/search_flags_test.py`
   (`search_text`/`find_text_between` flag bits), `tests/modify_test.py`
-  (`make_data` arity), `tests/packaging_test.py` (profile files in a wheel),
-  plus new cases in `tests/query_test.py` (deep-nesting regex),
-  `tests/composite_test.py` (`callgraph` depth clamp) and `tests/sync_test.py`
-  (`IDASyncError` mapping, cross-thread request cancellation).
+  (`make_data` arity, bounded `patch_bytes`), `tests/packaging_test.py`
+  (profile files in a wheel), `tests/profile_http_test.py` (profile contract
+  and `arguments` type over live HTTP), plus new cases in
+  `tests/query_test.py` (deep-nesting regex), `tests/composite_test.py`
+  (`callgraph` depth clamp), `tests/sync_test.py` (`IDASyncError` mapping,
+  cross-thread request cancellation), `tests/memory_test.py` (clamped reads,
+  BSS vs unmapped) and `tests/strings_test.py` (clamped limits, bounded scan).
 
 ### Changed
 - CI and release workflows move to Node 24 actions (`actions/checkout@v7`,
@@ -44,6 +47,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A packaged wheel now includes `ida_mcp/profiles/*.txt`
   (`[tool.setuptools.package-data]`); without them `?profile=` was silently
   ignored after `pip install`, widening the tool list from 16 to 186.
+- An unknown `?profile=` is rejected with `-32602` naming the requested and the
+  available profiles. It used to fail open (no filtering), so a typo widened
+  the listed tool set instead of showing the requested one.
+- A non-object `arguments` (`["0x1000", 16]`) is rejected with `-32602` instead
+  of reaching the tool positionally (`func(*params)`), which bypassed the JSON
+  schema and the scalar coercion.
+- Oversized pagination parameters are clamped to the documented maximum and the
+  applied value is reported (`limit`, or `requested`/`truncated` on
+  `get_bytes`) instead of being reset to the default: `size=8192` used to read
+  64 bytes and `limit=10000` returned 100 entries, which reads as end-of-data.
+- `get_bytes`/`get_byte`/`get_dword`/… on an unmapped address return an error
+  instead of a zero-filled block: `read_bytes_bss_safe` now uses
+  `get_bytes_and_mask()` to tell uninitialized (BSS) bytes from an address that
+  is not in the program at all.
+- `patch_bytes` validates the address is mapped, caps the write at 64 KiB and
+  issues one bulk `ida_bytes.patch_bytes()` call; it used to loop per byte over
+  unbounded input on the IDA main thread.
+- The string enumerators honour `_MAX_STRINGS` and poll `check_cancelled()`
+  every 2048 entries instead of materializing the whole string table before
+  paginating, which froze the main thread on a large binary.
 
 ## [0.2.0] - 2026-11-08
 
