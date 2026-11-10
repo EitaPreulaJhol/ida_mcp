@@ -242,18 +242,32 @@ assert "nested quantifiers" in r["error"], r
 assert mod._match_glob("aaaa!", "/(a+)+b/") is False
 print("client regex guard OK")
 
-# deep nesting raised RecursionError (not re.error) -> -32603 + traceback
+# Deep nesting: on 3.11 the regex parser overflows below MAX_PATTERN_LEN and
+# the guard converts that into re.error; on 3.12+ the same pattern compiles
+# fine, so "must be rejected" is an interpreter-specific expectation. What must
+# hold everywhere is that no RecursionError escapes (that would be a -32603
+# traceback) and the tools answer cleanly either way.
 deep = "(" * 495 + "a" + ")" * 495
 assert len(deep) <= _rg.MAX_PATTERN_LEN
+deep_error = None
 try:
     _rg.compile_client_regex(deep)
-    raise AssertionError("deep nesting should be rejected")
-except re.error:
-    pass
-r = json.loads(mod.func_query(name_regex=deep))
-assert "Invalid name_regex" in r["error"], r
-r = json.loads(mod.entity_query(kind="strings", regex=deep))
-assert "Invalid regex" in r["error"], r
-print("deep-nesting regex rejected cleanly OK")
+except RecursionError:
+    raise AssertionError("RecursionError escaped compile_client_regex") from None
+except re.error as exc:
+    deep_error = exc
+if sys.version_info < (3, 12):
+    # The interpreter IDA bundles: this depth overflows, and the message must
+    # say why instead of surfacing the parser's RecursionError.
+    assert deep_error is not None, "3.11 should overflow at this depth"
+    assert "nesting too deep" in str(deep_error), deep_error
+for _query in (lambda: mod.func_query(name_regex=deep),
+               lambda: mod.entity_query(kind="strings", regex=deep)):
+    out = json.loads(_query())
+    assert "Traceback" not in json.dumps(out), out
+    if isinstance(out, dict):
+        # either a clean error string or a normal payload (error: null)
+        assert out.get("error") or "data" in out, out
+print("deep-nesting regex handled without a traceback OK")
 
 print("ALL QUERY TESTS PASSED")
