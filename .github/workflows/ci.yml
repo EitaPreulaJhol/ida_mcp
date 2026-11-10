@@ -100,5 +100,7 @@ jobs:
           coverage erase
           python tests/run_all.py
           coverage combine || true
-          coverage report || true
+          # fail_under lives in pyproject: a floor breach reddens this step
+          # (the job stays continue-on-error, so it never blocks a merge).
+          coverage report
           rm -f sitecustomize.py

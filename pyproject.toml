@@ -65,7 +65,6 @@ select = ["F", "E", "W", "C4"]
 ignore = [
     "E501",  # line length is enforced softly; long docstrings/URLs are fine
     "E741",  # ambiguous names (l, O) show up in short RE/loop locals
-    "B008",  # function calls in argument defaults are used intentionally
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -108,3 +107,8 @@ omit = ["ida_mcp/__init__.py"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+# Floor for `coverage report` (CI + `make coverage`). The measured value was
+# ~68% when the suite loaded the real modules; 60 leaves headroom for an
+# unrelated refactor while still catching a real regression. Re-measure with
+# `make coverage` before raising it.
+fail_under = 60
