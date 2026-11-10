@@ -9,7 +9,6 @@ Architecture (aligned with ida-pro-mcp / idalib-mcp):
 - server.py: tool definitions + hosting
 - plugin.py: IDA plugin entry point
 """
-import signal
 
 __version__ = "0.2.0"
 

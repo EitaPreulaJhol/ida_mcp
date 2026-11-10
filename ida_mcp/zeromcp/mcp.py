@@ -5,8 +5,8 @@ MCP Streamable HTTP transport (POST /mcp, GET /mcp SSE, DELETE /mcp) plus the
 legacy SSE transport (GET /sse, POST /sse?session=) on top of
 ThreadingHTTPServer, so no external ASGI/uvicorn dependency is required.
 """
-import inspect
 import hashlib
+import inspect
 import json
 import logging
 import os

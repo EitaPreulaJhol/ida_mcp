@@ -11,7 +11,6 @@ Both are client errors the agent can act on, so they are rejected explicitly
 profile is parsed per request into thread-local state.
 """
 import json
-import sys
 import urllib.request
 
 # zeromcp is IDA-free: import the real modules (true paths for coverage).
