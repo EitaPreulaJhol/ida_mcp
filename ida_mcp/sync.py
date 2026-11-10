@@ -192,11 +192,7 @@ def _hide_tool_wait_box() -> None:
 
 
 def _resolve_sync_mode(explicit) -> int:
-    """Resolve the execute_sync mode, tolerating stubbed IDA modules.
-
-    Test harnesses stub ``idaapi`` with only ``MFF_WRITE``; fall back to it
-    when ``MFF_READ`` is unavailable so ``idasync_read`` still works there.
-    """
+    """Resolve the execute_sync mode, tolerating stubbed IDA modules."""
     if explicit is not None:
         return explicit
     return getattr(idaapi, "MFF_WRITE", 2)
@@ -696,7 +692,7 @@ def sync_wrapper(ff, timeout_override=None, keep_batch=False, mode=None,
 
 
 def _idasync_with_mode(f, mode):
-    """Shared body for @idasync (write) and @idasync_read (read)."""
+    """Decorate ``f`` to run on the IDA main thread with ``execute_sync(mode)``."""
 
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
@@ -714,21 +710,12 @@ def _idasync_with_mode(f, mode):
 def idasync(f):
     """Run the function on the IDA main thread in write mode.
 
-    Default for all tools. Read-only tools may use @idasync_read, but
-    anything touching Hex-Rays/decompilation must stay on WRITE.
+    The single sync decorator: every tool mutates something on its way in
+    (``ensure_analysis()`` runs auto-analysis, the decompiler caches, type and
+    name queries touch caches), so MFF_WRITE is the honest mode for all of
+    them. Hex-Rays calls require WRITE regardless.
     """
     return _idasync_with_mode(f, getattr(idaapi, "MFF_WRITE", 2))
-
-
-def idasync_read(f):
-    """Run the function on the IDA main thread in read (shared) mode.
-
-    For pure read-only tools (listings, queries). Never use for tools that
-    mutate the IDB, call the decompiler, or change types/names/comments.
-    Falls back to WRITE when the IDA version lacks MFF_READ.
-    """
-    return _idasync_with_mode(
-        f, getattr(idaapi, "MFF_READ", getattr(idaapi, "MFF_WRITE", 2)))
 
 
 def tool_timeout(seconds: float):

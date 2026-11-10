@@ -1,6 +1,5 @@
 # Vendored/adapted from zeromcp 1.3.0 (trimmed for ida_mcp)
 from .mcp import (
-    EXTERNAL_BASE_HEADER,
     McpRpcRegistry,
     McpToolError,
     McpServer,
@@ -20,7 +19,6 @@ from .jsonrpc import (
 )
 
 __all__ = [
-    "EXTERNAL_BASE_HEADER",
     "McpRpcRegistry",
     "McpToolError",
     "McpServer",

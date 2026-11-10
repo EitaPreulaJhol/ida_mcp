@@ -41,7 +41,6 @@ def ext(group):
 
 SYNC_STUB = """
 idasync = lambda f: f
-idasync_read = lambda f: f
 keep_batch = lambda f: f
 hard_interrupt = lambda f: f
 def tool_timeout(seconds):

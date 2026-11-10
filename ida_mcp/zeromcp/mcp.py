@@ -75,7 +75,6 @@ class _McpThreadingHTTPServer(_DisconnectQuietMixin, ThreadingHTTPServer):
 class _McpHTTPServer(_DisconnectQuietMixin, HTTPServer):
     pass
 
-EXTERNAL_BASE_HEADER = "X-IDA-MCP-External-Base"
 
 # MCP protocol revisions this server speaks, newest first. initialize echoes
 # the client's version when it is one of these and otherwise answers with
@@ -838,11 +837,9 @@ class McpServer:
         self._http_sessions_lock = threading.Lock()
         self.http_session_ttl_sec = 24 * 60 * 60
         self.http_session_max_count = 4096
-        self._enabled_extensions: set[str] = set()  # legacy; per-request groups live in thread-local
         self._extensions_registry = extensions if extensions is not None else {}
         self._sse_connections: dict[str, _McpSseConnection] = {}
         self._sse_lock = threading.Lock()
-        self.require_streamable_http_session = False
         self.unsafe_tools: set[str] = set()
         # Auth token gating the dangerous surface (unsafe + extension tools).
         # None = auth disabled (loopback-only, legacy/open); when set, a request
@@ -1053,16 +1050,6 @@ class McpServer:
             self._http_sessions.pop(session_id, None)
             self._http_sessions[session_id] = now
             self._prune_sessions(now)
-
-    def has_http_session(self, session_id: str) -> bool:
-        now = time.monotonic()
-        with self._http_sessions_lock:
-            self._prune_sessions(now)
-            if session_id not in self._http_sessions:
-                return False
-            self._http_sessions.pop(session_id, None)
-            self._http_sessions[session_id] = now
-            return True
 
     def _prune_sessions(self, now: float) -> None:
         if self.http_session_ttl_sec > 0:
