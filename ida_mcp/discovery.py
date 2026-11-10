@@ -6,6 +6,7 @@ reading these files and validating PID liveness + TCP reachability.
 """
 import datetime
 import glob
+import ipaddress
 import json
 import os
 import socket
@@ -117,6 +118,51 @@ def is_pid_alive(pid: int) -> bool:
         return False
 
 
+# Bind hosts that mean "this machine" and the loopback address they map to.
+_PROBE_ALIASES = {"0.0.0.0": "127.0.0.1", "::": "::1", "": "127.0.0.1",
+                  "localhost": "127.0.0.1"}
+
+_LOCAL_ADDRESSES: set[str] | None = None
+
+
+def _local_addresses() -> set[str]:
+    """Addresses that name this machine (resolved once, cached)."""
+    global _LOCAL_ADDRESSES
+    if _LOCAL_ADDRESSES is None:
+        addrs = {"127.0.0.1", "::1", "localhost"}
+        try:
+            for info in socket.getaddrinfo(socket.gethostname(), None):
+                addrs.add(str(info[4][0]).lower())
+        except OSError:
+            pass
+        _LOCAL_ADDRESSES = addrs
+    return _LOCAL_ADDRESSES
+
+
+def probe_target(host) -> str | None:
+    """Host to probe for a discovery entry, or None when it must not be probed.
+
+    The instance file is local, but the ``host`` inside it is data: without this
+    a file naming any address made the IDA process open a TCP connection there
+    (a port scanner driven by whoever can write to the instances dir). A local
+    instance is reachable on loopback or on one of this machine's own
+    addresses, so anything else is reported as ``unverified`` and not probed.
+    Hostnames are never resolved, on purpose.
+    """
+    name = str(host or "").strip().lower().strip("[]")
+    name = _PROBE_ALIASES.get(name, name)
+    if not name:
+        return "127.0.0.1"
+    if name in _local_addresses():
+        return name
+    try:
+        if ipaddress.ip_address(name).is_loopback:
+            return name
+    except ValueError:
+        pass  # a hostname: not something we resolve
+    return None
+
+
 def probe_instance(host, port, timeout=2.0) -> bool:
     """Check if an instance is reachable via TCP."""
     try:
@@ -145,7 +191,14 @@ def discover_instances():
         if not is_pid_alive(info["pid"]):
             _quiet_unlink(file_path)
             continue
-        if not probe_instance(info["host"], info["port"], timeout=1.0):
+        target = probe_target(info.get("host"))
+        if target is None:
+            # Not reachable from here, or not something we probe: keep the entry
+            # (it is a real, running instance) but say it is unverified.
+            info["unverified"] = True
+            result.append(info)
+            continue
+        if not probe_instance(target, info["port"], timeout=1.0):
             _quiet_unlink(file_path)
             continue
         result.append(info)
