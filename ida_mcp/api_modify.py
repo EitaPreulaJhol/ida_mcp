@@ -92,6 +92,10 @@ def make_data(
 # Tools — Patching
 # ===========================================================================
 
+# Upper bound for a single patch_bytes call: the whole write runs on the IDA
+# main thread, and a hex string arrives from a model (no natural limit).
+_MAX_PATCH_BYTES = 64 * 1024
+
 
 @tool
 @idasync
@@ -103,7 +107,7 @@ def patch_bytes(
     """Patch bytes at a memory address with hex data.
 
     ``data`` is a hex string, with or without spaces
-    (e.g., ``"9090"`` or ``"90 90"``).
+    (e.g., ``"9090"`` or ``"90 90"``). Capped at ``_MAX_PATCH_BYTES``.
 
     **Unsafe** — requires ``?unsafe=true``.
     """
@@ -119,10 +123,19 @@ def patch_bytes(
     except ValueError as e:
         return json.dumps({"error": f"Invalid hex data: {e}"})
 
-    for i, b in enumerate(raw):
-        ida_bytes.patch_byte(ea + i, b)
-
     size = len(raw)
+    if size == 0:
+        return json.dumps({"error": "Empty patch"})
+    if size > _MAX_PATCH_BYTES:
+        return json.dumps({"addr": hex(ea), "error":
+                           f"Patch too large: {size} bytes (max {_MAX_PATCH_BYTES})"})
+    if not ida_bytes.is_mapped(ea):
+        return json.dumps({"error": f"Address not mapped: {hex(ea)}"})
+
+    # One bulk write: the per-byte loop was O(n) Python calls on the main
+    # thread for arbitrarily large input (patch_asm already did it this way).
+    ida_bytes.patch_bytes(ea, raw)
+
     # Invalidate caches
     ida_bytes.del_items(ea, ida_bytes.DELIT_NOTRUNC, size)
 

@@ -44,6 +44,8 @@ ida_bytes.create_strlit = lambda ea, length, strtype: _CREATED.append(
 ida_bytes.patch_bytes = lambda ea, buf: _PATCHED.append((ea, bytes(buf)))
 ida_bytes.patch_byte = lambda ea, value: _PATCHED.append((ea, bytes([value])))
 ida_bytes.del_items = lambda ea, flags=0, nbytes=1: True
+ida_bytes.DELIT_NOTRUNC = 1
+ida_bytes.DELIT_SIMPLE = 0
 sys.modules["ida_bytes"] = ida_bytes
 
 ida_name = types.ModuleType("ida_name")
@@ -102,8 +104,26 @@ assert "error" in r, r
 print("make_data unknown type OK")
 
 # =========================================================================
-# patch_bytes: input validation (bulk-write assertions land with 14.13)
+# patch_bytes: one bulk write, bounded, mapped only (14.13)
 # =========================================================================
+
+_PATCHED.clear()
+r = json.loads(mod.patch_bytes("0x1000", "90 90 cc"))
+assert r.get("ok") is True and r["size"] == 3, r
+assert _PATCHED == [(0x1000, b"\x90\x90\xcc")], _PATCHED
+print("patch_bytes uses one bulk write OK")
+
+_PATCHED.clear()
+big = "90" * (64 * 1024 + 1)
+r = json.loads(mod.patch_bytes("0x1000", big))
+assert "error" in r and "max" in r["error"], r
+assert _PATCHED == [], f"oversized patch was written: {len(_PATCHED)}"
+print("patch_bytes size cap OK")
+
+r = json.loads(mod.patch_bytes("0xBAD", "90"))  # is_mapped() -> False
+assert "error" in r, r
+assert _PATCHED == [], _PATCHED
+print("patch_bytes unmapped address OK")
 
 r = json.loads(mod.patch_bytes("0x1000", "zz"))
 assert "error" in r, r
