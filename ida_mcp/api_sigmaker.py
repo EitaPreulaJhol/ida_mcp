@@ -29,6 +29,12 @@ from .compat import inf_get_max_ea, inf_get_min_ea
 
 
 _FORMATS = ("ida", "x64dbg", "mask", "bitmask")
+# Probe uniqueness only every N instructions. Each probe is one or two
+# database-wide find_bytes() scans, so probing after every instruction made a
+# signature cost N_instructions x image_size. The probe is delayed, not skipped:
+# once a chunk boundary is unique, the minimal prefix is located inside that
+# chunk by bisection (uniqueness is monotone in the pattern length).
+_SIG_PROBE_EVERY = 8
 _WILDCARD_TYPES = None  # resolved lazily (needs ida_ua constants)
 
 
@@ -131,6 +137,8 @@ def _make_unique(start_ea: int, max_length: int,
     sig: list = []
     ea = start_ea
     steps = 0
+    checkpoints: list[tuple[int, int]] = []  # (pattern length, end_ea)
+    unique_at = -1                           # index into checkpoints
     while len(sig) < max_length:
         steps += 1
         if steps % 8 == 0:
@@ -144,15 +152,32 @@ def _make_unique(start_ea: int, max_length: int,
         if part is None:
             break
         sig.extend(part)
-        if _is_unique(_to_ida_pattern(sig), start_ea):
-            return sig, True, ea + len(part), None
         ea += len(part)
-    if not sig:
+        checkpoints.append((len(sig), ea))
+        if len(checkpoints) % _SIG_PROBE_EVERY == 0:
+            if _is_unique(_to_ida_pattern(sig), start_ea):
+                unique_at = len(checkpoints) - 1
+                break
+    if not checkpoints:
         return None, False, start_ea, "No decodable instruction at address"
-    unique = _is_unique(_to_ida_pattern(sig), start_ea)
-    if unique:
-        return sig, True, ea, None
-    return sig, False, ea, f"No unique signature within {max_length} bytes"
+    if unique_at < 0:
+        # No chunk boundary was unique: the whole pattern still might be.
+        if not _is_unique(_to_ida_pattern(sig), start_ea):
+            return sig, False, ea, f"No unique signature within {max_length} bytes"
+        unique_at = len(checkpoints) - 1
+    # Smallest unique prefix in the last chunk (uniqueness is monotone, so a
+    # bisection over the recorded instruction boundaries is exact).
+    lo = max(0, unique_at - _SIG_PROBE_EVERY)
+    hi = unique_at
+    while lo < hi:
+        mid = (lo + hi) // 2
+        length, _end = checkpoints[mid]
+        if _is_unique(_to_ida_pattern(sig[:length]), start_ea):
+            hi = mid
+        else:
+            lo = mid + 1
+    length, end_ea = checkpoints[lo]
+    return sig[:length], True, end_ea, None
 
 
 def _split_addrs(addrs: str) -> list[str]:

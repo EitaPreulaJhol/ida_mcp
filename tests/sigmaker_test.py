@@ -26,6 +26,14 @@ _MEM.update({0x1000 + i: b for i, b in enumerate(
     [0x48, 0x8B, 0x05, 0x11, 0x22, 0x33, 0x90])})
 _MEM.update({0x2000 + i: b for i, b in enumerate(
     [0x48, 0x8B, 0x05, 0xAA, 0xBB, 0x90])})
+# Longer fixture for the chunked uniquess probe (plan 15, item 15.5): 20
+# one-byte instructions at 0x6000, the first 12 of which also appear at 0x7000.
+_LONG_BASE = 0x6000
+_LONG_DUP = 0x7000
+_LONG_LEN = 20
+_LONG_SHARED = 12
+_MEM.update({_LONG_BASE + i: 0x40 + i for i in range(_LONG_LEN)})
+_MEM.update({_LONG_DUP + i: 0x40 + i for i in range(_LONG_SHARED)})
 
 
 class FakeOp:
@@ -48,6 +56,7 @@ _INSNS = {
     0x2000: (5, [("imm", 1, 4)]),
     0x2005: (1, []),
 }
+_INSNS.update({_LONG_BASE + i: (1, []) for i in range(_LONG_LEN)})
 
 ida_ua = types.ModuleType("ida_ua")
 ida_ua.o_void = 0
@@ -162,7 +171,7 @@ mod = load("api_sigmaker", {
     "        if ea + i not in _MEM: return None\n"
     "        out.append(_MEM[ea + i])\n"
     "    return bytes(out)",
-    "compat": "inf_get_max_ea = lambda: 0x3000\ninf_get_min_ea = lambda: 0x1000",
+    "compat": "inf_get_max_ea = lambda: 0x8000\ninf_get_min_ea = lambda: 0x1000",
 }, alias="sigmaker_test", stub_globals={"_MEM": _MEM})
 
 # =========================================================================
@@ -239,5 +248,32 @@ assert r["new_signatures"][0]["desc"] == "test (3 matches)", r
 r = json.loads(mod.list_flirt_signatures())
 assert r["count"] == 1, r
 print("apply/list_flirt_signatures OK")
+
+# --- chunked uniqueness probe (plan 15, item 15.5) ---
+# 0x6000 holds 20 one-byte instructions whose first 12 bytes repeat at 0x7000,
+# so the shortest unique signature is 13 bytes. Probing after EVERY instruction
+# needed 13 global scans (26 find_bytes calls); probing every 8 and bisecting
+# the last chunk needs 5 (10 calls).
+_calls = []
+_real_find = mod.ida_bytes.find_bytes
+
+
+def _counting_find(*args, **kwargs):
+    _calls.append(args[0])
+    return _real_find(*args, **kwargs)
+
+
+mod.ida_bytes.find_bytes = _counting_find
+try:
+    r = json.loads(mod.make_signature("0x6000"))
+finally:
+    mod.ida_bytes.find_bytes = _real_find
+res = r["results"][0]
+_expected = " ".join(f"{0x40 + i:02X}" for i in range(_LONG_SHARED + 1))
+assert res["unique"] is True, res
+assert res["signature"] == _expected, (res["signature"], _expected)
+assert len(_calls) <= 12, (
+    f"{len(_calls)} find_bytes calls; per-instruction probing needs 26")
+print(f"chunked uniqueness probe OK ({len(_calls)} scans, was 26)")
 
 print("ALL SIGMAKER TESTS PASSED")
