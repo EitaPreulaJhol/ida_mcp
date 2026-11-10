@@ -116,4 +116,39 @@ assert mod.remove_all_hooks() == []  # idempotent
 _HookBase.unhook = _orig_unhook
 print("remove_all_hooks OK")
 
+# 14.25: the registry entry must exist while hook() runs (an event delivered
+# inside hook() only reaches the buffer if _log() finds the entry), and a
+# hook() that fails must not leave a dead entry behind.
+_seen = {}
+
+
+class _EarlyHook(_HookBase):
+    def hook(self):
+        _seen["during"] = list(mod._HOOKS)
+        return True
+
+
+class _FailingHook(_HookBase):
+    def hook(self):
+        return False
+
+
+_saved_base = ida_idp.IDB_Hooks
+ida_idp.IDB_Hooks = _EarlyHook
+try:
+    _early_id = json.loads(mod.install_hook("idb"))["hook_id"]
+finally:
+    ida_idp.IDB_Hooks = _saved_base
+assert _early_id in _seen.get("during", []), _seen
+mod.remove_hooks(_early_id)
+
+ida_idp.IDB_Hooks = _FailingHook
+try:
+    _failed = json.loads(mod.install_hook("idb"))
+finally:
+    ida_idp.IDB_Hooks = _saved_base
+assert _failed["ok"] is False, _failed
+assert mod._HOOKS == {}, mod._HOOKS
+print("hook registry ordering + failed hook OK")
+
 print("ALL HOOKS TESTS PASSED")

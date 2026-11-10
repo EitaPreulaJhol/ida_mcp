@@ -162,16 +162,19 @@ def _install(hook_type: str) -> dict:
             except Exception:
                 pass
             _HOOKS.pop(hid, None)
-    try:
-        hooked = hook.hook()
-    except Exception as e:
-        return {"ok": False, "error": f"hook() failed: {e}"}
-    if not hooked:
-        return {"ok": False, "error": "hook() returned false"}
+    # Register BEFORE hook(): an event delivered inside hook() is only logged
+    # if _log() finds the entry, and the id is the only handle the caller gets.
     _HOOKS[hook_id] = {"type": hook_type, "hook": hook,
                        "events": deque(maxlen=_EVENTS_PER_HOOK),
                        "event_count": 0, "installed_at": round(time.monotonic(), 3)}
-    # Rebind the tracer's closure id (maker used a placeholder).
+    try:
+        hooked = hook.hook()
+    except Exception as e:
+        _HOOKS.pop(hook_id, None)
+        return {"ok": False, "error": f"hook() failed: {e}"}
+    if not hooked:
+        _HOOKS.pop(hook_id, None)
+        return {"ok": False, "error": "hook() returned false"}
     return {"ok": True, "hook_id": hook_id, "hook_type": hook_type}
 
 
