@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-10
+
+### Added
+- `IDA_MCP_AUDIT_FULL=1`: with the audit log enabled, the *untruncated* tool
+  arguments are appended to `<audit_path>.args.jsonl` and the main record points
+  at it (`args_full`). The short preview stays where it is; the full script body
+  is now recoverable instead of only its hash and length.
+
+### Changed
+- `resolve_addr` / `paginate` replace the byte-identical private copies that
+  `api_memory`, `api_hexrays`, `api_xrefs` and `api_query`/`api_strings` each
+  carried: the address-error convention and the offset/count slicing have one
+  definition now.
+- `search_bytes` scans `inf_get_min_ea()..inf_get_max_ea()` like the other
+  search tools, instead of the fixed `0..2^64-1` window that relied on IDA
+  clamping it to the database.
+
+### Fixed
+- Hooks installed by an agent no longer record events from *another* database:
+  IDA keeps the process (and the hook) alive across File > Open, so a tracer
+  used to mix the next binary's renames and patches into the previous one's
+  buffer. Each hook remembers its idb, drops foreign events and reports
+  `stale`, and the idb is listed in `get_hook_info`.
+- Instance discovery probes only addresses that can be this machine (loopback,
+  the wildcard bind, or one of this host's own addresses). It used to pass the
+  instance file's `host` straight to `socket.create_connection()`, so a file
+  naming any address made IDA open a connection there; such entries are now
+  listed with `unverified: true` and hostnames are never resolved.
+
 ## [0.2.1] - 2026-11-10
 
 ### Added
@@ -258,7 +287,8 @@ vendored MCP transport, main-thread-safe `@idasync` layer, lazy `triage` /
 `readonly` profiles, token-gated unsafe/debugger surface, and the `/ida` +
 `ida-scripting` agent skills.
 
-[Unreleased]: https://github.com/EitaPreulaJhol/ida_mcp/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/EitaPreulaJhol/ida_mcp/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.2.2
 [0.2.1]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.2.1
 [0.2.0]: https://github.com/EitaPreulaJhol/ida_mcp/releases/tag/v0.2.0
 [0.1.0]: https://github.com/EitaPreulaJhol/ida_mcp/tree/5d12fb0
