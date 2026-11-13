@@ -130,6 +130,7 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
    - `dist/ida_mcp-X.Y.Z.zip` — `ida-mcp-bridge/` folder with `ida-plugin.json`
      (IDA 8.5+ / HCLI);
    - `dist/ida-mcp-legacy-X.Y.Z.zip` — root layout for IDA 8.3/8.4.
+   - `dist/SHA256SUMS` — checksums for both ZIPs.
    Optionally validate the modern ZIP with
    `hcli plugin lint dist/ida_mcp-X.Y.Z.zip`.
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.

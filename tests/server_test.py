@@ -179,12 +179,36 @@ out = mod.execute_script("print('hi')")
 assert out == "print('hi')", out
 print("execute_script OK")
 
+# 6b) bind classifier drives auto-redaction off-loopback
+assert mod._is_loopback_bind("127.0.0.1")
+assert mod._is_loopback_bind("::1")
+assert mod._is_loopback_bind("localhost")
+assert not mod._is_loopback_bind("0.0.0.0")
+assert not mod._is_loopback_bind("192.0.2.10")
+print("loopback bind classifier OK")
+
+# 6c) off-loopback bind enables redaction by default; explicit env wins
+_saved_redact = os.environ.pop("IDA_MCP_REDACT_ERRORS", None)
+try:
+    mod.MCP_SERVER.redact_exceptions = False
+    mod.start_server("0.0.0.0", 13346)
+    assert mod.MCP_SERVER.redact_exceptions is True
+    mod.stop_server(13346)
+    mod.MCP_SERVER.redact_exceptions = False
+    mod.start_server("127.0.0.1", 13346)
+    assert mod.MCP_SERVER.redact_exceptions is False
+    mod.stop_server(13346)
+finally:
+    if _saved_redact is not None:
+        os.environ["IDA_MCP_REDACT_ERRORS"] = _saved_redact
+print("auto-redaction off-loopback OK")
+
 # 7) start/stop lifecycle + registration + own-port tracking
 assert mod._OWN_PORT is None
 mod.start_server("127.0.0.1", 13337)
 assert mod.MCP_SERVER._running is True
 assert mod._OWN_PORT == 13337, mod._OWN_PORT
-assert _REGISTERED and _REGISTERED[0][1] == 13337, _REGISTERED
+assert _REGISTERED and _REGISTERED[-1][1] == 13337, _REGISTERED
 mod.stop_server(13337)
 assert mod.MCP_SERVER._running is False
 assert mod._OWN_PORT is None

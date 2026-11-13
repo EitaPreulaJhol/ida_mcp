@@ -3,6 +3,7 @@
 Runs against a throwaway tree (package.ROOT is redirected), so the real
 dist/ is never touched.
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -76,6 +77,16 @@ check({"ida_mcp/__init__.py", "ida_mcp/profiles/triage.txt",
 check("ida-plugin.json" not in legacy_names, "legacy zip carries no manifest")
 check(not any("__pycache__" in n or n.endswith(".pyc")
               for n in modern_names | legacy_names), "both zips exclude caches")
+
+sums = os.path.join(root, "dist", "SHA256SUMS")
+check(os.path.isfile(sums), "SHA256SUMS emitted")
+if os.path.isfile(sums):
+    lines = [line.split() for line in open(sums, encoding="utf-8") if line.strip()]
+    by_name = {name: digest for digest, name in lines}
+    for path in (modern, legacy):
+        h = hashlib.sha256(open(path, "rb").read()).hexdigest()
+        check(by_name.get(os.path.basename(path)) == h,
+              f"SHA256SUMS covers {os.path.basename(path)}")
 
 # a manifest/__version__ drift is a hard error even without --expect-version
 with open(os.path.join(root, "ida-plugin.json"), "w", encoding="utf-8") as f:

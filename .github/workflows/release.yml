@@ -56,4 +56,5 @@ jobs:
           files: |
             dist/ida_mcp-*.zip
             dist/ida-mcp-legacy-*.zip
+            dist/SHA256SUMS
           body_path: release-notes.md

@@ -116,6 +116,10 @@ if audited:
     check(rec.get("code_sha256") == hashlib.sha256(big.encode()).hexdigest(),
           "audit records the code hash")
 check(all(r["tool"] != "ping_ok" for r in lines), "safe tool not audited")
+if os.name != "nt":
+    import stat as _stat
+    check(_stat.S_IMODE(os.stat(AUDIT).st_mode) == 0o600,
+          "audit file is created with mode 0600")
 
 # --- IDA_MCP_AUDIT_FULL: the untruncated payload goes to a sidecar -----------
 server.audit_full = True
@@ -140,6 +144,18 @@ if with_full:
           "sidecar carries the untruncated code")
     check(len(side[0]["args"]["code"]) > 500, "sidecar is not size-bounded")
 server.audit_full = False
+
+# --- size-based audit rotation keeps bounded files ---
+server.audit_max_bytes = 300
+server.audit_max_files = 2
+for _ in range(4):
+    call("mutate", {"code": "x" * 50}, query="?unsafe=true")
+time.sleep(0.1)
+check(os.path.isfile(AUDIT + ".1"), "audit rotation wrote .1")
+check(os.path.getsize(AUDIT) <= 1000,
+      "active audit file stays bounded after rotation")
+server.audit_max_bytes = 10 * 1024 * 1024
+server.audit_max_files = 3
 
 # --- audit disabled by default (no path) ---
 server2 = McpServer("no-audit")

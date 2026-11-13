@@ -91,7 +91,9 @@ Everything is configured through environment variables - there is no config file
 | `IDA_MCP_LOG` | off | `debug`/`info`/`warning` (or `1`/`true`) routes `ida_mcp` package logs (per-tool main-thread hold times, lifecycle) to the IDA output window. |
 | `IDA_MCP_AUDIT` | off | Path to a JSONL file. When set, every mutating (unsafe/debugger) tool call appends an audit record (`ts`, `tool`, `ok`, `level` = `unsafe`/`dbg`, size-bounded `args`, plus `code_sha256`/`code_len` for the script tools and `error` on failure). Read-only tools are not logged. |
 | `IDA_MCP_AUDIT_FULL` | off | `1`/`true`/`yes`: with `IDA_MCP_AUDIT` set, also append the **untruncated** tool arguments to `<audit_path>.args.jsonl`, and point the main record at the sidecar (`args_full`). The page of the full `execute_script` body is there; the main file stays small. |
-| `IDA_MCP_REDACT_ERRORS` | unset | `1`/`true`/`yes`: an unexpected exception in a tool returns only `Internal Error: <type>: <message>` instead of the full traceback, which is logged in IDA instead (see `IDA_MCP_LOG`). Consider it when untrusted clients can connect. |
+| `IDA_MCP_AUDIT_MAX_BYTES` | `10485760` (10 MiB) | Rotate the audit file when the next record would exceed this size. `0` disables rotation. Files are created with mode `0600`. |
+| `IDA_MCP_AUDIT_MAX_FILES` | `3` | Number of rotated audit files to keep (`audit.jsonl.1` …). |
+| `IDA_MCP_REDACT_ERRORS` | auto off-loopback | `1`/`true`/`yes`: an unexpected exception returns only `Internal Error: <type>: <message>` instead of the full traceback. When the server is bound off-loopback this is forced on by default; set `0` explicitly to opt out. |
 
 **Client (pi bridge, set in the pi/agent environment):**
 

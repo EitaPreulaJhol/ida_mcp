@@ -96,6 +96,9 @@ r = _call("plain_tool")
 assert r["isError"] is False, r
 r = _call("unsafe_tool")
 assert r["isError"] is True and "unsafe" in r["content"][0]["text"], r
+assert r["structuredContent"]["error"] == "access_denied", r
+assert r["structuredContent"]["tool"] == "unsafe_tool", r
+assert r["structuredContent"]["retryable"] is False, r
 r = _call("unsafe_tool", "?unsafe=true")
 assert r["isError"] is False, r
 r = _call("dbg_tool")
@@ -104,6 +107,10 @@ r = _call("dbg_tool", "?ext=dbg")
 # extension visible but tool is NOT unsafe -> still callable? dbg_tool here
 # is not in unsafe_tools, so ext alone suffices.
 assert r["isError"] is False, r
+r = _call("missing_tool")
+assert r["isError"] is True, r
+assert r["structuredContent"]["tool"] == "missing_tool", r
+assert "code" in r["structuredContent"], r
 print("tools/call gating OK")
 
 # --- unsafe + ext combined denial message precedence ---

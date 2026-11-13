@@ -16,6 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   tools must be called one at a time.
 - Queue metrics in `server_health`: depth, p50/p95 wait, timeouts, full and
   cancelled counts.
+- Off-loopback binds redact unexpected-exception tracebacks by default
+  (`IDA_MCP_REDACT_ERRORS=0` opts out); audit files are created with mode
+  `0600`, rotate at `IDA_MCP_AUDIT_MAX_BYTES` and keep
+  `IDA_MCP_AUDIT_MAX_FILES`.
+- Release builds now emit `dist/SHA256SUMS` for both ZIP assets.
+- Tool access denials and JSON-RPC tool errors now carry `structuredContent`
+  (`error`, `message`/`code`, `tool`, `retryable`) in addition to text.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

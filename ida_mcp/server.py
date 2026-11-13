@@ -365,6 +365,13 @@ def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
 
 
+_LOOPBACK_BINDS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _is_loopback_bind(host: str) -> bool:
+    return (host or "").strip().strip("[]").lower() in _LOOPBACK_BINDS
+
+
 def _init_auth_token() -> str | None:
     """Resolve the auth token gating unsafe/debugger tools.
 
@@ -502,6 +509,18 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
     requested = port
     port = _serve_with_fallback(host, requested)
     _OWN_PORT = port
+    # A traceback can include source paths and database internals.  When the
+    # socket is reachable off-machine, redact by default; an explicit
+    # IDA_MCP_REDACT_ERRORS value (including 0) wins.
+    if (not _is_loopback_bind(host)
+            and os.environ.get("IDA_MCP_REDACT_ERRORS") is None):
+        MCP_SERVER.redact_exceptions = True
+        try:
+            ida_kernwin.msg(
+                "[ida-mcp] non-loopback bind: tracebacks are redacted "
+                "(set IDA_MCP_REDACT_ERRORS=0 to expose them)\n")
+        except Exception:
+            pass
     if port != requested:
         ida_kernwin.msg(
             f"[ida-mcp] port {requested} is in use (another IDA instance?); "

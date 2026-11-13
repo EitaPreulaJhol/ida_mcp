@@ -1134,6 +1134,9 @@ class McpServer:
         # a hash for the script tools), which is useless for forensics.
         self.audit_full: bool = os.environ.get(
             "IDA_MCP_AUDIT_FULL", "").strip().lower() in ("1", "true", "yes")
+        self.audit_max_bytes = _env_int("IDA_MCP_AUDIT_MAX_BYTES", 10 * 1024 * 1024)
+        self.audit_max_files = _env_int("IDA_MCP_AUDIT_MAX_FILES", 3)
+        self._audit_lock = threading.Lock()
 
         self.registry: JsonRpcRegistry = JsonRpcRegistry()
         # Unexpected exceptions return their full traceback to the client by
@@ -1461,6 +1464,55 @@ class McpServer:
         }
 
     # ---- audit (item 08) ----
+    def _append_audit_line(self, path: str, line: str) -> None:
+        """Append one JSONL line with 0600 permissions and size rotation.
+
+        Rotation is opt-in via ``IDA_MCP_AUDIT_MAX_BYTES`` (default 10 MiB);
+        ``IDA_MCP_AUDIT_MAX_FILES`` keeps that many rotated files. Exceptions
+        are swallowed so audit I/O never breaks a tool response.
+        """
+        payload = line + "\n"
+        try:
+            with self._audit_lock:
+                max_bytes = int(self.audit_max_bytes or 0)
+                max_files = max(0, int(self.audit_max_files or 0))
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = 0
+                if max_bytes > 0 and size and size + len(payload.encode("utf-8")) > max_bytes:
+                    if max_files > 0:
+                        for i in range(max_files - 1, 0, -1):
+                            src = f"{path}.{i}"
+                            dst = f"{path}.{i + 1}"
+                            try:
+                                if os.path.exists(src):
+                                    os.replace(src, dst)
+                            except OSError:
+                                pass
+                        try:
+                            if os.path.exists(path):
+                                os.replace(path, f"{path}.1")
+                        except OSError:
+                            pass
+                flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+                fd = os.open(path, flags, 0o600)
+                try:
+                    try:
+                        os.fchmod(fd, 0o600)
+                    except (AttributeError, OSError):
+                        pass
+                    with os.fdopen(fd, "a", encoding="utf-8") as f:
+                        f.write(payload)
+                except Exception:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                    raise
+        except Exception:
+            pass
+
     def _write_audit(self, name, args, ok, error=None):
         """Append one JSONL record for a mutating call. Best-effort, opt-in."""
         path = self.audit_path
@@ -1493,8 +1545,7 @@ class McpServer:
                 if sidecar:
                     rec["args_full"] = sidecar
             line = json.dumps(rec, separators=(",", ":"), default=str)
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+            self._append_audit_line(path, line)
         except Exception:
             pass
 
@@ -1518,8 +1569,7 @@ class McpServer:
                 "args": args,
             }
             line = json.dumps(rec, separators=(",", ":"), default=str)
-            with open(sidecar, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
+            self._append_audit_line(sidecar, line)
             return os.path.basename(sidecar)
         except Exception:
             return None
@@ -1755,6 +1805,10 @@ class McpServer:
             return {
                 "content": [{"type": "text", "text": denied}],
                 "isError": True,
+                "structuredContent": {
+                    "error": "access_denied", "message": denied,
+                    "tool": name, "retryable": False,
+                },
             }
         # A list/scalar would reach the registry as positional arguments
         # (`func(*params)`), skipping the schema and the scalar coercion.
@@ -1824,6 +1878,11 @@ class McpServer:
                 return {
                     "content": [{"type": "text", "text": _error_text}],
                     "isError": True,
+                    "structuredContent": {
+                        "error": _error_text,
+                        "code": error.get("code"),
+                        "tool": name,
+                    },
                 }
             result = tool_response.get("result") if tool_response else None
             parsed = _parse_structured(result)

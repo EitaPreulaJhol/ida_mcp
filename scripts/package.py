@@ -18,6 +18,7 @@ Usage:
 """
 import argparse
 import ast
+import hashlib
 import json
 import os
 import sys
@@ -147,6 +148,16 @@ def main(argv=None):
     print(f"built {os.path.relpath(legacy, ROOT)}  "
           f"({legacy_count} files, {os.path.getsize(legacy)} bytes, v{version}, "
           f"legacy IDA 8.3/8.4 layout)")
+
+    sums_path = os.path.join(dist, "SHA256SUMS")
+    with open(sums_path, "w", encoding="utf-8") as f:
+        for path in (modern, legacy):
+            h = hashlib.sha256()
+            with open(path, "rb") as src:
+                for chunk in iter(lambda: src.read(1 << 20), b""):
+                    h.update(chunk)
+            f.write(f"{h.hexdigest()}  {os.path.basename(path)}\n")
+    print(f"wrote {os.path.relpath(sums_path, ROOT)}")
     return 0
 
 
