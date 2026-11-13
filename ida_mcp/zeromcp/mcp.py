@@ -10,6 +10,7 @@ import inspect
 import json
 import logging
 import os
+import queue
 import secrets
 import select
 import socket
@@ -38,6 +39,7 @@ from .jsonrpc import (
     register_pending_request,
     unregister_pending_request,
     cancel_request,
+    get_current_scope,
     set_current_scope,
 )
 
@@ -183,6 +185,12 @@ _request_extensions = threading.local()
 # unsafe/extension tool is listed or called (see McpServer._auth_ok).
 _request_auth = threading.local()
 
+# Current tools/call progress token (from params._meta.progressToken).  It is
+# set by _mcp_tools_call on the HTTP worker thread; tools that run in a
+# two-phase worker (survey_binary/callgraph/signatures) can publish progress
+# with McpServer.report_progress().
+_progress_ctx = threading.local()
+
 
 def _enabled_extension_groups() -> set[str]:
     return getattr(_request_extensions, "groups", set()) or set()
@@ -298,6 +306,35 @@ class _McpSseConnection:
                 ConnectionAbortedError, OSError):
             self.alive = False
             return False
+
+
+class _McpHttpStream:
+    """Queued server->client SSE stream for GET /mcp (Streamable HTTP).
+
+    ``report_progress`` can run on the IDA main thread, so events are queued
+    and written by the stream's own handler thread; a blocking socket write
+    must never freeze IDA.
+    """
+
+    def __init__(self) -> None:
+        self.queue: queue.Queue = queue.Queue(maxsize=256)
+        self.alive = True
+
+    def send_event(self, payload) -> bool:
+        if not self.alive:
+            return False
+        try:
+            self.queue.put_nowait(payload)
+            return True
+        except queue.Full:
+            return False
+
+    def close(self) -> None:
+        self.alive = False
+        try:
+            self.queue.put_nowait(None)
+        except queue.Full:
+            pass
 
 
 class McpRpcRegistry(JsonRpcRegistry):
@@ -676,16 +713,37 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         except _DISCONNECT_ERRORS:
             logger.debug("[MCP] GET /mcp headers suppressed (client gone)")
             return
+        stream = None
+        if session_id:
+            stream = _McpHttpStream()
+            self.mcp_server.register_http_stream(session_id, stream)
         sock = self.connection
         last_ping = time.monotonic()
         try:
-            while self.mcp_server._running:
+            while (self.mcp_server._running
+                   and (stream is None or stream.alive)):
+                if stream is not None:
+                    try:
+                        payload = stream.queue.get(timeout=0.2)
+                    except queue.Empty:
+                        payload = False
+                    if payload is None:
+                        break
+                    if payload is not False:
+                        try:
+                            data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                            self.wfile.write(b"event: message\ndata: " + data + b"\n\n")
+                            self.wfile.flush()
+                        except (BrokenPipeError, ConnectionResetError,
+                                ConnectionAbortedError, OSError):
+                            break
                 # Prompt disconnect detection: the kernel reports FIN/RST
                 # as readability; without this we only notice the peer is
                 # gone on the next 15 s ping write.
                 if sock is not None:
                     try:
-                        readable, _, _ = select.select([sock], [], [], 1.0)
+                        readable, _, _ = select.select(
+                            [sock], [], [], 0.2 if stream is not None else 1.0)
                         if readable and sock.recv(1, socket.MSG_PEEK) == b"":
                             break
                     except (OSError, socket.error, ConnectionResetError,
@@ -702,6 +760,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError,
                 ConnectionAbortedError, OSError):
             pass
+        finally:
+            if stream is not None:
+                self.mcp_server.unregister_http_stream(session_id, stream)
         try:
             self.wfile.flush()
         except Exception:
@@ -1076,6 +1137,8 @@ class McpServer:
         self._extensions_registry = extensions if extensions is not None else {}
         self._sse_connections: dict[str, _McpSseConnection] = {}
         self._sse_lock = threading.Lock()
+        self._http_streams: dict[str, set] = {}
+        self._http_streams_lock = threading.Lock()
         self.unsafe_tools: set[str] = set()
         # Auth token gating the dangerous surface (unsafe + extension tools).
         # None = auth disabled (loopback-only, legacy/open); when set, a request
@@ -1294,6 +1357,11 @@ class McpServer:
         if not self._running:
             return
         self._running = False
+        with self._http_streams_lock:
+            streams = [s for group in self._http_streams.values() for s in group]
+            self._http_streams.clear()
+        for stream in streams:
+            stream.close()
         if self._http_server is not None:
             try:
                 self._http_server.shutdown()
@@ -1349,7 +1417,54 @@ class McpServer:
         now = time.monotonic()
         with self._http_sessions_lock:
             self._prune_sessions(now)
-            return self._http_sessions.pop(session_id, None) is not None
+            existed = self._http_sessions.pop(session_id, None) is not None
+        with self._http_streams_lock:
+            streams = list(self._http_streams.pop(session_id, ()))
+        for stream in streams:
+            stream.close()
+        return existed
+
+    def register_http_stream(self, session_id: str, stream) -> None:
+        with self._http_streams_lock:
+            self._http_streams.setdefault(session_id, set()).add(stream)
+
+    def unregister_http_stream(self, session_id: str, stream) -> None:
+        with self._http_streams_lock:
+            streams = self._http_streams.get(session_id)
+            if streams is None:
+                return
+            streams.discard(stream)
+            if not streams:
+                self._http_streams.pop(session_id, None)
+
+    def _notify_session(self, session_id: str, payload) -> None:
+        """Enqueue a JSON-RPC notification for every GET /mcp stream of a session."""
+        with self._http_streams_lock:
+            streams = list(self._http_streams.get(session_id, ()))
+        for stream in streams:
+            stream.send_event(payload)
+
+    def report_progress(self, progress, total=None, message=None) -> bool:
+        """Send ``notifications/progress`` if the current call asked for it.
+
+        No-op unless the client supplied ``params._meta.progressToken`` and a
+        Streamable-HTTP session with an open GET /mcp stream.
+        """
+        token = getattr(_progress_ctx, "token", None)
+        scope = get_current_scope()
+        if token is None or not scope:
+            return False
+        params: dict = {"progressToken": token, "progress": progress}
+        if total is not None:
+            params["total"] = total
+        if message:
+            params["message"] = message
+        self._notify_session(scope, {
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": params,
+        })
+        return True
 
     def _prune_sessions(self, now: float) -> None:
         if self.http_session_ttl_sec > 0:
@@ -1858,6 +1973,9 @@ class McpServer:
                     "queue_wait_ms": round(waited_ms, 1),
                 },
             }
+        progress_token = _meta.get("progressToken") if isinstance(_meta, dict) else None
+        previous_progress = getattr(_progress_ctx, "token", None)
+        _progress_ctx.token = progress_token
         _t0 = time.perf_counter()
         # Pessimistic defaults: an unexpected exception escaping below is
         # still recorded (and audited) as a failure.
@@ -1915,6 +2033,7 @@ class McpServer:
                 "isError": _errored,
             }
         finally:
+            _progress_ctx.token = previous_progress
             if request_id is not None:
                 try:
                     unregister_pending_request(request_id)

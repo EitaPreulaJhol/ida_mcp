@@ -23,6 +23,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Release builds now emit `dist/SHA256SUMS` for both ZIP assets.
 - Tool access denials and JSON-RPC tool errors now carry `structuredContent`
   (`error`, `message`/`code`, `tool`, `retryable`) in addition to text.
+- MCP progress notifications: `tools/call` with
+  `params._meta.progressToken` emits `notifications/progress` on the
+  session's `GET /mcp` SSE stream. `survey_binary`, `callgraph`,
+  `make_signature*` and `find_xref_signatures` report phase/
+  address progress.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

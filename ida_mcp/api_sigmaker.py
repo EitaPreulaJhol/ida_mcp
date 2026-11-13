@@ -20,7 +20,7 @@ import ida_ua
 import idaapi
 import idautils
 
-from .rpc import tool, unsafe
+from .rpc import tool, unsafe, report_progress
 from .sync import (idasync, tool_timeout, check_cancelled, update_wait_box,
                    CancelledError, IDASyncError)
 from .sync import ensure_analysis
@@ -255,6 +255,8 @@ def make_signature(addresses: str, format: str = "ida",
     results: list[dict] = []
     start = time.monotonic()
     for i, query in enumerate(queries):
+        if len(queries) > 1:
+            report_progress(i, len(queries), f"signature {i + 1}/{len(queries)}")
         if time.monotonic() - start >= _SIG_BUDGET_SEC:
             results.append({"query": query, "addr": None, "signature": None,
                             "format": fmt,
@@ -330,6 +332,8 @@ def make_signature_for_function(addresses: str, format: str = "ida",
     results: list[dict] = []
     start = time.monotonic()
     for i, query in enumerate(queries):
+        if len(queries) > 1:
+            report_progress(i, len(queries), f"signature {i + 1}/{len(queries)}")
         if time.monotonic() - start >= _SIG_BUDGET_SEC:
             results.append({"query": query, "addr": None, "name": None,
                             "signature": None, "format": fmt,
@@ -464,6 +468,8 @@ def find_xref_signatures(addresses: str, format: str = "ida",
     results: list[dict] = []
     start = time.monotonic()
     for i, query in enumerate(queries):
+        if len(queries) > 1:
+            report_progress(i, len(queries), f"xref signatures {i + 1}/{len(queries)}")
         if time.monotonic() - start >= _XREF_BUDGET_SEC:
             results.append({"query": query, "addr": None, "signatures": None,
                             "error": f"Tool budget exceeded ({_XREF_BUDGET_SEC:.0f}s); "

@@ -18,6 +18,11 @@ def unsafe(func):
     return func
 
 
+def report_progress(progress, total=None, message=None) -> bool:
+    """Publish MCP progress for the current tool call (no-op without a token)."""
+    return MCP_SERVER.report_progress(progress, total=total, message=message)
+
+
 def ext(group: str):
     """Mark a tool as belonging to an extension group (e.g. ``"dbg"``).
 
@@ -34,4 +39,4 @@ def ext(group: str):
     return decorator
 
 
-__all__ = ["MCP_SERVER", "MCP_UNSAFE", "tool", "unsafe", "ext", "McpToolError"]
+__all__ = ["MCP_SERVER", "MCP_UNSAFE", "tool", "unsafe", "ext", "report_progress", "McpToolError"]

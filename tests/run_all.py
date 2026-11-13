@@ -54,6 +54,7 @@ TESTS = [
     "conn_cap_test.py",
     "profile_http_test.py",
     "transport_test.py",
+    "progress_test.py",
     "disconnect_test.py",
     "gate_test.py",
     "metrics_audit_test.py",

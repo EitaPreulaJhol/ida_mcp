@@ -35,6 +35,7 @@ PKG = "ida_mcp"
 RPC_STUB = """
 tool = lambda f: f
 unsafe = lambda f: f
+report_progress = lambda *args, **kwargs: False
 def ext(group):
     return lambda f: f
 """

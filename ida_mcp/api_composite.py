@@ -24,7 +24,7 @@ import idaapi
 import idautils
 import idc
 
-from .rpc import tool, unsafe
+from .rpc import tool, unsafe, report_progress
 from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,
                    update_wait_box, ensure_analysis, CancelledError,
                    IDASyncError)
@@ -725,6 +725,8 @@ def callgraph(roots: str, max_depth: int = 5, max_nodes: int = 1000,
     graphs: list[dict] = []
     start = time.monotonic()
     for i, root in enumerate(names):
+        if len(names) > 1:
+            report_progress(i, len(names), f"callgraph root {i + 1}/{len(names)}")
         if time.monotonic() - start >= _CALLGRAPH_BUDGET_SEC:
             graphs.append({"root": root, "error":
                            f"Tool budget exceeded ({_CALLGRAPH_BUDGET_SEC:.0f}s); "
@@ -1040,15 +1042,19 @@ def survey_binary(detail_level: str = "standard") -> str:
     (_fetch_survey_raw); file hashing, import categorization and JSON
     rendering run here on the HTTP worker thread so the UI stays free.
     """
+    report_progress(0, 4, "collecting IDB data")
     data = _fetch_survey_raw(detail_level)
+    report_progress(2, 4, "hashing input file")
     input_path = data.pop("_input_path", "")
     imports_raw = data.pop("_imports_raw", None)
     if input_path:
         hashes = _hash_file_chunked(input_path)
         if hashes is not None:
             data["metadata"]["md5"], data["metadata"]["sha256"] = hashes
+    report_progress(3, 4, "categorizing imports")
     if imports_raw is not None:
         data["imports_by_category"] = _categorize_imports(imports_raw)
+    report_progress(4, 4, "rendering response")
     return json.dumps(data, indent=2)
 
 
