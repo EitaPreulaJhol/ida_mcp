@@ -36,6 +36,12 @@
  * Dynamic indicator: the footer status (IDA:online/offline) is updated
  * via polling + refresh on session events, so opening IDA *after*
  * pi is reflected automatically, without /reload.
+ *
+ * MCP session: the bridge runs initialize once, keeps the Mcp-Session-Id and
+ * sends it on every request; an unknown id (IDA restarted) answers 404, which
+ * triggers a fresh initialize + one retry. Going DOWN the ladder deactivates
+ * the IDA tools that are no longer visible, so escalating to dbg does not
+ * leave ~240 tools in the model's context for the rest of the session.
  */
 
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
@@ -45,13 +51,20 @@ import { Type } from "typebox";
 const BASE_URL = (process.env.IDA_MCP_URL ?? "http://127.0.0.1:13337/mcp").replace(/\/$/, "");
 const TOKEN = (process.env.IDA_MCP_TOKEN ?? "").trim();
 
-/** Request headers; carries the auth token when one is configured. */
+/** MCP session (Streamable HTTP): set by initialize, echoed on every request. */
+let sessionId: string | undefined;
+let sessionInitialized = false;
+const PROTOCOL_VERSION = "2025-06-18";
+const CLIENT_INFO = { name: "pi-ida-bridge", version: "1.0.0" };
+
+/** Request headers; carries the auth token and the session id when known. */
 function rpcHeaders(): Record<string, string> {
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
 		Accept: "application/json, text/event-stream",
 	};
 	if (TOKEN) headers["X-IDA-MCP-Token"] = TOKEN;
+	if (sessionId) headers["Mcp-Session-Id"] = sessionId;
 	return headers;
 }
 
@@ -127,6 +140,41 @@ interface McpToolDef {
 	};
 }
 
+/** Establish the MCP session (initialize + notifications/initialized). */
+async function initializeSession(level: Level, signal?: AbortSignal): Promise<void> {
+	const initId = nextRpcId++;
+	const res = await fetch(endpoint(level), {
+		method: "POST",
+		headers: rpcHeaders(),
+		body: JSON.stringify({
+			jsonrpc: "2.0",
+			method: "initialize",
+			params: {
+				protocolVersion: PROTOCOL_VERSION,
+				capabilities: {},
+				clientInfo: CLIENT_INFO,
+			},
+			id: initId,
+		}),
+		signal,
+	});
+	if (!res.ok) {
+		const text = await res.text().catch(() => "");
+		throw new Error(`IDA MCP initialize failed (HTTP ${res.status}): ${text.slice(0, 200)}`);
+	}
+	const sid = res.headers.get("Mcp-Session-Id");
+	if (sid) sessionId = sid;
+	await res.json().catch(() => undefined);
+	sessionInitialized = true;
+	// Best-effort: the server answers this notification with no body.
+	await fetch(endpoint(level), {
+		method: "POST",
+		headers: rpcHeaders(),
+		body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
+		signal: AbortSignal.timeout(3_000),
+	}).catch(() => undefined);
+}
+
 async function rpc(
 	method: string,
 	params: Record<string, unknown> | undefined,
@@ -142,13 +190,35 @@ async function rpc(
 	const onAbort = () => ctrl.abort(signal?.reason);
 	signal?.addEventListener("abort", onAbort, { once: true });
 	try {
-		const res = await fetch(endpoint(level), {
+		if (method !== "initialize" && !sessionInitialized) {
+			await initializeSession(level, ctrl.signal);
+		}
+		const body = JSON.stringify({
+			jsonrpc: "2.0",
+			method,
+			// Unique ids: the server keys cancellation (notifications/cancelled) by request id.
+			params: params ?? {},
+			id,
+		});
+		let res = await fetch(endpoint(level), {
 			method: "POST",
 			headers: rpcHeaders(),
-			// Unique ids: the server keys cancellation (notifications/cancelled) by request id.
-			body: JSON.stringify({ jsonrpc: "2.0", method, params: params ?? {}, id }),
+			body,
 			signal: ctrl.signal,
 		});
+		if (res.status === 404 && method !== "initialize") {
+			// The server does not know our id (restarted, expired, or pruned):
+			// Streamable HTTP says to initialize again. One retry.
+			sessionId = undefined;
+			sessionInitialized = false;
+			await initializeSession(level, ctrl.signal);
+			res = await fetch(endpoint(level), {
+				method: "POST",
+				headers: rpcHeaders(),
+				body,
+				signal: ctrl.signal,
+			});
+		}
 		if (!res.ok) {
 			const text = await res.text().catch(() => "");
 			if (res.status === 401) {
@@ -454,6 +524,13 @@ export default async function (pi: ExtensionAPI) {
 			let added = 0;
 			for (const t of tools) if (registerRemoteTool(pi, t)) added++;
 			currentLevel = level;
+			// Going DOWN the ladder must also drop the tools that are no longer
+			// visible: registerTool has no inverse, but the active set does.
+			// Built-in tools are untouched; only names we registered are filtered.
+			const visible = new Set(tools.map((t) => t.name));
+			const active = pi.getActiveTools();
+			const next = active.filter((name) => !registered.has(name) || visible.has(name));
+			if (next.length !== active.length) pi.setActiveTools(next);
 			lastOnline = true;
 			setIdaStatus(currentUi, onlineStatusText());
 			return {

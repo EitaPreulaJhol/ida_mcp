@@ -14,6 +14,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The docs cross-check now also scans `ida_mcp_loader.py` (the file IDA
   actually loads) and `getattr(module, "name")` fallbacks, with the
   intentional pre-9.x fallbacks allowlisted.
+- The Pi bridge speaks the MCP session protocol: it runs `initialize` once
+  (protocol `2025-06-18`), keeps the `Mcp-Session-Id` and sends it on every
+  request; a `404` for an unknown id (IDA restarted) triggers a fresh
+  initialize and one retry.
+- `ida_profile` deactivates the IDA tools that are no longer visible when the
+  ladder goes down, so escalating to `dbg` does not leave the whole tool set
+  active for the rest of the session. Built-in tools are untouched.
 
 ### Changed
 - Pagination arguments are `limit` everywhere (`list_imports`,

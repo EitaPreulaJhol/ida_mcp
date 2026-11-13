@@ -63,12 +63,13 @@ consistency) → **P3** (test & tooling gaps) → **P4** (Pi bridge).
 
 ## P4 — Pi bridge (`.pi/extensions/ida-mcp.ts`)
 
-- [ ] Call `initialize` and keep the `Mcp-Session-Id` (protocol negotiation,
-      `serverInfo`); today it relies on the server accepting session-less
-      requests.
-- [ ] Deactivate tools when the ladder goes down (`setActiveTools` if
-      available): `registered` only grows, so after escalating to `dbg` the
-      model keeps ~243 tools.
+- [x] Call `initialize` (protocol `2025-06-18`) and keep the
+      `Mcp-Session-Id`; 404 on an unknown id re-initializes and retries once.
+      `notifications/initialized` is sent after the handshake.
+- [x] Deactivate tools when the ladder goes down: `pi.setActiveTools()` drops
+      the registered IDA tools that are not visible at the new level while
+      keeping the built-in tools untouched. (Registering has no inverse, so
+      the active set is the lever.)
 
 ---
 
