@@ -1,10 +1,10 @@
-"""The IDA 8.5+ folder loader is imported under a generated namespace.
+"""The entry point under a generated namespace must not duplicate the plugin.
 
-IDA may execute ``ida-plugin.json``'s entryPoint as
-``__plugins__<plugin-name>.ida_mcp_loader``.  The package's
-``ida_mcp.plugin`` re-exports the class via ``from ida_mcp_loader import ...``,
-so the entry point must publish that bare alias or the package imports a
-second copy / falls into the emergency stub.
+IDA 8.5+ may execute ``ida-plugin.json``'s entryPoint as
+``__plugins__<plugin-name>.ida_mcp_loader``. The loader is now a thin shim:
+it imports ``ida_mcp.plugin`` and re-exports the class. Loading it under a
+namespace must therefore resolve to the same package class, with no bare
+``ida_mcp_loader`` alias and no second execution of the entry point.
 """
 import importlib.util
 import os
@@ -40,8 +40,16 @@ ida_kernwin.is_idaq = lambda: True
 ida_kernwin.msg = lambda *a, **k: None
 sys.modules["ida_kernwin"] = ida_kernwin
 
-# No ida_netnode: the loader's config helpers are documented no-ops then.
+# No ida_netnode: the config helpers are documented no-ops then.
 assert "ida_netnode" not in sys.modules
+
+# The package must exist before the loader imports ``ida_mcp.plugin``; this is
+# deliberately a stub package so the test exercises the real plugin.py without
+# executing ida_mcp/__init__.py and its tool registrations.
+pkg = types.ModuleType("ida_mcp")
+pkg.__path__ = [os.path.join(ROOT, "ida_mcp")]
+pkg.__package__ = "ida_mcp"
+sys.modules["ida_mcp"] = pkg
 
 NS = "__plugins__ida_mcp.ida_mcp_loader"
 spec = importlib.util.spec_from_file_location(
@@ -49,25 +57,26 @@ spec = importlib.util.spec_from_file_location(
 mod = importlib.util.module_from_spec(spec)
 sys.modules[NS] = mod
 spec.loader.exec_module(mod)
+plugin_mod = sys.modules["ida_mcp.plugin"]
 
-assert sys.modules.get("ida_mcp_loader") is mod, (
-    "entry point loaded under a namespace must publish the bare alias")
+assert "ida_mcp_loader" not in sys.modules, (
+    "the thin loader must not publish a bare ida_mcp_loader alias")
 assert hasattr(mod, "IdaMcp") and hasattr(mod, "PLUGIN_ENTRY")
-print("namespaced loader publishes the bare ida_mcp_loader alias OK")
+assert mod.IdaMcp is plugin_mod.IdaMcp, "loader and package have different classes"
+assert mod.PLUGIN_ENTRY is plugin_mod.PLUGIN_ENTRY
+assert mod.IdaMcp.__module__ == "ida_mcp.plugin"
+assert "EMERGENCY" not in mod.IdaMcp.help
+print("namespaced loader imports the package class without an alias OK")
 
-# The package re-export must resolve to that same class, not an emergency stub
-# or a second execution of the entry point.
-pkg = types.ModuleType("ida_mcp")
-pkg.__path__ = [os.path.join(ROOT, "ida_mcp")]
-pkg.__package__ = "ida_mcp"
-sys.modules["ida_mcp"] = pkg
-pspec = importlib.util.spec_from_file_location(
-    "ida_mcp.plugin", os.path.join(ROOT, "ida_mcp", "plugin.py"))
-plugin_mod = importlib.util.module_from_spec(pspec)
-sys.modules["ida_mcp.plugin"] = plugin_mod
-pspec.loader.exec_module(plugin_mod)
-assert plugin_mod.IdaMcp is mod.IdaMcp, "plugin.py re-exported a different class"
-assert plugin_mod.PLUGIN_ENTRY is mod.PLUGIN_ENTRY
-print("ida_mcp.plugin re-exports the namespaced loader class OK")
+# A second namespaced load reuses the same package module/class too.
+NS2 = "__plugins__other.ida_mcp_loader"
+spec2 = importlib.util.spec_from_file_location(
+    NS2, os.path.join(ROOT, "ida_mcp_loader.py"))
+mod2 = importlib.util.module_from_spec(spec2)
+sys.modules[NS2] = mod2
+spec2.loader.exec_module(mod2)
+assert sys.modules["ida_mcp.plugin"] is plugin_mod
+assert mod2.IdaMcp is mod.IdaMcp
+print("second namespaced load reuses the package class OK")
 
 print("ALL LOADER NAMESPACE TESTS PASSED")

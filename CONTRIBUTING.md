@@ -36,13 +36,14 @@ pre-commit install        # optional: run lint + inventory on every commit
 
 | Path | Responsibility |
 |------|----------------|
-| `ida_mcp_loader.py` | IDA plugin entry (`PLUGIN_ENTRY`), host/port/autostart |
+| `ida_mcp_loader.py` | Thin IDA entry shim; re-exports `IdaMcp`/`PLUGIN_ENTRY` from `ida_mcp/plugin.py` |
 | `ida_mcp/zeromcp/` | Vendored MCP transport (HTTP + JSON-RPC). No IDA imports. |
 | `ida_mcp/rpc.py` | `@tool` / `@unsafe` / `@ext` decorators + `MCP_SERVER` registry |
+| `ida_mcp/plugin.py` | `IdaMcp`, `MCPUIHooks`, netnode-backed host/port/autostart |
 | `ida_mcp/sync.py` | `@idasync` main-thread marshal, timeouts, cancellation |
 | `ida_mcp/server.py` | Core tools + server lifecycle + module wiring |
 | `ida_mcp/api_*.py` | Tool modules (analysis, functions, xrefs, debug, …) |
-| `ida_mcp/profiles/` | `triage.txt` / `readonly.txt` lazy-loading allowlists |
+| `ida_mcp/profiles/` | `triage`/`readonly` plus `malware`/`ctf`/`annotate`/`debug` allowlists |
 | `ida_mcp/compat.py` | 8.3 ↔ 9.x API shims |
 | `tests/` | Standalone harnesses (IDA stubbed) + drift guards |
 

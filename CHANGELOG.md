@@ -38,6 +38,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ida://functions` and `ida://strings`, with `filter_pattern`/`limit`/
   `offset` passed through as resource query parameters. The last two are
   advertised via `resources/templates/list`.
+- The plugin controller (`IdaMcp`, `MCPUIHooks` and the netnode-backed
+  host/port/autostart helpers) now lives in `ida_mcp/plugin.py`;
+  `ida_mcp_loader.py` is a thin entry-point shim. Namespaced entry-point
+  loads no longer publish a bare `ida_mcp_loader` alias or create a second
+  plugin class.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

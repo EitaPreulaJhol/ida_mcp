@@ -266,9 +266,10 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 | Path | Purpose |
 |------|---------|
 | `ida-plugin.json` | IDA 8.5+ plugin metadata (folder layout, `entryPoint`) |
-| `ida_mcp_loader.py` | IDA plugin entry point (`PLUGIN_ENTRY`); re-exported by `ida_mcp/plugin.py` |
+| `ida_mcp_loader.py` | Thin IDA entry point: adds the install folder to `sys.path` and re-exports `ida_mcp/plugin.py` |
 | `ida_mcp/server.py` | Core tools, server lifecycle, module wiring |
 | `ida_mcp/api_*.py` | Tool modules (analysis, functions, xrefs, memory, strings, types, segments, instructions, info, comments, names, composite, query, hexrays, debug, hooks, sigmaker, search, modify, entries) |
+| `ida_mcp/plugin.py` | `IdaMcp`, `MCPUIHooks` and netnode-backed host/port/autostart settings |
 | `ida_mcp/rpc.py` | `@tool` / `@unsafe` decorators and registry |
 | `ida_mcp/sync.py` | `@idasync` main-thread bridge |
 | `ida_mcp/profiles.py` + `profiles/` | Lazy-loading tool allowlists (`triage`, `readonly`, `malware`, `ctf`, `annotate`, `debug`) |
