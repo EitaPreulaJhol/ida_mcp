@@ -25,6 +25,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the first call: `ida_search.find_imm()` returns an `(ea, value)` tuple on
   IDA 9.x (its SWIG annotation and the reference both say `int *`), and the
   tools used the result as an address. Both shapes are accepted now.
+- `read_struct` reported every field type as `<unknown>`: it only knew the
+  pre-9.x `udm_t.type.get(out)` accessor, while 9.x exposes `udm_t.type` as a
+  `tinfo_t` property. `_udm_member_type()` now handles both shapes and feeds
+  the same helper used by `_format_tinfo`.
 
 ## [0.2.2] - 2026-11-10
 

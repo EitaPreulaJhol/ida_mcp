@@ -26,6 +26,31 @@ def _get_idati():
     """Return the current type info library descriptor."""
     return ida_typeinf.get_idati()
 
+
+def _udm_member_type(m):
+    """Return the member's ``tinfo_t`` (None when it cannot be resolved).
+
+    IDA 9.x exposes ``udm_t.type`` as a ``tinfo_t`` property (cf.
+    skills/ida-scripting/references/api-reference.md, "Iterating members
+    (IDA 9+)"); older bindings wrapped it behind a ``get(out)`` accessor.
+    Both shapes are handled here so every consumer sees a real tinfo_t --
+    the legacy-only unwrap left ``read_struct`` fields typed ``<unknown>``.
+    """
+    mtype = getattr(m, "type", None)
+    if mtype is None:
+        return None
+    getter = getattr(mtype, "get", None)
+    if callable(getter):
+        resolved = ida_typeinf.tinfo_t()
+        try:
+            if not getter(resolved):
+                return None
+        except Exception:
+            return None
+        return resolved
+    return mtype
+
+
 def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
     """Format a type info object into a JSON-serializable dict."""
     result = {}
@@ -52,22 +77,18 @@ def _format_tinfo(tif: ida_typeinf.tinfo_t) -> dict:
         if tif.get_udt_details(udt):
             for m in udt:
                 offset = m.offset // 8 if hasattr(m, 'offset') else m.soff
-                # udm_t::type is exposed as a tinfo_t on modern IDAPython (cf.
-                # skills/ida-scripting/references/api-reference.md, "Iterating
-                # members (IDA 9+)"); older bindings wrapped it behind a
-                # get(out) accessor, hence the defensive unwrap.
-                mtype = m.type
-                getter = getattr(mtype, "get", None)
-                if callable(getter):
-                    resolved = ida_typeinf.tinfo_t()
-                    if not getter(resolved):
-                        continue
-                    mtype = resolved
+                mtype = _udm_member_type(m)
+                if mtype is None:
+                    continue
                 mname = m.name if m.name else f"field_{hex(offset)}"
+                try:
+                    msize = mtype.get_size()
+                except Exception:
+                    msize = 0
                 members.append({
                     "name": mname,
                     "offset": offset,
-                    "size": mtype.get_size(),
+                    "size": msize,
                     "type": type_label(mtype),
                 })
         result["members"] = members
@@ -329,17 +350,19 @@ def read_struct(
     fields: list[dict] = []
     for m in udt:
         offset = m.offset // 8 if hasattr(m, 'offset') else m.soff
-        size = m.type.get_size() if hasattr(m.type, 'get_size') else 0
+        mtype = _udm_member_type(m)
+        size = 0
+        mtype_name = "<unknown>"
+        if mtype is not None:
+            try:
+                size = mtype.get_size()
+            except Exception:
+                size = 0
+            mtype_name = type_label(mtype)
         mname = m.name or f"field_{hex(offset)}"
 
-        raw = ida_bytes.get_bytes(ea + offset, size) if size > 0 and size <= 4096 else None
+        raw = ida_bytes.get_bytes(ea + offset, size) if 0 < size <= 4096 else None
         value = raw.hex() if raw else None
-
-        mtype = ida_typeinf.tinfo_t()
-        mtype_name = "<unknown>"
-        if hasattr(m, 'type') and m.type and hasattr(m.type, 'get'):
-            if m.type.get(mtype):
-                mtype_name = mtype.get_type_name() or "<unnamed>"
 
         fields.append({
             "name": mname,

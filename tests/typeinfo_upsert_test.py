@@ -40,6 +40,7 @@ sys.modules["ida_nalt"] = ida_nalt
 PARSE_ERRORS: dict[str, int] = {}   # declaration -> number of parsing errors
 ENUMS: dict[str, dict] = {}         # enum name -> {member: value}
 STRUCTS: set[str] = set()           # names of non-enum named types
+STRUCT_DEFS: dict[str, list] = {}   # struct name -> [FakeUdm]
 SET_NAMED_CALLS: list = []          # (name, ntf_flags) records
 ORDINAL_LIMIT = [1]                 # mutable "(#local types) + 1"
 
@@ -59,6 +60,54 @@ class FakeEdm:
     def __init__(self):
         self.name = ""
         self.value = 0
+
+
+class FakeUdmType:
+    """IDA 9.x ``udm_t.type``: a tinfo_t, i.e. NO ``get()`` accessor."""
+
+    def __init__(self, name, size):
+        self._name = name
+        self._size = size
+
+    def get_type_name(self):
+        return self._name
+
+    def get_size(self):
+        return self._size
+
+
+class LegacyUdmType:
+    """Pre-9.x shape: the member type is behind ``get(out)``."""
+
+    def __init__(self, typ):
+        self._typ = typ
+
+    def get(self, out):
+        out._type_name = self._typ._name
+        out._type_size = self._typ._size
+        return True
+
+
+class FakeUdm:
+    """``udm_t`` shim (offset is in bits, like the real one)."""
+
+    def __init__(self, name, offset_bits, typ):
+        self.name = name
+        self.offset = offset_bits
+        self.type = typ
+
+
+class FakeUdtData:
+    """``udt_type_data_t`` shim (push_back container of ``udm_t``)."""
+
+    def __init__(self):
+        self._items: list[FakeUdm] = []
+
+    def push_back(self, udm):
+        self._items.append(udm)
+
+    def __iter__(self):
+        return iter(self._items)
 
 
 class FakeEnumData:
@@ -84,23 +133,53 @@ class FakeTinfo:
         self._name = None
         self._members = None
         self._is_enum = False
+        self._is_struct = False
+        self._type_name = ""
+        self._type_size = 0
+
+    def get_type_name(self):
+        return self._type_name
+
+    def get_size(self):
+        return self._type_size
 
     def get_named_type(self, til, name, *args):
         self._name = name
         if name in ENUMS:
             self._members = dict(ENUMS[name])
             self._is_enum = True
+            self._is_struct = False
+            return True
+        if name in STRUCT_DEFS:
+            self._members = list(STRUCT_DEFS[name])
+            self._is_enum = False
+            self._is_struct = True
             return True
         if name in STRUCTS:
             self._members = None
             self._is_enum = False
+            self._is_struct = True
             return True
         self._members = None
         self._is_enum = False
+        self._is_struct = False
         return False
 
     def is_enum(self):
         return self._is_enum
+
+    def is_struct(self):
+        return self._is_struct
+
+    def is_union(self):
+        return False
+
+    def get_udt_details(self, udt):
+        if not self._is_struct or self._members is None:
+            return False
+        for member in self._members:
+            udt.push_back(member)
+        return True
 
     def get_enum_details(self, edt):
         if self._members is None:
@@ -127,6 +206,7 @@ class FakeTinfo:
 ida_typeinf = types.ModuleType("ida_typeinf")
 ida_typeinf.tinfo_t = FakeTinfo
 ida_typeinf.enum_type_data_t = FakeEnumData
+ida_typeinf.udt_type_data_t = FakeUdtData
 ida_typeinf.edm_t = FakeEdm
 ida_typeinf.get_idati = lambda: object()
 ida_typeinf.get_ordinal_limit = lambda ti=None: ORDINAL_LIMIT[0]
@@ -212,6 +292,28 @@ assert "Invalid JSON" in r["error"], r
 r = json.loads(tinfo.enum_upsert("X", '[{"name": "A"}]'))
 assert "must be" in r["error"], r
 print("enum_upsert input validation OK")
+
+# =========================================================================
+# Tests — read_struct: udm_t.type is a tinfo_t on 9.x (no .get())
+# =========================================================================
+
+STRUCT_DEFS["Probe9"] = [
+    FakeUdm("a", 0, FakeUdmType("int", 4)),
+    FakeUdm("b", 32, FakeUdmType("char", 1)),
+]
+r = json.loads(tinfo.read_struct("0x2000", "Probe9"))
+assert [f["name"] for f in r["fields"]] == ["a", "b"], r
+assert [f["type"] for f in r["fields"]] == ["int", "char"], r
+assert [f["size"] for f in r["fields"]] == [4, 1], r
+assert [f["offset"] for f in r["fields"]] == [0, 4], r
+print("read_struct resolves 9.x udm_t.type OK")
+
+STRUCT_DEFS["ProbeLegacy"] = [
+    FakeUdm("x", 0, LegacyUdmType(FakeUdmType("int", 4))),
+]
+r = json.loads(tinfo.read_struct("0x2000", "ProbeLegacy"))
+assert [f["type"] for f in r["fields"]] == ["int"], r
+print("read_struct keeps the legacy get(out) path OK")
 
 print("ALL TYPEINFO 9.4 UPSERT TESTS PASSED")
 
