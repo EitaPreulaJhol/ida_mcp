@@ -43,6 +43,9 @@ def _put_bookmark(ea, lnnum, x, y, slot, comment):
         return
     if lnnum != 0:
         raise RuntimeError("Internal error 1312 occurred when running a script.")
+    if not comment:
+        # 9.5 rejects an empty comment for a real (non-deleting) mark too.
+        raise RuntimeError("Internal error 1312 occurred when running a script.")
     if 0 <= slot < len(SLOTS):
         SLOTS[slot] = (ea, comment)
     else:
@@ -152,6 +155,16 @@ assert r["count"] == 1 and r["bookmarks"][0]["address"] == "0x0", r
 r = json.loads(mod.add_bookmark("0x5000", "next"))
 assert r["slot"] == 1, r
 print("address 0 is not treated as a free slot OK")
+
+# 7b) no description: 9.5 rejects an empty comment, so a space is sent and
+#     stripped back to "" when listing
+reset()
+r = json.loads(mod.add_bookmark("0x6000"))
+assert r == {"addr": "0x6000", "slot": 0, "description": ""}, r
+assert CALLS[-1] == (0x6000, 0, 0, 0, 0, " "), CALLS
+r = listed()
+assert r["count"] == 1 and r["bookmarks"][0]["name"] == "", r
+print("empty description survives the 9.5 mark_position quirk OK")
 
 # 8) a full marks table (256 entries) is refused ---------------------------
 reset()

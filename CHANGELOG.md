@@ -29,6 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pre-9.x `udm_t.type.get(out)` accessor, while 9.x exposes `udm_t.type` as a
   `tinfo_t` property. `_udm_member_type()` now handles both shapes and feeds
   the same helper used by `_format_tinfo`.
+- `add_bookmark` with the default (empty) description raised IDA's "Internal
+  error 1312": `mark_position` rejects an empty comment. A single space is
+  sent instead and stripped back to `""` when the bookmarks are listed.
 
 ## [0.2.2] - 2026-11-10
 

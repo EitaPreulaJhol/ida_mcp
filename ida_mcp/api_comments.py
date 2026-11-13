@@ -253,7 +253,9 @@ def get_bookmarks() -> str:
         ea = _bookmark_at(i)
         if ea is None:
             continue
-        desc = idc.get_bookmark_desc(i) or ""
+        # A bookmark added without a description was stored as a single space
+        # (see add_bookmark); report it as empty again.
+        desc = (idc.get_bookmark_desc(i) or "").strip()
         results.append({"address": hex(ea), "name": desc, "slot": i})
 
     return json.dumps({"bookmarks": results, "count": len(results)}, indent=2)
@@ -287,7 +289,11 @@ def add_bookmark(address: str, description: str = "") -> str:
         # Passing it as ``lnnum`` (the old bug) wrote every bookmark to slot
         # 0 -- overwriting the previous one -- and raised IDA's
         # "Internal error 1312" whenever lnnum was not 0.
-        mark(ea, 0, 0, 0, free_slot, description or "")
+        #
+        # 9.5 also rejects an EMPTY comment with the same "Internal error
+        # 1312", so the no-description case sends a single space, which
+        # get_bookmarks() strips back to "".
+        mark(ea, 0, 0, 0, free_slot, description or " ")
     except Exception as e:
         return json.dumps({"error": str(e)})
     if _bookmark_at(free_slot) != ea:
