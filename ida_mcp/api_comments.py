@@ -15,7 +15,7 @@ from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
 from .api_analysis import parse_addr
-from .compat import get_extra_cmt, get_extra_cmt_qty
+from .compat import badaddr, get_extra_cmt, get_extra_cmt_qty
 
 
 # ===========================================================================
@@ -186,6 +186,61 @@ def set_extra_comment(address: str, comment: str, position: str = "before") -> s
 # Bookmarks
 # ===========================================================================
 
+_BOOKMARK_SLOTS = 256
+
+
+def _bookmark_at(slot: int) -> int | None:
+    """Address bookmarked in ``slot`` (None when the slot is empty).
+
+    ``idc.get_bookmark`` is ``ida_idc.get_marked_pos`` and reports an empty
+    slot as ``BADADDR``. The old code also treated address 0 as "free", so a
+    bookmark at address 0 was invisible and got overwritten.
+    """
+    try:
+        ea = idc.get_bookmark(slot)
+    except Exception:
+        return None
+    return None if ea == badaddr() else ea
+
+
+def _bookmark_addresses() -> list[int]:
+    """Addresses currently bookmarked, in slot order (dense array)."""
+    return [ea for ea in (_bookmark_at(slot) for slot in range(_BOOKMARK_SLOTS))
+            if ea is not None]
+
+
+def _clear_bookmark(slot: int) -> bool:
+    """Remove the bookmark in ``slot``; True only when one disappeared.
+
+    IDA 9.x removed ``idc.del_bookmark`` (the binding only exposes
+    ``get_bookmark``/``get_bookmark_desc``/``put_bookmark``). The remaining
+    deletion path is ``mark_position`` with ``BADADDR`` as the address, which
+    removes the entry at that index; older IDAs keep ``del_bookmark``.
+
+    The IDB marks are a DENSE array: removing index N shifts the following
+    entries down, so the slot itself is not empty afterwards. The check is
+    therefore on the number of marks (must drop by exactly one), not on
+    ``slot`` being ``BADADDR``.
+    """
+    if _bookmark_at(slot) is None:
+        return False
+    before = len(_bookmark_addresses())
+    delete = getattr(idc, "del_bookmark", None)
+    if callable(delete):
+        try:
+            delete(slot)
+        except Exception:
+            pass
+    else:
+        mark = getattr(idc, "put_bookmark", None)
+        if not callable(mark):
+            return False
+        try:
+            mark(badaddr(), 0, 0, 0, slot, "")
+        except Exception:
+            return False
+    return len(_bookmark_addresses()) == before - 1
+
 
 @tool
 @idasync
@@ -194,11 +249,12 @@ def get_bookmarks() -> str:
     ensure_analysis()
     results: list[dict] = []
 
-    for i in range(256):
-        ea = idc.get_bookmark(i)
-        if ea != idc.BADADDR and ea != 0xFFFFFFFF and ea != 0:
-            desc = idc.get_bookmark_desc(i) or ""
-            results.append({"address": hex(ea), "name": desc, "slot": i})
+    for i in range(_BOOKMARK_SLOTS):
+        ea = _bookmark_at(i)
+        if ea is None:
+            continue
+        desc = idc.get_bookmark_desc(i) or ""
+        results.append({"address": hex(ea), "name": desc, "slot": i})
 
     return json.dumps({"bookmarks": results, "count": len(results)}, indent=2)
 
@@ -217,25 +273,26 @@ def add_bookmark(address: str, description: str = "") -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    put = getattr(idc, "put_bookmark", None)
-    if put is None:
+    mark = getattr(idc, "put_bookmark", None)
+    if mark is None:
         return json.dumps({"error": "put_bookmark unavailable in this IDA version"})
 
-    free_slot: int | None = None
-    for slot in range(256):
-        try:
-            cur = idc.get_bookmark(slot)
-        except Exception:
-            continue
-        if cur in (idc.BADADDR, 0xFFFFFFFF, 0):
-            free_slot = slot
-            break
+    free_slot = next((slot for slot in range(_BOOKMARK_SLOTS)
+                      if _bookmark_at(slot) is None), None)
     if free_slot is None:
         return json.dumps({"error": "No free bookmark slots (0-255 all used)"})
     try:
-        put(ea, free_slot, 0, 0, 0, description or "")
+        # idc.put_bookmark is ida_idc.mark_position, whose signature is
+        # (ea, lnnum, x, y, slot, comment): the slot is the FIFTH argument.
+        # Passing it as ``lnnum`` (the old bug) wrote every bookmark to slot
+        # 0 -- overwriting the previous one -- and raised IDA's
+        # "Internal error 1312" whenever lnnum was not 0.
+        mark(ea, 0, 0, 0, free_slot, description or "")
     except Exception as e:
         return json.dumps({"error": str(e)})
+    if _bookmark_at(free_slot) != ea:
+        return json.dumps({"addr": hex(ea), "slot": free_slot,
+                           "error": "Bookmark was not stored; the slot did not take the address"})
     return json.dumps({"addr": hex(ea), "slot": free_slot, "description": description or ""})
 
 
@@ -249,15 +306,12 @@ def delete_bookmark(target: str) -> str:
     (``"3"``) or an address/symbol (the bookmark at that address is removed).
     """
     ensure_analysis()
-    delete = getattr(idc, "del_bookmark", None)
-    if delete is None:
-        return json.dumps({"error": "del_bookmark unavailable in this IDA version"})
 
     slot: int | None = None
     try:
-        slot = int(target, 0)
-        if not 0 <= slot <= 255:
-            slot = None
+        candidate = int(target, 0)
+        if 0 <= candidate < _BOOKMARK_SLOTS:
+            slot = candidate
     except (ValueError, TypeError):
         slot = None
     if slot is None:
@@ -265,17 +319,13 @@ def delete_bookmark(target: str) -> str:
             ea = parse_addr(target)
         except ValueError as e:
             return json.dumps({"error": str(e)})
-        for i in range(256):
-            try:
-                if idc.get_bookmark(i) == ea:
-                    slot = i
-                    break
-            except Exception:
-                continue
+        slot = next((i for i in range(_BOOKMARK_SLOTS)
+                     if _bookmark_at(i) == ea), None)
         if slot is None:
             return json.dumps({"error": f"No bookmark at {target}"})
-    try:
-        delete(slot)
-    except Exception as e:
-        return json.dumps({"error": str(e)})
+    elif _bookmark_at(slot) is None:
+        return json.dumps({"error": f"No bookmark in slot {slot}"})
+
+    if not _clear_bookmark(slot):
+        return json.dumps({"error": f"Could not clear bookmark slot {slot}"})
     return json.dumps({"ok": True, "slot": slot})

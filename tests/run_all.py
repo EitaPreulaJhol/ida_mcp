@@ -30,6 +30,7 @@ TESTS = [
     "memory_test.py",
     "inspection_test.py",
     "annotation_test.py",
+    "bookmark_test.py",
     "modify_test.py",
     "names_test.py",
     "functions_test.py",

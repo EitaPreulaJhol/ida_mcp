@@ -12,6 +12,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   installed with `UI_Hooks.hook()` / removed with `unhook()`). The
   `AttributeError` was swallowed, so `ready_to_run()` never fired and the
   server only came up when the plugin was picked from the menu.
+- `add_bookmark` passed the free slot as `mark_position()`'s `lnnum` argument
+  and always used slot 0: a second bookmark overwrote the first, and a
+  nonzero line number raised IDA's "Internal error 1312".
+- `delete_bookmark` looked for `idc.del_bookmark`, removed in IDA 9.x, so it
+  always answered "unavailable". The entry is now cleared through
+  `mark_position(BADADDR, ...)` (or `del_bookmark` on older IDAs) and the
+  marks array is re-read to confirm one entry disappeared.
+- Bookmarks at address 0 were treated as empty slots and overwritten;
+  emptiness is `BADADDR` only.
 
 ## [0.2.2] - 2026-11-10
 
