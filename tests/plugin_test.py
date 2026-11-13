@@ -33,30 +33,31 @@ hooks_installed = []
 
 
 class UI_Hooks:
+    """Mirror of ida_kernwin.UI_Hooks: hook()/unhook(), no module helpers."""
+
     def __init__(self):
-        pass
+        self.hooked = False
+
+    def hook(self):
+        self.hooked = True
+        if self not in hooks_installed:
+            hooks_installed.append(self)
+        return True
+
     def unhook(self):
-        pass
+        self.hooked = False
+        if self in hooks_installed:
+            hooks_installed.remove(self)
+        return True
 
 
 def is_idaq():
     return True
 
 
-def install_ui_hook(h):
-    hooks_installed.append(h)
-
-
-def remove_ui_hook(h):
-    if h in hooks_installed:
-        hooks_installed.remove(h)
-
-
 ida_kernwin = types.ModuleType("ida_kernwin")
 ida_kernwin.UI_Hooks = UI_Hooks
 ida_kernwin.is_idaq = is_idaq
-ida_kernwin.install_ui_hook = install_ui_hook
-ida_kernwin.remove_ui_hook = remove_ui_hook
 ida_kernwin.msg = lambda text: None
 sys.modules["ida_kernwin"] = ida_kernwin
 
@@ -175,10 +176,11 @@ p = loader_mod.PLUGIN_ENTRY()
 assert isinstance(p, cls)
 print("PLUGIN_ENTRY returns instance OK")
 
-# 5) init installs UI hook and returns PLUGIN_KEEP
+# 5) init installs (hooks) the UI hook and returns PLUGIN_KEEP
 rc = p.init()
 assert rc == PLUGIN_KEEP
-assert len(hooks_installed) == 1
+assert len(hooks_installed) == 1, "init() must hook the UI_Hooks instance"
+assert p.ui_hook.hooked is True, "UI_Hooks.hook() was not called"
 assert p.autostart is True
 print("init OK")
 
@@ -233,9 +235,10 @@ loader_mod.unload_package("hotpkg")
 assert _stopped == [13341] and "hotpkg.rpc" not in sys.modules, _stopped
 print("unload_package stops the stale server OK")
 
-# 7) term() stops and removes hook
+# 7) term() stops and unhooks
 p.term()
-assert hooks_installed == []
+assert hooks_installed == [], "term() must unhook the UI hook"
+assert p.ui_hook.hooked is False, "UI_Hooks.unhook() was not called"
 print("term OK")
 
 # 8) plugin.py re-exports the loader's symbols (backwards-compat)

@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- The plugin never auto-started: `IdaMcp.init()` called
+  `ida_kernwin.install_ui_hook()`, which does not exist (the UI hook is
+  installed with `UI_Hooks.hook()` / removed with `unhook()`). The
+  `AttributeError` was swallowed, so `ready_to_run()` never fired and the
+  server only came up when the plugin was picked from the menu.
+
 ## [0.2.2] - 2026-11-10
 
 ### Added

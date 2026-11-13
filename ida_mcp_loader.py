@@ -293,7 +293,9 @@ class IdaMcp(_PluginBase):
         self.autostart = _get_autostart()
         self.ui_hook = MCPUIHooks(self)
         try:
-            ida_kernwin.install_ui_hook(self.ui_hook)
+            # UI_Hooks.hook() -- ida_kernwin has no module-level
+            # install_ui_hook()/remove_ui_hook() (never did on 9.x).
+            self.ui_hook.hook()
         except Exception:
             pass
         try:
@@ -367,7 +369,7 @@ class IdaMcp(_PluginBase):
             pass
         try:
             if getattr(self, "ui_hook", None) is not None:
-                ida_kernwin.remove_ui_hook(self.ui_hook)
+                self.ui_hook.unhook()
         except Exception:
             pass
 
