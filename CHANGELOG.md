@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `tests/idalib_all_tools_test.py` (`make idalib`): opt-in live sweep that
+  runs every safe tool once against a real IDB (temp DB copy) and fails on
+  exceptions or on a deprecation warning from our own files. This is the
+  sweep that found the 9.5 breakages.
+- The docs cross-check now also scans `ida_mcp_loader.py` (the file IDA
+  actually loads) and `getattr(module, "name")` fallbacks, with the
+  intentional pre-9.x fallbacks allowlisted.
+
 ### Changed
 - Pagination arguments are `limit` everywhere (`list_imports`,
   `list_exports`, `list_strings`, `get_all_names`, `list_funcs`,
@@ -78,6 +87,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `get_segment_bitness` (and the segment listings) report 16/32/64 instead
   of IDA's internal 0/1/2 code; the raw code is kept under `raw`.
 - `get_analysis_prompt` no longer says "1 import modules".
+- `pyproject.toml` ships `ida_mcp_loader.py` as a top-level module, so a
+  wheel carries both halves of the plugin instead of just the package.
 
 ## [0.2.2] - 2026-11-10
 

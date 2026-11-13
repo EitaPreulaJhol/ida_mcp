@@ -33,6 +33,15 @@ assert patterns, (
     "?profile=")
 print(f"package-data declared OK ({patterns})")
 
+# the wheel must also carry the top-level loader IDA imports (review P3)
+py_modules = cfg.get("tool", {}).get("setuptools", {}).get("py-modules", [])
+assert "ida_mcp_loader" in py_modules, (
+    "pyproject.toml does not list ida_mcp_loader in [tool.setuptools] "
+    "py-modules: a pip-installed wheel would carry only half the plugin")
+assert os.path.isfile(os.path.join(ROOT, "ida_mcp_loader.py")), \
+    "ida_mcp_loader.py missing at the repo root"
+print("ida_mcp_loader shipped as a top-level module OK")
+
 # every shipped profile file must be matched by at least one pattern
 profiles = sorted(glob.glob(os.path.join(PKG, "profiles", "*.txt")))
 assert profiles, "no ida_mcp/profiles/*.txt found"

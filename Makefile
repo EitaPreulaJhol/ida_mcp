@@ -2,7 +2,7 @@
 # tools (ruff/mypy/coverage) that you install with: pip install -e ".[dev]"
 PYTHON ?= python3
 
-.PHONY: help test inventory skills lint fmt typecheck crosscheck coverage package clean
+.PHONY: help test inventory skills lint fmt typecheck crosscheck idalib coverage package clean
 
 help:
 	@echo "Targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  fmt        - ruff check --fix ."
 	@echo "  typecheck  - mypy on the pure (non-IDA) modules"
 	@echo "  crosscheck - IDAPython docs cross-check (needs IDAPYTHON_DOCS_DIR)"
+	@echo "  idalib     - live sweep of every safe tool (IDA_MCP_IDALIB=1 + binary)"
 	@echo "  coverage   - run suite under coverage (informational)"
 	@echo "  package    - build the plugin zip into dist/"
 	@echo "  clean      - remove caches and dist/"
@@ -55,6 +56,11 @@ typecheck:
 
 crosscheck:
 	$(PYTHON) tests/idadocs_crosscheck_test.py
+
+# Live all-tools sweep; skips green without IDA_MCP_IDALIB=1 and a binary:
+#   IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib
+idalib:
+	$(PYTHON) tests/idalib_all_tools_test.py
 
 coverage:
 	@if [ -n "$(COVERAGE)" ]; then \

@@ -23,11 +23,20 @@ CHEATSHEET = os.path.join(ROOT, "skills", "ida-scripting", "references", "api-re
 # Known false positives (mod.attr). Each is documented; revisit if the docs or
 # our code change.
 ALLOWLIST = {
-    # compat.badaddr(): guarded pre-9.3 fallback; ida_ida.BADADDR was removed
-    # in 9.x so it's absent from the 9.x reference, but the hasattr guard makes
-    # it a correct fallback on older IDAs.
-    "ida_ida.BADADDR",
-    "ida_bytes.BADADDR",
+    # --- compat.py: guarded fallbacks for pre-9.4/9.5 spellings. Each is
+    #     reached only when the replacement named in its comment is absent,
+    #     so the 9.x reference legitimately does not list it.
+    "ida_ida.BADADDR",            # pre-9.3; 9.x uses idaapi.BADADDR
+    "ida_bytes.BADADDR",          # ida_bytes never had it (dead branch kept safe)
+    "ida_name.del_name",          # split into del_global_name/del_local_name
+    "ida_typeinf.get_ordinal_qty",  # renamed get_ordinal_limit/count
+    "ida_funcs.FUNC_STATIC",      # renamed FUNC_STATICDEF
+    "ida_bytes.get_original_bytes",  # bulk reader removed; per-byte fallback
+    "ida_lines.get_extra_cmt_qty",   # removed; first-free-index fallback
+    "ida_typeinf.get_cc_name",    # removed in 9.4; constants mapped locally
+    "idaapi.get_inf_structure",   # removed; inf_is_64bit path preferred
+    "idc.del_bookmark",           # pre-9.x delete path in _clear_bookmark
+    "ida_hexrays.guess_tinfo",    # optional; never existed on 9.x bindings
     # cheat-sheet "Wrong vs Correct" table: these are the intentionally-wrong
     # examples (the ❌ column). Their presence confirms the cheat-sheet is right.
     "idc.SN_FORCE",
@@ -71,13 +80,15 @@ def known(index, global_toplevel, mod, attr):
 
 def check_sources(index, global_toplevel):
     findings = []
+    targets = [os.path.join(ROOT, "ida_mcp_loader.py")]
     for dirpath, _dirs, files in os.walk(os.path.join(ROOT, "ida_mcp")):
         if "zeromcp" in dirpath or "__pycache__" in dirpath:
             continue
         for fn in sorted(files):
-            if not fn.endswith(".py"):
-                continue
-            path = os.path.join(dirpath, fn)
+            if fn.endswith(".py"):
+                targets.append(os.path.join(dirpath, fn))
+    for path in targets:
+        if os.path.isfile(path):
             rel = os.path.relpath(path, ROOT)
             tree = ast.parse(open(path, encoding="utf-8").read(), filename=path)
             imported = set()
@@ -89,20 +100,32 @@ def check_sources(index, global_toplevel):
             for node in ast.walk(tree):
                 if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                     mod, attr = node.value.id, node.attr
-                    if mod not in imported and mod != "idaapi":
-                        continue
-                    if not (mod.startswith("ida") or mod in IDA_MODULES_HINT):
-                        continue
-                    if attr.startswith("__"):
-                        continue
-                    if mod not in index and mod != "idaapi":
-                        continue
-                    sym = f"{mod}.{attr}"
-                    if sym in seen or sym in ALLOWLIST:
-                        continue
-                    if not known(index, global_toplevel, mod, attr):
-                        seen.add(sym)
-                        findings.append((rel, sym))
+                elif (isinstance(node, ast.Call)
+                      and isinstance(node.func, ast.Name)
+                      and node.func.id == "getattr"
+                      and len(node.args) >= 2
+                      and isinstance(node.args[0], ast.Name)
+                      and isinstance(node.args[1], ast.Constant)
+                      and isinstance(node.args[1].value, str)):
+                    # getattr(ida_mod, "name"): the guarded-fallback idiom (a
+                    # plain ast.Attribute walk cannot see these).
+                    mod, attr = node.args[0].id, node.args[1].value
+                else:
+                    continue
+                if mod not in imported and mod != "idaapi":
+                    continue
+                if not (mod.startswith("ida") or mod in IDA_MODULES_HINT):
+                    continue
+                if attr.startswith("__"):
+                    continue
+                if mod not in index and mod != "idaapi":
+                    continue
+                sym = f"{mod}.{attr}"
+                if sym in seen or sym in ALLOWLIST:
+                    continue
+                if not known(index, global_toplevel, mod, attr):
+                    seen.add(sym)
+                    findings.append((rel, sym))
     return findings
 
 

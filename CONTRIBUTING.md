@@ -113,6 +113,11 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
   IDA. Run with `IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/path/to/bin`. Catches
   real API drift the stubbed suite can't (how `idc.Assemble` /
   `ida_search.find_binary` slipped through before).
+- **idalib all-tools sweep** (`tests/idalib_all_tools_test.py`, `make idalib`):
+  same environment; copies the binary to a temp dir, calls every safe tool
+  once with signature defaults, and fails on exceptions or on a new
+  deprecation warning from our files. This is the sweep that found the
+  9.5 tool breakages.
 - **IDAPython docs cross-check** (`tests/idadocs_crosscheck_test.py`): point
   `IDAPYTHON_DOCS_DIR` at a local copy of the official reference; it fails on
   new drift against an allowlist of known false positives. Skips if absent.

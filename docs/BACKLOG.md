@@ -49,15 +49,17 @@ consistency) → **P3** (test & tooling gaps) → **P4** (Pi bridge).
 
 ## P3 — test and tooling gaps
 
-- [ ] `tools/idadocs_crosscheck.py`: also scan `ida_mcp_loader.py` (the file
-      IDA actually loads) and `getattr(mod, "literal")` string lookups.
-      Both gaps are proven: the first flags the old `install_ui_hook`, the
-      second the removed `idc.del_bookmark`.
-- [ ] Add `tests/idalib_all_tools_test.py` (opt-in, `IDA_MCP_IDALIB=1`): run
-      every tool against a real IDB with signature defaults. This sweep found
-      four of the shipped bugs and the empty-bookmark-description one.
-- [ ] `pyproject.toml` does not ship `ida_mcp_loader.py`, so a wheel install
-      is not loadable by IDA (only `scripts/package.py` builds a usable zip).
+- [x] `tools/idadocs_crosscheck.py` also scans `ida_mcp_loader.py` and
+      `getattr(mod, "literal")` lookups. Both gaps were proven by mutation:
+      the first catches the old `install_ui_hook`, the second a missing
+      symbol behind a guarded `getattr`; the intentional pre-9.x fallbacks
+      are allowlisted with a comment each.
+- [x] `tests/idalib_all_tools_test.py` (opt-in, `IDA_MCP_IDALIB=1`,
+      `make idalib`): runs every safe tool against a temp IDB through
+      `idalib`, fails on exceptions and on new deprecations from our files.
+      This sweep found four of the shipped bugs and the empty-description one.
+- [x] `pyproject.toml` ships `ida_mcp_loader.py` via `py-modules`, so a wheel
+      carries both halves of the plugin.
 
 ## P4 — Pi bridge (`.pi/extensions/ida-mcp.ts`)
 
