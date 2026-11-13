@@ -25,6 +25,7 @@ import idaapi
 import idautils
 import idc
 
+from .compat import get_reg_name
 from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
@@ -368,16 +369,121 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
                        "limit": limit}, indent=2)
 
 
+def _pointer_size() -> int:
+    """Pointer width in bytes for the current database (8 unless known 32-bit)."""
+    for mod in (ida_ida, idaapi):
+        fn = getattr(mod, "inf_is_64bit", None)
+        if callable(fn):
+            try:
+                return 8 if fn() else 4
+            except Exception:
+                pass
+    get_inf = getattr(idaapi, "get_inf_structure", None)
+    if callable(get_inf):
+        try:
+            return 8 if get_inf().is_64bit() else 4
+        except Exception:
+            pass
+    return 8
+
+
+def _read_pointer(ea: int) -> int | None:
+    """Read a mapped pointer value from ``ea``; None when unknown/unmapped."""
+    size = _pointer_size()
+    raw = read_bytes_bss_safe(ea, size)
+    if not raw or len(raw) < size:
+        return None
+    be = False
+    try:
+        be = bool(ida_ida.inf_is_be())
+    except Exception:
+        pass
+    val = int.from_bytes(raw[:size], "big" if be else "little")
+    if val in (0, idaapi.BADADDR):
+        return None
+    is_mapped = getattr(ida_bytes, "is_mapped", None)
+    if callable(is_mapped):
+        try:
+            if not is_mapped(val):
+                return None
+        except Exception:
+            pass
+    return val
+
+
+def _direct_call_targets(head: int, op) -> list[int]:
+    """Direct call targets, preferring code xrefs over the operand's literal.
+
+    ``CodeRefsFrom`` is the authoritative source for direct calls. If the
+    binding/stub lacks it, ``XrefsFrom(..., iscode=True)`` is used; non-code
+    origins are deliberately ignored. The decoded operand is only a fallback
+    for environments where neither xref API works.
+    """
+    targets: list[int] = []
+    refs_from = getattr(idautils, "CodeRefsFrom", None)
+    if callable(refs_from):
+        try:
+            for ref in refs_from(head, 0):
+                if isinstance(ref, int) and ref not in (0, idaapi.BADADDR):
+                    targets.append(ref)
+        except Exception:
+            targets = []
+    if not targets:
+        try:
+            for xr in idautils.XrefsFrom(head, 0):
+                if not getattr(xr, "iscode", False):
+                    continue
+                ref = getattr(xr, "to", None)
+                if isinstance(ref, int) and ref not in (0, idaapi.BADADDR):
+                    targets.append(ref)
+        except Exception:
+            pass
+    if not targets:
+        if op.type in (ida_ua.o_near, ida_ua.o_far):
+            targets = [op.addr]
+        elif op.type == ida_ua.o_imm:
+            targets = [op.value]
+    return targets
+
+
+def _callee_name(ea: int) -> str:
+    try:
+        return ida_name.get_name(ea) or f"sub_{ea:X}"
+    except Exception:
+        return f"sub_{ea:X}"
+
+
+def _callee_type(ea: int) -> str:
+    try:
+        return "internal" if ida_funcs.get_func(ea) else "external"
+    except Exception:
+        return "external"
+
+
+def _register_name(reg) -> str | None:
+    if reg is None:
+        return None
+    try:
+        name = get_reg_name(reg, _pointer_size())
+    except Exception:
+        name = None
+    return name or None
+
+
 @tool
 @idasync
 def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
     """Get functions called BY the function at the given address or name.
 
-    Returns a JSON array of ``{addr, name, type, indirect}`` where ``type`` is
-    ``"internal"`` or ``"external"``.  ``o_mem`` call operands (e.g. a GOT
-    slot) are flagged ``indirect``: the reported address is the pointer slot,
-    not a resolved function. Paginated: at most ``limit`` entries
-    from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
+    Returns a JSON array of ``{addr, name, type, indirect, kind}``. ``kind`` is
+    ``direct``, ``indirect_memory`` or ``indirect_register``. Direct calls use
+    ``CodeRefsFrom`` (non-code origins are ignored). A memory call reports the
+    pointer slot in ``addr`` (backward compatible) and, when the slot holds a
+    mapped pointer, adds ``indirect_target`` and ``indirect_target_name``.
+    Register calls report the call site in ``addr`` plus the raw ``register``
+    operand (and ``register_name`` when the SDK can resolve it).
+    Paginated: at most ``limit`` entries from ``offset`` (``limit=0`` = no cap);
+    a full page means more may follow.
     """
     ensure_analysis()
     try:
@@ -389,7 +495,12 @@ def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
     if not func:
         return json.dumps({"error": f"No function at {address}"})
 
-    callees: dict[int, dict] = {}
+    callees: dict[tuple, dict] = {}
+
+    def add(key, row):
+        if key not in callees:
+            callees[key] = row
+
     current_ea = func.start_ea
     while current_ea < func.end_ea:
         insn = ida_ua.insn_t()
@@ -398,21 +509,47 @@ def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
             continue
         if insn.get_canon_mnem() == "call":
             op0 = insn.ops[0]
-            indirect = op0.type == ida_ua.o_mem
-            if op0.type in (ida_ua.o_mem, ida_ua.o_near, ida_ua.o_far):
-                target = op0.addr
-            elif op0.type == ida_ua.o_imm:
-                target = op0.value
-            else:
-                target = None
-            if target is not None and target not in callees:
-                name = ida_name.get_name(target)
-                callees[target] = {
-                    "addr": hex(target),
-                    "name": name or f"sub_{target:X}",
-                    "type": "internal" if ida_funcs.get_func(target) else "external",
-                    "indirect": indirect,
+            o_reg = getattr(ida_ua, "o_reg", None)
+            if o_reg is not None and op0.type == o_reg:
+                reg = getattr(op0, "reg", None)
+                reg_name = _register_name(reg)
+                label = reg_name if reg_name is not None else reg
+                row = {
+                    "addr": hex(current_ea),
+                    "call_site": hex(current_ea),
+                    "name": f"<call {label}>",
+                    "type": "external",
+                    "indirect": True,
+                    "kind": "indirect_register",
+                    "register": reg,
                 }
+                if reg_name is not None:
+                    row["register_name"] = reg_name
+                add(("reg", current_ea, reg), row)
+            elif op0.type == ida_ua.o_mem:
+                slot = op0.addr
+                target = _read_pointer(slot)
+                row = {
+                    "addr": hex(slot),
+                    "call_site": hex(current_ea),
+                    "name": _callee_name(slot),
+                    "type": _callee_type(target) if target is not None else "external",
+                    "indirect": True,
+                    "kind": "indirect_memory",
+                }
+                if target is not None:
+                    row["indirect_target"] = hex(target)
+                    row["indirect_target_name"] = _callee_name(target)
+                add(("mem", slot, target), row)
+            elif op0.type in (ida_ua.o_near, ida_ua.o_far, ida_ua.o_imm):
+                for target in _direct_call_targets(current_ea, op0):
+                    add(("direct", target), {
+                        "addr": hex(target),
+                        "name": _callee_name(target),
+                        "type": _callee_type(target),
+                        "indirect": False,
+                        "kind": "direct",
+                    })
         current_ea = idc.next_head(current_ea, func.end_ea)
 
     rows = list(callees.values())

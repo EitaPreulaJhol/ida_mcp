@@ -61,6 +61,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dry_run`; `list_patches` scans in chunks, returns coalesced `ranges`, a
   `scanned_bytes` count and an optional `max_scan_bytes` cap (with
   `truncated`), while keeping the flat `patches` list compatible.
+- `get_callees` now classifies edges as `direct`, `indirect_memory` or
+  `indirect_register`. Direct targets come from `CodeRefsFrom` (non-code
+  origins are ignored); memory calls resolve the pointer slot when possible
+  and expose `indirect_target`/`indirect_target_name`, while register calls
+  report the call site and register name.
 
 ## [0.3.0] - 2026-11-13
 

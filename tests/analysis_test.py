@@ -22,6 +22,8 @@ ida_ida = types.ModuleType("ida_ida")
 ida_ida.BADADDR = -1
 ida_ida.inf_get_min_ea = lambda: 0
 ida_ida.inf_get_max_ea = lambda: 0xFFFFFFFF
+ida_ida.inf_is_64bit = lambda: True
+ida_ida.inf_is_be = lambda: False
 sys.modules["ida_ida"] = ida_ida
 
 # --- idaapi ---
@@ -64,10 +66,11 @@ _fake_insn_ops: dict[int, list] = {}
 
 
 class FakeOp():
-    def __init__(self, typ, addr=0, value=0):
+    def __init__(self, typ, addr=0, value=0, reg=0):
         self.type = typ
         self.addr = addr
         self.value = value
+        self.reg = reg
 
 
 # Map of address -> "call" / other mnemonic.  The fake insn's
@@ -99,12 +102,15 @@ ida_ua.o_mem = 2
 ida_ua.o_near = 3
 ida_ua.o_far = 4
 ida_ua.o_imm = 5
+ida_ua.o_reg = 6
+ida_ua.get_reg_name = lambda reg, width=0: f"r{reg}"
 sys.modules["ida_ua"] = ida_ua
 
 # --- idautils ---
 _fake_xrefs_to: list = []
 _fake_xrefs_from: list = []
 _fake_code_refs_to: list = []
+_fake_code_refs_from: dict[int, list[int]] = {}
 _fake_strings: list = []
 
 
@@ -138,10 +144,15 @@ def _fake_code_refs_to_iter(ea, flags=0):
     yield from _fake_code_refs_to
 
 
+def _fake_code_refs_from_iter(ea, flags=0):
+    yield from _fake_code_refs_from.get(ea, [])
+
+
 idautils = types.ModuleType("idautils")
 idautils.XrefsTo = _fake_xrefs_to_iter
 idautils.XrefsFrom = _fake_xrefs_from_iter
 idautils.CodeRefsTo = _fake_code_refs_to_iter
+idautils.CodeRefsFrom = _fake_code_refs_from_iter
 idautils.Strings = lambda: _fake_strings
 idautils.FuncItems = lambda start: []
 sys.modules["idautils"] = idautils
@@ -233,6 +244,7 @@ def setup_module():
     _fake_xrefs_to.clear()
     _fake_xrefs_from.clear()
     _fake_code_refs_to.clear()
+    _fake_code_refs_from.clear()
     _fake_strings.clear()
 
 
@@ -290,9 +302,11 @@ _fake_functions[0x1000] = FakeFunc(0x1000, 0x1020)
 _fake_insn_mnems[0x1000] = "call"
 _fake_insn_itype[0x1000] = ida_ua.NN_call
 _fake_insn_ops[0x1000] = [FakeOp(ida_ua.o_near, addr=0x2000)]
+_fake_code_refs_from[0x1000] = [0x2000]
 _fake_insn_mnems[0x1004] = "call"
 _fake_insn_itype[0x1004] = ida_ua.NN_call
 _fake_insn_ops[0x1004] = [FakeOp(ida_ua.o_near, addr=0x3000)]
+_fake_code_refs_from[0x1004] = [0x3000]
 _fake_func_names[0x2000] = "target_func"
 _fake_func_names[0x3000] = "another_target"
 _fake_functions[0x2000] = FakeFunc(0x2000, 0x2100)
@@ -305,13 +319,33 @@ import json as _json
 assert len(_json.loads(mod.get_callees("0x1000", limit=1))) == 1, mod.get_callees("0x1000", limit=1)
 full = _json.loads(mod.get_callees("0x1000"))
 assert all(c["indirect"] is False for c in full), full
+assert all(c["kind"] == "direct" for c in full), full
 assert _json.loads(mod.get_callees("0x1000", offset=1)) == full[1:], full
-# A GOT-style ``call [mem]`` names a pointer slot, not the callee; flag it.
+# A GOT-style ``call [mem]`` names a pointer slot. When the slot holds a
+# mapped pointer, the resolved target is exposed alongside the slot.
 _fake_insn_mnems[0x1008] = "call"
 _fake_insn_ops[0x1008] = [FakeOp(ida_ua.o_mem, addr=0x4000)]
-mem = [c for c in _json.loads(mod.get_callees("0x1000"))
-       if c["addr"] == "0x4000"]
+_orig_get_bytes = ida_bytes.get_bytes
+ida_bytes.get_bytes = lambda ea, size: (
+    (0x2000).to_bytes(8, "little") if ea == 0x4000 and size == 8
+    else _orig_get_bytes(ea, size))
+try:
+    mem = [c for c in _json.loads(mod.get_callees("0x1000"))
+           if c["addr"] == "0x4000"]
+finally:
+    ida_bytes.get_bytes = _orig_get_bytes
 assert mem and mem[0]["indirect"] is True, mem
+assert mem[0]["kind"] == "indirect_memory", mem
+assert mem[0]["indirect_target"] == "0x2000", mem
+assert mem[0]["indirect_target_name"] == "target_func", mem
+# Register-indirect calls have no resolvable target; report the call site.
+_fake_insn_mnems[0x100C] = "call"
+_fake_insn_ops[0x100C] = [FakeOp(ida_ua.o_reg, reg=0)]
+regs = [c for c in _json.loads(mod.get_callees("0x1000"))
+        if c.get("kind") == "indirect_register"]
+assert regs and regs[0]["addr"] == "0x100c", regs
+assert regs[0]["indirect"] is True and regs[0]["register"] == 0, regs
+assert regs[0]["register_name"] == "r0" and regs[0]["name"] == "<call r0>", regs
 print("get_callees basic OK")
 
 setup_module()

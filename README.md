@@ -140,7 +140,7 @@ The plugin exposes 243 tools across 22 modules:
 | Debugger (opt-in) | `dbg_start`, `dbg_continue`, `dbg_step_into/over`, breakpoints, `dbg_regs`, `dbg_stacktrace`, `dbg_read/write` |
 | Hooks (tracers) | `install_hook`, `install_hexrays_hook`, `install_idb_hook`, `get_hook_info` |
 
-All addresses accept hex (`0x401000`), decimal, or symbol names.
+All addresses accept hex (`0x401000`), decimal, or symbol names. `get_callees` marks each edge `direct`, `indirect_memory` or `indirect_register`; for a GOT/pointer slot it also resolves `indirect_target` when the slot holds a mapped pointer.
 
 ## Tool inventory
 
