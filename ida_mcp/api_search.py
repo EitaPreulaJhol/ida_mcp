@@ -48,6 +48,21 @@ def _text_flags(case_sensitive: bool) -> int:
     return flags
 
 
+def _find_imm(ea: int, value: int) -> int:
+    """Address of the next instruction with immediate ``value`` (or BADADDR).
+
+    IDA 9.x returns a ``(ea, matched_value)`` tuple from
+    ``ida_search.find_imm()`` -- the SWIG stub and the reference both say
+    ``int *``, so treating it as an address raised TypeError on the first
+    call. Older bindings return the address directly; both shapes are
+    accepted here.
+    """
+    found = ida_search.find_imm(ea, ida_search.SEARCH_DOWN, value)
+    if isinstance(found, tuple):
+        found = found[0]
+    return found
+
+
 # ===========================================================================
 # Tools
 # ===========================================================================
@@ -140,11 +155,11 @@ def search_immediate_value(value: int) -> str:
 
     partial = False
     try:
-        ea = ida_search.find_imm(0, ida_search.SEARCH_DOWN, value)
+        ea = _find_imm(0, value)
         while ea != ida_idaapi.BADADDR and len(results) < 200:
             check_cancelled()
             results.append(hex(ea))
-            ea = ida_search.find_imm(ea + 1, ida_search.SEARCH_DOWN, value)
+            ea = _find_imm(ea + 1, value)
     except (CancelledError, IDASyncError):
         partial = True
 
@@ -305,11 +320,11 @@ def find_immediate_between(
     results: list[str] = []
     partial = False
     try:
-        ea = ida_search.find_imm(start_ea, ida_search.SEARCH_DOWN, value)
+        ea = _find_imm(start_ea, value)
         while ea != ida_idaapi.BADADDR and ea < end_ea and len(results) < 200:
             check_cancelled()
             results.append(hex(ea))
-            ea = ida_search.find_imm(ea + 1, ida_search.SEARCH_DOWN, value)
+            ea = _find_imm(ea + 1, value)
     except (CancelledError, IDASyncError):
         partial = True
 

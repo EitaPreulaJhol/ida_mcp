@@ -21,6 +21,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   marks array is re-read to confirm one entry disappeared.
 - Bookmarks at address 0 were treated as empty slots and overwritten;
   emptiness is `BADADDR` only.
+- `search_immediate_value` and `find_immediate_between` raised `TypeError` on
+  the first call: `ida_search.find_imm()` returns an `(ea, value)` tuple on
+  IDA 9.x (its SWIG annotation and the reference both say `int *`), and the
+  tools used the result as an address. Both shapes are accepted now.
 
 ## [0.2.2] - 2026-11-10
 

@@ -50,6 +50,23 @@ def _find_text(start_ea, y, x, ustr, sflag):
 
 
 ida_search.find_text = _find_text
+
+# IDA 9.x returns ``(ea, matched_value)`` from find_imm; older bindings
+# returned the address. The stub describes the 9.x shape by default.
+_IMM_MATCHES: list[int] = [0x1010, 0x1020, 0x1030]
+_IMM_TUPLE = [True]
+_IMM_CALLS: list[tuple] = []
+
+
+def _find_imm(ea, sflag, search_value):
+    _IMM_CALLS.append((ea, sflag, search_value))
+    for match in _IMM_MATCHES:
+        if match >= ea:
+            return (match, search_value) if _IMM_TUPLE[0] else match
+    return (ida_idaapi.BADADDR, search_value) if _IMM_TUPLE[0] else ida_idaapi.BADADDR
+
+
+ida_search.find_imm = _find_imm
 sys.modules["ida_search"] = ida_search
 
 # =========================================================================
@@ -121,5 +138,29 @@ r = json.loads(mod.search_bytes("55 48"))
 assert r["count"] == 0, r
 assert _FIND_CALLS == [(0x1000, 0x3000)], _FIND_CALLS
 print("search_bytes uses the image range OK")
+
+# --- immediate search: find_imm returns a tuple on IDA 9.x (16.3) --------
+_IMM_CALLS.clear()
+_IMM_TUPLE[0] = True
+r = json.loads(mod.search_immediate_value(7))
+assert r["matches"] == ["0x1010", "0x1020", "0x1030"], r
+assert r["count"] == 3, r
+assert all(call[1] == ida_search.SEARCH_DOWN for call in _IMM_CALLS), _IMM_CALLS
+assert _IMM_CALLS[-1][0] == 0x1031, _IMM_CALLS
+print("search_immediate_value accepts the find_imm tuple OK")
+
+# same shape for the ranged variant, and the end bound is honoured
+_IMM_CALLS.clear()
+r = json.loads(mod.find_immediate_between(7, "0x1000", "0x1025"))
+assert r["matches"] == ["0x1010", "0x1020"], r
+print("find_immediate_between tuple + range OK")
+
+# old bindings that returned a bare address still work
+_IMM_CALLS.clear()
+_IMM_TUPLE[0] = False
+r = json.loads(mod.search_immediate_value(7))
+assert r["matches"] == ["0x1010", "0x1020", "0x1030"], r
+_IMM_TUPLE[0] = True
+print("search_immediate_value accepts a bare address (older IDA) OK")
 
 print("ALL SEARCH FLAG TESTS PASSED")
