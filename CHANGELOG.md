@@ -28,6 +28,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session's `GET /mcp` SSE stream. `survey_binary`, `callgraph`,
   `make_signature*` and `find_xref_signatures` report phase/
   address progress.
+- `apply_annotations(items, dry_run, stop_on_error)`: one unsafe call for
+  batch rename/comment/type operations, with per-item results, dry-run
+  previews and optional stop-at-first-error.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

@@ -201,6 +201,7 @@ EXPECTED = {
         "is_data",
     ],
     "api_modify": [
+        "apply_annotations",
         "get_original_bytes",
         "list_patches",
         "make_data",

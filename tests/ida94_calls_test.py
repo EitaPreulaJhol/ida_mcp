@@ -91,7 +91,7 @@ ida_name = types.ModuleType("ida_name")
 ida_name.get_ea_name = lambda ea: "sub_1000"
 sys.modules["ida_name"] = ida_name
 
-for _name in ("idautils", "ida_nalt", "ida_funcs"):
+for _name in ("idautils", "ida_nalt", "ida_funcs", "ida_typeinf"):
     sys.modules[_name] = types.ModuleType(_name)
 
 idc = types.ModuleType("idc")

@@ -59,9 +59,35 @@ ida_bytes.DELIT_NOTRUNC = 1
 ida_bytes.DELIT_SIMPLE = 0
 sys.modules["ida_bytes"] = ida_bytes
 
+_NAME_CALLS: list[tuple] = []
+_NAME_BY_EA: dict[int, str] = {}
 ida_name = types.ModuleType("ida_name")
-ida_name.set_name = lambda ea, name, flags=0: True
+ida_name.SN_NOWARN = 0
+ida_name.set_name = lambda ea, name, flags=0: (
+    _NAME_CALLS.append((ea, name)) or _NAME_BY_EA.__setitem__(ea, name) or True)
+ida_name.force_name = lambda ea, name: ida_name.set_name(ea, name)
+ida_name.get_ea_name = lambda ea: _NAME_BY_EA.get(ea, f"old_{ea:x}")
 sys.modules["ida_name"] = ida_name
+
+_CMT_CALLS: list[tuple] = []
+ida_bytes.set_cmt = lambda ea, text, repeatable=False: (
+    _CMT_CALLS.append((ea, text, repeatable)) or True)
+
+_TYPE_CALLS: list[tuple] = []
+
+
+class _FakeTif:
+    def get_named_type(self, til, name):
+        return name in {"probe_t"}
+
+
+ida_typeinf = types.ModuleType("ida_typeinf")
+ida_typeinf.tinfo_t = _FakeTif
+ida_typeinf.get_idati = lambda: object()
+ida_typeinf.TINFO_DEFINITE = 1
+ida_typeinf.apply_tinfo = lambda ea, tif, flags: (
+    _TYPE_CALLS.append((ea, flags)) or True)
+sys.modules["ida_typeinf"] = ida_typeinf
 
 ida_nalt = types.ModuleType("ida_nalt")
 ida_nalt.STRTYPE_C = 0
@@ -176,6 +202,40 @@ assert _PATCHED == [], _PATCHED
 r = json.loads(mod.revert_patch("0x1000", size=2))
 assert _PATCHED == [(0x1000, b"\x41\x41")], _PATCHED
 print("revert_patch range + dry_run OK")
+
+# --- batch annotations: dry-run, per-item errors and stop_on_error ---
+_NAME_CALLS.clear()
+_CMT_CALLS.clear()
+_TYPE_CALLS.clear()
+items = json.dumps([
+    {"action": "rename", "address": "0x1000", "name": "new_name"},
+    {"action": "comment", "address": "0x1004", "comment": "note"},
+    {"action": "type", "address": "0x1008", "type": "probe_t"},
+])
+r = json.loads(mod.apply_annotations(items, dry_run=True))
+assert r["dry_run"] is True and r["valid"] == 3 and r["applied"] == 0, r
+assert not _NAME_CALLS and not _CMT_CALLS and not _TYPE_CALLS, (_NAME_CALLS, _CMT_CALLS, _TYPE_CALLS)
+r = json.loads(mod.apply_annotations(items))
+assert r["applied"] == 3 and r["failed"] == 0, r
+assert _NAME_CALLS == [(0x1000, "new_name")], _NAME_CALLS
+assert _CMT_CALLS == [(0x1004, "note", False)], _CMT_CALLS
+assert _TYPE_CALLS == [(0x1008, 1)], _TYPE_CALLS
+print("apply_annotations dry-run/apply OK")
+
+_NAME_CALLS.clear()
+_CMT_CALLS.clear()
+items = json.dumps([
+    {"action": "rename", "address": "0xBAD", "name": "bad"},
+    {"action": "comment", "address": "0x1000", "comment": "ok"},
+])
+r = json.loads(mod.apply_annotations(items))
+assert r["failed"] == 1 and r["applied"] == 1 and r["count"] == 2, r
+assert _CMT_CALLS == [(0x1000, "ok", False)], _CMT_CALLS
+r = json.loads(mod.apply_annotations(items, stop_on_error=True))
+assert r["failed"] == 1 and r["applied"] == 0 and r["stopped"] is True and r["count"] == 1, r
+r = json.loads(mod.apply_annotations("{not json"))
+assert "error" in r, r
+print("apply_annotations errors/stop_on_error OK")
 
 # list_patches used to scan only the first 100 KB of each segment.  The
 # patched byte below is 100001 bytes into .text, so the old code reported

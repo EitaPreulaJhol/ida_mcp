@@ -19,7 +19,7 @@ metadata:
 
 I connect to IDA Pro lazily: verify the bridge is up, triage with a minimal
 toolset, then progressively unlock more tools (profiles → unsafe → debugger)
-only when the task demands it. I never preload all 242 tools into context —
+only when the task demands it. I never preload all 243 tools into context —
 most MCP clients cap tool slots, and a 16-tool triage set keeps small models
 on-task.
 

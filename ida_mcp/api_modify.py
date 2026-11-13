@@ -12,6 +12,7 @@ import ida_bytes
 import ida_name
 import ida_nalt
 import ida_segment
+import ida_typeinf
 import idautils
 
 from .rpc import tool, unsafe
@@ -21,6 +22,174 @@ from .sync import check_cancelled, CancelledError, IDASyncError
 from .api_analysis import _as_int, clamp_int, parse_addr
 # aliased: this module's own ``get_original_bytes`` tool would shadow it
 from .compat import get_original_bytes as _compat_original_bytes
+
+
+# ===========================================================================
+# Batch annotations
+# ===========================================================================
+
+_MAX_BATCH_ITEMS = 1000
+
+
+def _batch_apply_item(item: dict, dry_run: bool) -> dict:
+    """Validate/apply one annotation item; returns a per-item result dict."""
+    if not isinstance(item, dict):
+        return {"ok": False, "error": "item must be a JSON object"}
+    action = str(item.get("action", "")).strip().lower()
+    address = item.get("address")
+    if address is None:
+        return {"ok": False, "action": action, "error": "missing 'address'"}
+    try:
+        ea = parse_addr(address)
+    except ValueError as e:
+        return {"ok": False, "action": action, "address": address,
+                "error": str(e)}
+    if not ida_bytes.is_mapped(ea):
+        return {"ok": False, "action": action, "address": hex(ea),
+                "error": f"Address not mapped: {hex(ea)}"}
+
+    if action in ("rename", "set_name", "name"):
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return {"ok": False, "action": "rename", "address": hex(ea),
+                    "error": "rename requires a non-empty 'name'"}
+        old_name = ida_name.get_ea_name(ea)
+        if dry_run:
+            return {"ok": True, "action": "rename", "address": hex(ea),
+                    "dry_run": True, "old_name": old_name or None,
+                    "new_name": name}
+        try:
+            force = bool(item.get("force", False))
+            setter = getattr(ida_name, "force_name", None) if force else None
+            ok = (setter(ea, name) if callable(setter)
+                  else ida_name.set_name(ea, name, ida_name.SN_NOWARN))
+        except Exception as e:
+            return {"ok": False, "action": "rename", "address": hex(ea),
+                    "error": str(e)}
+        if not ok:
+            return {"ok": False, "action": "rename", "address": hex(ea),
+                    "error": f"Failed to set name {name!r}"}
+        return {"ok": True, "action": "rename", "address": hex(ea),
+                "old_name": old_name or None, "new_name": name}
+
+    if action in ("comment", "set_comment"):
+        if "comment" not in item:
+            return {"ok": False, "action": "comment", "address": hex(ea),
+                    "error": "comment requires 'comment'"}
+        comment = item.get("comment")
+        if not isinstance(comment, str):
+            return {"ok": False, "action": "comment", "address": hex(ea),
+                    "error": "'comment' must be a string"}
+        repeatable = bool(item.get("repeatable", False))
+        if dry_run:
+            return {"ok": True, "action": "comment", "address": hex(ea),
+                    "dry_run": True, "comment": comment,
+                    "repeatable": repeatable}
+        try:
+            ok = ida_bytes.set_cmt(ea, comment, repeatable)
+        except Exception as e:
+            return {"ok": False, "action": "comment", "address": hex(ea),
+                    "error": str(e)}
+        if not ok:
+            return {"ok": False, "action": "comment", "address": hex(ea),
+                    "error": "Failed to set comment"}
+        return {"ok": True, "action": "comment", "address": hex(ea),
+                "comment": comment, "repeatable": repeatable}
+
+    if action in ("type", "set_type"):
+        type_name = item.get("type")
+        if not isinstance(type_name, str) or not type_name.strip():
+            return {"ok": False, "action": "type", "address": hex(ea),
+                    "error": "type requires a non-empty 'type'"}
+        tif = ida_typeinf.tinfo_t()
+        try:
+            if not tif.get_named_type(ida_typeinf.get_idati(), type_name):
+                return {"ok": False, "action": "type", "address": hex(ea),
+                        "error": f"Type {type_name!r} not found"}
+        except Exception as e:
+            return {"ok": False, "action": "type", "address": hex(ea),
+                    "error": str(e)}
+        if dry_run:
+            return {"ok": True, "action": "type", "address": hex(ea),
+                    "dry_run": True, "type": type_name}
+        try:
+            ok = ida_typeinf.apply_tinfo(
+                ea, tif, ida_typeinf.TINFO_DEFINITE)
+        except Exception as e:
+            return {"ok": False, "action": "type", "address": hex(ea),
+                    "error": str(e)}
+        if not ok:
+            return {"ok": False, "action": "type", "address": hex(ea),
+                    "error": f"Failed to apply type {type_name!r}"}
+        return {"ok": True, "action": "type", "address": hex(ea),
+                "type": type_name}
+
+    return {"ok": False, "action": action, "address": hex(ea),
+            "error": f"Unknown action {action!r} (rename/comment/type)"}
+
+
+@tool
+@idasync
+@unsafe
+def apply_annotations(
+    items: str,
+    dry_run: bool = False,
+    stop_on_error: bool = False,
+) -> str:
+    """Apply rename/comment/type annotations as a batch.
+
+    ``items`` is a JSON array of objects:
+    ``{"action": "rename", "address": "0x401000", "name": "decrypt"}``,
+    ``{"action": "comment", "address": "...", "comment": "...",
+    "repeatable": false}``, or
+    ``{"action": "type", "address": "...", "type": "struct name"}``.
+    ``dry_run`` validates and reports without changing the IDB.
+    ``stop_on_error`` stops at the first failed item; otherwise the rest are
+    still attempted. At most 1000 items are accepted.
+
+    **Unsafe** — requires ``?unsafe=true``.
+    """
+    ensure_analysis()
+    try:
+        parsed = json.loads(items) if isinstance(items, str) else items
+    except (TypeError, ValueError) as e:
+        return json.dumps({"error": f"Invalid items JSON: {e}"})
+    if not isinstance(parsed, list):
+        return json.dumps({"error": "items must be a JSON array"})
+    if len(parsed) > _MAX_BATCH_ITEMS:
+        return json.dumps({"error": f"Too many items ({len(parsed)} > {_MAX_BATCH_ITEMS})"})
+
+    results: list[dict] = []
+    stopped = False
+    cancelled = False
+    for i, item in enumerate(parsed):
+        try:
+            check_cancelled()
+        except (CancelledError, IDASyncError):
+            cancelled = True
+            break
+        result = _batch_apply_item(item, bool(dry_run))
+        result["index"] = i
+        results.append(result)
+        if not result.get("ok") and stop_on_error:
+            stopped = True
+            break
+
+    failed = sum(1 for r in results if not r.get("ok"))
+    valid = len(results) - failed
+    out: dict = {
+        "dry_run": bool(dry_run),
+        "results": results,
+        "count": len(results),
+        "valid": valid,
+        "applied": 0 if dry_run else valid,
+        "failed": failed,
+        "stopped": stopped,
+    }
+    if cancelled:
+        out["cancelled"] = True
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 # ===========================================================================
