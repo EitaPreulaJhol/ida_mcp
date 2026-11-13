@@ -107,6 +107,11 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
 ## Local-only checks (not in CI)
 
 - **Lint**: `ruff check .` (CI enforces `F`, `E`, `W`, `C4`; see `[tool.ruff.lint]`).
+- **Coverage**: `make coverage` (or `coverage report`) uses the pyproject
+  `fail_under = 69` floor. The Makefile creates a temporary `sitecustomize.py`
+  so each harness subprocess records its lines; keep that hook when changing
+  the target. The coverage job in CI stays informational (it reports a breach
+  without blocking a merge).
 - **Types** (optional): `mypy` on the pure modules (zeromcp, discovery,
   profiles, regex_guard) — see `[tool.mypy]`. Verified clean, so CI enforces
   it; run `mypy` before pushing changes to those modules.

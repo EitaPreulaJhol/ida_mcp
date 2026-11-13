@@ -28,6 +28,7 @@ TESTS = [
     "sync_test.py",
     "smoke.py",
     "analysis_test.py",
+    "entries_test.py",
     "memory_test.py",
     "inspection_test.py",
     "annotation_test.py",

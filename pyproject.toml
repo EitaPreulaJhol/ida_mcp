@@ -105,8 +105,9 @@ files = [
 [tool.coverage.run]
 # Subprocess harnesses (run_all spawns each) need parallel mode + the
 # COVERAGE_PROCESS_START hook to aggregate. Harnesses load the real files via
-# tests/_harness.py, so lines are attributed correctly (~68% today; it read
-# ~10% while harnesses exec'd rewritten source). Informational (no threshold).
+# tests/_harness.py, so lines are attributed correctly (~70% today; it read
+# ~10% while harnesses exec'd rewritten source). The Makefile installs the
+# sitecustomize hook in a temporary directory; CI does the same inline.
 branch = true
 parallel = true
 source = ["ida_mcp"]
@@ -115,8 +116,8 @@ omit = ["ida_mcp/__init__.py"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-# Floor for `coverage report` (CI + `make coverage`). Measured 66% by the v0.2.1
-# CI run (42 harnesses, subprocess aggregation); 60 leaves headroom for an
-# unrelated refactor while still catching a real regression. Re-measure with
-# `make coverage` before raising it.
-fail_under = 60
+# Floor for `coverage report` (CI + `make coverage`). Measured 70.08% with 48
+# harnesses (coverage 7.17, Python 3.11, branch coverage); 69 leaves a little
+# headroom for an unrelated refactor while still catching a real regression.
+# Re-measure with `make coverage` before raising it again.
+fail_under = 69

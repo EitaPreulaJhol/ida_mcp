@@ -42,6 +42,11 @@ MYPY = $(shell $(PYTHON) -m mypy --version >/dev/null 2>&1 && echo "$(PYTHON) -m
 	(command -v mypy >/dev/null 2>&1 && echo mypy))
 COVERAGE = $(shell $(PYTHON) -m coverage --version >/dev/null 2>&1 && echo "$(PYTHON) -m coverage" || \
 	(command -v coverage >/dev/null 2>&1 && echo coverage))
+# The test harnesses are subprocesses, so the sitecustomize hook must run under
+# an interpreter that can import coverage. Prefer $(PYTHON) when it has the
+# module; otherwise use the interpreter behind an installed `coverage` script.
+COVERAGE_PYTHON = $(shell $(PYTHON) -c "import coverage" 2>/dev/null && echo "$(PYTHON)" || \
+	(command -v coverage >/dev/null 2>&1 && head -1 "$$(command -v coverage)" 2>/dev/null | sed 's/^#!//'))
 
 lint:
 	@if [ -n "$(RUFF)" ]; then $(RUFF) check .; \
@@ -72,10 +77,20 @@ idalib-matrix:
 
 coverage:
 	@if [ -n "$(COVERAGE)" ]; then \
+		hook="$$(mktemp -d)"; \
+		trap 'rm -rf "$$hook"' EXIT HUP INT TERM; \
+		printf 'import coverage; coverage.process_startup()\n' > "$$hook/sitecustomize.py"; \
+		py="$(COVERAGE_PYTHON)"; \
+		if [ -z "$$py" ]; then py="$(PYTHON)"; fi; \
 		$(COVERAGE) erase; \
-		COVERAGE_PROCESS_START=$(CURDIR)/pyproject.toml $(PYTHON) tests/run_all.py; \
+		COVERAGE_PROCESS_START="$(CURDIR)/pyproject.toml" \
+			PYTHONPATH="$$hook$${PYTHONPATH:+:$$PYTHONPATH}" "$$py" tests/run_all.py; \
+		test_rc=$$?; \
 		$(COVERAGE) combine 2>/dev/null || true; \
 		$(COVERAGE) report; \
+		report_rc=$$?; \
+		if [ $$test_rc -ne 0 ]; then exit $$test_rc; fi; \
+		exit $$report_rc; \
 	else echo "coverage not installed (pip install -e '.[dev]')"; exit 1; fi
 
 package:

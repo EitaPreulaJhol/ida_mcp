@@ -52,6 +52,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the safe-tool sweep and the extracted modern `ida-mcp-bridge/` folder-loader
   check in an isolated subprocess per version, and skips cleanly without a
   license or install.
+- Entry-point test harness (`tests/entries_test.py`) covers all eight
+  `api_entries` tools, including pagination, forwarders and add/rename paths.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)
@@ -75,6 +77,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   origins are ignored); memory calls resolve the pointer slot when possible
   and expose `indirect_target`/`indirect_target_name`, while register calls
   report the call site and register name.
+- Coverage floor raised from 60 to 69 (measured 70.08% with 48 harnesses);
+  `make coverage` now installs the temporary subprocess hook and propagates a
+  failed test run instead of only returning the report status.
 
 ## [0.3.0] - 2026-11-13
 
