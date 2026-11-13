@@ -32,6 +32,9 @@ def _in_bss(ea):
 ida_bytes = types.ModuleType("ida_bytes")
 ida_bytes.get_item_size = lambda ea: 4
 ida_bytes.get_flags = lambda ea: 0x600 if ea == 0x1000 else 0x400
+ida_bytes.FF_CODE = 0x600
+ida_bytes.FF_DATA = 0x400
+ida_bytes.FF_TAIL = 0x200
 ida_bytes.is_code = lambda flags: flags == 0x600
 ida_bytes.is_data = lambda flags: flags == 0x400
 ida_bytes.get_strlit_contents = lambda ea, length=-1, strtype=0: b"ABC" if ea == 0x1000 else None
@@ -142,7 +145,10 @@ assert "error" in r, r
 print("get_global_value OK")
 
 assert json.loads(mod.get_data_size("0x1000"))["size"] == 4
-assert json.loads(mod.get_data_flags("0x1000"))["flags"] == hex(0x600)
+_flags = json.loads(mod.get_data_flags("0x1000"))
+assert _flags["flags"] == hex(0x600), _flags
+assert _flags["bits"] == ["code", "data", "tail"], _flags
+assert _flags["data_type"] is None, _flags
 print("data_size/flags OK")
 
 assert json.loads(mod.get_next_head("0x1000"))["next"] == "0x1004"
@@ -175,7 +181,7 @@ print("bad address OK")
 # --- oversized limits are clamped and echoed ------------------------------
 r = json.loads(mod.get_heads("0x1000", "0x1010", limit=99999))
 assert r["limit"] == 10000, r
-r = json.loads(mod.get_disassembly_text("0x1000", count=99999))
+r = json.loads(mod.get_disassembly_text("0x1000", limit=99999))
 assert r["limit"] == 500, r
 print("head/disassembly limits clamped + echoed OK")
 

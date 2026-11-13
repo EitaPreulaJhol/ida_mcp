@@ -115,11 +115,12 @@ def get_instruction(address: str) -> str:
 @idasync
 def get_instructions(
     address: str,
-    count: int = 50,
+    limit: int = 50,
 ) -> str:
     """Get instructions for a function or starting address.
 
-    ``count``: maximum number of instructions to return (max 500).
+    ``limit``: maximum number of instructions to return (max 500); the
+    deprecated ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
     try:
@@ -127,10 +128,10 @@ def get_instructions(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    count = min(max(int(count), 1), 500)
+    limit = min(max(int(limit), 1), 500)
     results: list[dict] = []
 
-    for _ in range(count):
+    for _ in range(limit):
         if ea == idaapi.BADADDR:
             break
         insn, ok = _decode_insn(ea)

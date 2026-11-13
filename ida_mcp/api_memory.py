@@ -239,19 +239,61 @@ def get_data_size(address: str) -> str:
     return json.dumps({"addr": hex(ea), "size": size})
 
 
+# FF_* bits worth naming (the low nibble of the type field is decoded
+# separately as ``data_type``).
+_FLAG_NAMES = ("FF_CODE", "FF_DATA", "FF_TAIL", "FF_COMM", "FF_REF", "FF_LABL",
+               "FF_NAME", "FF_LINE", "FF_FLOW", "FF_SIGN", "FF_BNOT", "FF_UNUSED")
+_DATA_TYPE_NAMES = (
+    ("FF_0NUMH", "hex"), ("FF_0NUMD", "decimal"), ("FF_0CHAR", "char"),
+    ("FF_0SEG", "segment"), ("FF_0OFF", "offset"), ("FF_0NUMB", "binary"),
+    ("FF_0NUMO", "octal"), ("FF_0ENUM", "enum"), ("FF_0FOP", "float-op"),
+    ("FF_0STRO", "struct-offset"), ("FF_0STK", "stack"), ("FF_0FLT", "float"),
+    ("FF_0CUST", "custom"),
+)
+_DATA_TYPE_MASK = 0xF00000
+
+
+def _flag_bits(flags: int) -> list[str]:
+    """Names of the common FF_* bits set in ``flags``."""
+    value = int(flags) & 0xFFFFFFFF
+    out = []
+    for name in _FLAG_NAMES:
+        mask = getattr(ida_bytes, name, None)
+        if isinstance(mask, int) and (value & int(mask) & 0xFFFFFFFF):
+            out.append(name[3:].lower())
+    return out
+
+
+def _data_type_name(flags: int) -> str | None:
+    """Readable name of the FF_0* data-type nibble (None when unset)."""
+    value = int(flags) & _DATA_TYPE_MASK
+    if not value:
+        return None
+    for name, label in _DATA_TYPE_NAMES:
+        mask = getattr(ida_bytes, name, None)
+        if isinstance(mask, int) and (value & int(mask) & _DATA_TYPE_MASK) == value:
+            return label
+    return None
+
+
 @tool
 @idasync
 def get_data_flags(address: str) -> str:
-    """Get the raw IDA flags value at the given address (hex)."""
+    """Get the IDA flags at the given address, decoded into names."""
     ensure_analysis()
     ea, err = resolve_addr(address)
     if err:
         return err
     try:
-        flags = ida_bytes.get_flags(ea)
+        flags = int(ida_bytes.get_flags(ea))
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"addr": hex(ea), "flags": hex(int(flags))})
+    return json.dumps({
+        "addr": hex(ea),
+        "flags": hex(flags),
+        "bits": _flag_bits(flags),
+        "data_type": _data_type_name(flags),
+    })
 
 
 # ===========================================================================
@@ -393,21 +435,22 @@ def is_data(address: str) -> str:
 
 @tool
 @idasync
-def get_disassembly_text(address: str, count: int = 50) -> str:
+def get_disassembly_text(address: str, limit: int = 50) -> str:
     """Plain-text disassembly (``addr: text`` lines) from an address.
 
     Lighter than ``disasm`` (no JSON structure) for token-efficient reads.
-    ``count`` is clamped to [1, 500] (0/oversized -> the default 50) and the
-    applied value is echoed in the payload.
+    ``limit`` is clamped to [1, 500] (0/oversized -> the default 50) and the
+    applied value is echoed in the payload; the deprecated ``count`` argument
+    is mapped to ``limit`` by the server.
     """
     ensure_analysis()
     ea, err = resolve_addr(address)
     if err:
         return err
-    count = clamp_int(count, 50, 500)
+    limit = clamp_int(limit, 50, 500)
     lines: list[str] = []
     try:
-        for _ in range(count):
+        for _ in range(limit):
             if ea == idaapi.BADADDR or not is_loaded(ea):
                 break
             text = ida_lines.tag_remove(ida_lines.generate_disasm_line(ea, 0) or "")
@@ -415,7 +458,7 @@ def get_disassembly_text(address: str, count: int = 50) -> str:
             ea = ida_bytes.next_head(ea, inf_get_max_ea())
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"lines": lines, "count": len(lines), "limit": count})
+    return json.dumps({"lines": lines, "count": len(lines), "limit": limit})
 
 
 __all__ = [

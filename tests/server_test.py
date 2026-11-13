@@ -106,6 +106,17 @@ def _cap_lines(text, max_lines):
     lines = text.split(chr(10))
     if len(lines) <= max_lines: return text, None
     return chr(10).join(lines[:max_lines]), len(lines)
+def _as_int(value, default=0):
+    if isinstance(value, bool): return default
+    if isinstance(value, int): return value
+    try:
+        text = str(value).strip()
+        try: return int(text, 0)
+        except ValueError:
+            num = float(text)
+            return int(num) if num.is_integer() else default
+    except (TypeError, ValueError):
+        return default
 def discover_instances():
     return []
 def register_instance(*a, **k):
@@ -126,12 +137,16 @@ mod = load_with_preamble("server", FAKE_PREAMBLE, alias="server_test",
 
 # 1) parse_addr behavior through get_functions-style paths
 out = mod.get_functions("*")
-data = json.loads(out)
-assert {f["name"] for f in data} == {"func_1000", "func_2000"}, data
-# pagination: limit/offset page the function list
-assert len(json.loads(mod.get_functions("*", limit=1))) == 1, out
-assert json.loads(mod.get_functions("*", offset=1)) == data[1:], data
-print("get_functions OK", data)
+result = json.loads(out)
+assert {f["name"] for f in result["data"]} == {"func_1000", "func_2000"}, result
+assert result["total"] == 2 and result["limit"] == 1000, result
+# pagination: limit/offset page the function list; the payload echoes both
+page1 = json.loads(mod.get_functions("*", limit=1))
+assert len(page1["data"]) == 1 and page1["limit"] == 1, page1
+page2 = json.loads(mod.get_functions("*", offset=1))
+assert page2["data"] == result["data"][1:], page2
+assert page2["offset"] == 1 and page2["count"] == 1, page2
+print("get_functions OK", result)
 
 # 2) decompile_function success
 out = mod.decompile_function("0x1000")

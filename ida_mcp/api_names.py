@@ -65,15 +65,16 @@ def get_name(address: str) -> str:
 
 @tool
 @idasync
-def get_all_names(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
+def get_all_names(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -> str:
     """List all names in the IDB with glob filtering and pagination.
 
-    ``count`` is clamped to [1, 5000] (0/oversized -> the default 100) and the
-    applied value is echoed as ``limit``.
+    ``limit`` is clamped to [1, 5000] (0/oversized -> the default 100) and the
+    applied value is echoed; the deprecated ``count`` argument is mapped to
+    ``limit`` by the server.
     """
     ensure_analysis()
 
-    count = clamp_int(count, 100, 5000)
+    limit = clamp_int(limit, 100, 5000)
     offset = max(int(offset), 0)
 
     names_list: list[dict] = []
@@ -81,13 +82,13 @@ def get_all_names(filter_pattern: str = "*", offset: int = 0, count: int = 100) 
         if name and (filter_pattern == "*" or fnmatch.fnmatch(name, filter_pattern)):
             names_list.append({"addr": hex(ea), "name": name})
 
-    page = names_list[offset:offset + count]
+    page = names_list[offset:offset + limit]
     return json.dumps({
         "data": page,
         "total": len(names_list),
         "offset": offset,
         "count": len(page),
-        "limit": count,
+        "limit": limit,
     }, indent=2)
 
 

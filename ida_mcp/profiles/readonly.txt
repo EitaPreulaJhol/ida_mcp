@@ -137,7 +137,6 @@ get_segments
 get_string
 get_string_at
 get_string_count
-get_strings
 get_strings_by_length
 get_strings_in_range
 get_type_at

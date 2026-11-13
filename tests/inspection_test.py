@@ -140,7 +140,7 @@ assert data["data"][0]["imported_name"] == "ReadFile", f"expected ReadFile: {dat
 print("list_imports filter OK")
 
 # 3) pagination
-r = mod.list_imports(offset=1, count=1)
+r = mod.list_imports(offset=1, limit=1)
 data = json.loads(r)
 assert data["count"] == 1, f"expected 1 page item: {data}"
 print("list_imports pagination OK")

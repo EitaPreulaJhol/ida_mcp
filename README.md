@@ -108,7 +108,7 @@ By default the server is **read-only**. Mutating tools (renames, comments, type 
 **Bind address.** The server binds `127.0.0.1`. A host persisted in the IDB is honored only when it is loopback (an IDB may come from someone else and must not silently move the server onto the network); a non-loopback value is ignored with a warning. To bind elsewhere, set `IDA_MCP_HOST` in IDA's environment; every request then needs the token, and traffic is plain HTTP, so use a trusted network or a tunnel. Client regexes (`find_regex`, `func_query`, `entity_query`, `/re/` filters) reject nested quantifiers such as `(a+)+`, which backtrack exponentially on the IDA main thread where the tool timeout cannot interrupt them; use a possessive `++` or atomic `(?>...)` group instead.
 
 ## Tool surface
-The plugin exposes 243 tools across 22 modules:
+The plugin exposes 242 tools across 22 modules:
 
 | Area | Examples |
 |------|----------|
@@ -136,9 +136,9 @@ All addresses accept hex (`0x401000`), decimal, or symbol names.
 
 Every registered tool, grouped by module (names match `tools/list` exactly).
 
-### `api_analysis` (16)
+### `api_analysis` (15)
 
-`basic_blocks`, `disasm`, `find_bytes`, `get_bytes`, `get_callees`, `get_callers`, `get_string`, `get_xrefs_to`, `int_convert`, `list_exports`, `list_imports`, `list_strings`, `lookup_funcs`, `rename_function`, `set_comment`, `xref_query`
+`basic_blocks`, `disasm`, `find_bytes`, `get_bytes`, `get_callees`, `get_callers`, `get_string`, `get_xrefs_to`, `int_convert`, `list_exports`, `list_imports`, `lookup_funcs`, `rename_function`, `set_comment`, `xref_query`
 
 ### `api_comments` (10)
 
@@ -208,9 +208,9 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 
 `apply_flirt_signatures`, `find_xref_signatures`, `list_flirt_signatures`, `make_signature`, `make_signature_for_function`, `make_signature_for_range`
 
-### `api_strings` (8)
+### `api_strings` (9)
 
-`get_ascii_strings`, `get_string_at`, `get_string_count`, `get_strings`, `get_strings_by_length`, `get_strings_in_range`, `get_unicode_strings`, `search_strings`
+`get_ascii_strings`, `get_string_at`, `get_string_count`, `get_strings_by_length`, `get_strings_in_range`, `get_unicode_strings`, `list_strings`, `search_strings`
 
 ### `api_typeinfo` (10)
 
@@ -224,7 +224,7 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 
 `close_instance`, `decompile_function`, `execute_script`, `get_disassembly`, `get_functions`, `get_instance_info`, `list_instances`, `server_health`, `server_warmup`
 
-<!-- total: 243 tools -->
+<!-- total: 242 tools -->
 
 ## How it works
 ```
@@ -276,7 +276,7 @@ This repo includes a ready-to-use skill and extension for the [Pi Agent](https:/
 
 | Path | What it provides |
 |------|------------------|
-| `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (186) -> full (186, unfiltered) -> unsafe (224) -> dbg (243)` only as needed |
+| `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (185) -> full (185, unfiltered) -> unsafe (223) -> dbg (242)` only as needed |
 | `.pi/skills/ida-scripting/` | IDAPython scripting skill with the full API reference |
 | `.pi/extensions/ida-mcp.ts` | Extension bridge: proxies the plugin's Streamable-HTTP server (`http://127.0.0.1:13337/mcp`) into pi tools with lazy loading, `/ida [status\|triage\|readonly\|full\|unsafe\|dbg\|tools]` command, `ida_profile` / `ida_status` management tools, and a live `IDA:online/offline` footer indicator (polling + session-event refresh) |
 

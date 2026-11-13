@@ -1,8 +1,8 @@
 """Paginated string enumeration tools for ida_mcp.
 
-``list_strings`` (glob + offset/count) stays in ``api_analysis.py``; this
-module adds count/at/range/length/ascii/unicode/substring variants.
-Follows idamcp-extendedtools ``api_strings.py`` naming.
+``list_strings`` is the canonical listing (glob + offset/limit, bounded
+enumeration with cancellation); the rest are at/range/length/ascii/unicode/
+substring variants. Follows idamcp-extendedtools ``api_strings.py`` naming.
 """
 import fnmatch
 import json
@@ -83,8 +83,14 @@ def _unicode_types() -> set:
 
 @tool
 @idasync
-def get_strings(limit: int = 100, offset: int = 0, filter_pattern: str = "*") -> str:
-    """List strings with limit/offset pagination and optional glob filter."""
+def list_strings(filter_pattern: str = "*", offset: int = 0,
+                 limit: int = 100) -> str:
+    """List strings with glob filtering and pagination.
+
+    ``filter_pattern`` uses fnmatch (e.g. ``"*error*"``). ``limit`` is clamped
+    to [1, 5000] (0/oversized -> the default 100); the deprecated ``count``
+    argument is mapped to ``limit`` by the server.
+    """
     ensure_analysis()
     limit = clamp_int(limit, 100, 5000)
 
@@ -200,17 +206,21 @@ def search_strings(query: str, case_sensitive: bool = False,
 @tool
 @idasync
 def get_strings_by_length(min_length: int = 1, max_length: int = 0,
-                          offset: int = 0, count: int = 100) -> str:
-    """List strings filtered by length (``max_length`` 0 = no limit)."""
+                          offset: int = 0, limit: int = 100) -> str:
+    """List strings filtered by length (``max_length`` 0 = no limit).
+
+    Paginated by ``offset`` / ``limit``; the deprecated ``count`` argument is
+    mapped to ``limit`` by the server.
+    """
     ensure_analysis()
-    count = clamp_int(count, 100, 5000)
+    limit = clamp_int(limit, 100, 5000)
     rows, capped = _collect_rows(
         lambda row: row["length"] >= min_length
         and (max_length <= 0 or row["length"] <= max_length))
     total = len(rows)
-    page, nxt = paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, limit)
     out = {"data": page, "total": total, "offset": offset,
-           "count": len(page), "next_offset": nxt, "limit": count}
+           "count": len(page), "next_offset": nxt, "limit": limit}
     if capped:
         out["iterated_cap_reached"] = True
     return json.dumps(out, indent=2)
@@ -253,7 +263,7 @@ def get_unicode_strings(limit: int = 200, offset: int = 0) -> str:
 
 
 __all__ = [
-    "get_strings",
+    "list_strings",
     "get_strings_in_range",
     "get_string_count",
     "get_string_at",

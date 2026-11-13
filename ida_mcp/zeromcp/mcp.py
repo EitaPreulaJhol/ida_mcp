@@ -824,6 +824,14 @@ def _json_safe_default(value) -> bool:
     return isinstance(value, (str, int, float, bool, type(None)))
 
 
+# Deprecated tool-argument spellings accepted for backwards compatibility.
+# When a tool declares the canonical name and not the legacy one, the value is
+# moved over before the call (see McpServer._apply_legacy_aliases). Tools that
+# genuinely take a parameter of the legacy name (e.g. make_data's ``count``) are
+# left untouched.
+_LEGACY_ARG_ALIASES = {"count": "limit", "var_name": "name"}
+
+
 # Tool error convention (see the per-tool docs / README): a tool reports a
 # HARD failure by returning a JSON object with a non-empty top-level ``error``
 # string. The MCP boundary promotes that to ``isError: true`` so clients can
@@ -1445,11 +1453,55 @@ class McpServer:
             "name": func_name,
             "description": (func.__doc__ or "").strip(),
             "inputSchema": {"type": "object", "properties": props},
+            "annotations": self._tool_annotations(func_name),
         }
         if required:
             schema["inputSchema"]["required"] = required
         self._schema_cache[func_name] = schema
         return schema
+
+    def _tool_annotations(self, func_name) -> dict:
+        """MCP tool hints derived from the registry's own gating metadata.
+
+        ``unsafe`` is exactly the mutating surface (debugger tools are both
+        ``@unsafe`` and ``@ext``), so it drives every hint: reads are read-only
+        and idempotent; writes are not read-only and may destroy data, the
+        conservative default that makes clients ask for confirmation.
+        """
+        mutating = func_name in self.unsafe_tools
+        return {
+            "readOnlyHint": not mutating,
+            "destructiveHint": mutating,
+            "idempotentHint": not mutating,
+            "openWorldHint": False,
+        }
+
+    def _apply_legacy_aliases(self, name, arguments):
+        """Rename deprecated argument spellings to their canonical name.
+
+        ``count`` -> ``limit`` and ``var_name`` -> ``name``, but only when the
+        tool declares the canonical parameter and not the legacy one. A single
+        pass over a copy keeps the caller's dict untouched.
+        """
+        if not isinstance(arguments, dict) or not arguments:
+            return arguments
+        func = self.tools.methods.get(name)
+        if func is None:
+            return arguments
+        hints, parameters = self._introspect(name, func)
+        renamed = None
+        for old, new in _LEGACY_ARG_ALIASES.items():
+            if old not in arguments or old in parameters or new not in parameters:
+                continue
+            if new in arguments:
+                # Both spellings present: the canonical one wins.
+                renamed = dict(arguments) if renamed is None else renamed
+                renamed.pop(old, None)
+                continue
+            if renamed is None:
+                renamed = dict(arguments)
+            renamed[new] = renamed.pop(old)
+        return renamed if renamed is not None else arguments
 
     def _coerce_tool_arguments(self, name: str, arguments):
         """Coerce stringified scalars in ``arguments`` to annotated types.
@@ -1549,6 +1601,7 @@ class McpServer:
         _errored = True
         _error_text: str | None = "internal error"
         try:
+            arguments = self._apply_legacy_aliases(name, arguments)
             arguments = self._coerce_tool_arguments(name, arguments)
             tool_response = self.tools.dispatch({
                 "jsonrpc": "2.0",

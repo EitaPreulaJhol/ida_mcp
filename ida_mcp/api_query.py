@@ -159,7 +159,7 @@ def _match_glob(value: str, pattern: str) -> bool:
 def func_query(filter_pattern: str = "", name_regex: str = "",
                min_size: int = -1, max_size: int = -1, has_type: str = "",
                sort_by: str = "addr", descending: bool = False,
-               offset: int = 0, count: int = 50) -> str:
+               offset: int = 0, limit: int = 50) -> str:
     """Query functions with richer filtering than ``list_funcs``.
 
     ``filter_pattern`` is a glob on the name; ``name_regex`` a Python regex.
@@ -211,7 +211,7 @@ def func_query(filter_pattern: str = "", name_regex: str = "",
     else:
         rows.sort(key=lambda r: int(r["addr"], 16), reverse=bool(descending))
 
-    page, nxt = paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, limit)
     page = [{k: v for k, v in r.items() if k != "size_int"} for r in page]
     return json.dumps({
         "data": page, "total": len(rows),
@@ -225,7 +225,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
                  segment: str = "", module: str = "",
                  min_addr: str = "", max_addr: str = "",
                  sort_by: str = "addr", descending: bool = False,
-                 fields: str = "", offset: int = 0, count: int = 100) -> str:
+                 fields: str = "", offset: int = 0, limit: int = 100) -> str:
     """Generic IDB entity query with filtering, projection and pagination.
 
     ``kind`` is one of ``functions``/``globals``/``imports``/``strings``/
@@ -274,7 +274,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
         rows.sort(key=lambda r: str(r.get(sort_by, "")).lower(), reverse=bool(descending))
 
     total = len(rows)
-    page, nxt = paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, limit)
     page = [{k: v for k, v in r.items() if k != "size_int"} for r in page]
     if fields:
         wanted = [f.strip() for f in fields.split(",") if f.strip()]
@@ -287,7 +287,7 @@ def entity_query(kind: str = "functions", filter: str = "", regex: str = "",
 
 @tool
 @idasync
-def list_globals(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
+def list_globals(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -> str:
     """List global (non-function) names with glob filtering and pagination."""
     ensure_analysis()
     rows: list[dict] = []
@@ -295,7 +295,7 @@ def list_globals(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
         if name and idaapi.get_func(ea) is None:
             if filter_pattern in ("", "*") or fnmatch.fnmatch(name, filter_pattern):
                 rows.append({"addr": hex(ea), "name": name})
-    page, nxt = paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, limit)
     return json.dumps({
         "data": page, "total": len(rows),
         "offset": offset, "next_offset": nxt,
@@ -305,7 +305,7 @@ def list_globals(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
 @tool
 @idasync
 def imports_query(filter: str = "", module: str = "",
-                  offset: int = 0, count: int = 100) -> str:
+                  offset: int = 0, limit: int = 100) -> str:
     """Query imports with name and module glob filters plus pagination."""
     ensure_analysis()
     rows = _collect_imports()
@@ -313,7 +313,7 @@ def imports_query(filter: str = "", module: str = "",
         rows = [r for r in rows if fnmatch.fnmatch(r["imported_name"], filter)]
     if module:
         rows = [r for r in rows if fnmatch.fnmatch(r["module"], module)]
-    page, nxt = paginate(rows, offset, count)
+    page, nxt = paginate(rows, offset, limit)
     return json.dumps({
         "data": page, "total": len(rows),
         "offset": offset, "next_offset": nxt,
@@ -348,8 +348,8 @@ def get_local_variable_by_name(address: str, name: str) -> str:
 
 @tool
 @idasync
-def get_local_variable_references(address: str, var_name: str) -> str:
-    """Find instructions in the function whose disassembly mentions ``var_name``.
+def get_local_variable_references(address: str, name: str) -> str:
+    """Find instructions in the function whose disassembly mentions ``name``.
 
     Stack-variable uses render as ``[rbp+var_X]``-style text in the disassembly
     line, so a text scan over the function items reliably locates references.
@@ -363,8 +363,8 @@ def get_local_variable_references(address: str, var_name: str) -> str:
     func = ida_funcs.get_func(ea)
     if not func:
         return json.dumps({"error": f"No function at {address}"})
-    if not any(v.get("name") == var_name for v in _collect_frame_vars(func)):
-        return json.dumps({"error": f"No variable named {var_name!r} in function"})
+    if not any(v.get("name") == name for v in _collect_frame_vars(func)):
+        return json.dumps({"error": f"No variable named {name!r} in function"})
 
     refs: list[dict] = []
     for head in idautils.FuncItems(func.start_ea):
@@ -372,11 +372,11 @@ def get_local_variable_references(address: str, var_name: str) -> str:
             line = ida_lines.tag_remove(ida_lines.generate_disasm_line(head, 0) or "")
         except Exception:
             continue
-        if var_name in line:
+        if name in line:
             refs.append({"addr": hex(head), "disasm": line.strip()})
     return json.dumps({
         "function": ida_funcs.get_func_name(func.start_ea) or "",
-        "var": var_name,
+        "var": name,
         "references": refs,
         "count": len(refs),
     }, indent=2)

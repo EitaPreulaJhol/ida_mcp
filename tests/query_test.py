@@ -157,7 +157,7 @@ r = json.loads(mod.func_query(has_type="false"))
 assert r["total"] == 2, r
 r = json.loads(mod.func_query(sort_by="size", descending=True))
 assert r["data"][0]["name"] == "bigfunc", r
-r = json.loads(mod.func_query(offset=0, count=1))
+r = json.loads(mod.func_query(offset=0, limit=1))
 assert r["next_offset"] == 1 and len(r["data"]) == 1, r
 r = json.loads(mod.func_query(name_regex="(["))
 assert "error" in r, r

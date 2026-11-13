@@ -338,5 +338,53 @@ text = _num_text({"size": "abc"})
 assert "size=str:abc" in text, text
 print("tools/call coercion leaves bad input alone OK")
 
+# --- MCP tool annotations (P2): derived from the unsafe gating set -------
+# The schema (and its hints) is cached per tool on first use; the rest of this
+# harness mutates unsafe_tools at runtime, so drop the cache first.
+srv._schema_cache.clear()
+st, resp = _rpc("tools/list", {}, "?unsafe=true&ext=dbg")
+assert st == 200, (st, resp)
+by_name = {t["name"]: t for t in resp["result"]["tools"]}
+plain_ann = by_name["plain_tool"]["annotations"]
+assert plain_ann["readOnlyHint"] is True, plain_ann
+assert plain_ann["destructiveHint"] is False, plain_ann
+assert plain_ann["idempotentHint"] is True, plain_ann
+unsafe_ann = by_name["unsafe_tool"]["annotations"]
+assert unsafe_ann["readOnlyHint"] is False, unsafe_ann
+assert unsafe_ann["destructiveHint"] is True, unsafe_ann
+assert unsafe_ann["idempotentHint"] is False, unsafe_ann
+assert by_name["dbg_tool"]["annotations"]["readOnlyHint"] is False
+assert plain_ann["openWorldHint"] is False, plain_ann
+print("tools/list annotations OK")
+
+
+# --- deprecated 'count' argument is mapped to 'limit' (P2) ---------------
+@srv.tool
+def page_tool(limit: int = 10) -> str:
+    """A paginated tool."""
+    return json.dumps({"limit": limit})
+
+
+@srv.tool
+def counter_tool(count: int = 1) -> str:
+    """A tool with a real count parameter."""
+    return json.dumps({"count": count})
+
+
+r = _call("page_tool", "", {"count": 3})
+assert r["isError"] is False, r
+assert json.loads(r["content"][0]["text"])["limit"] == 3, r
+
+r = _call("page_tool", "", {"limit": 7})
+assert json.loads(r["content"][0]["text"])["limit"] == 7, r
+
+r = _call("page_tool", "", {"limit": 7, "count": 3})
+assert json.loads(r["content"][0]["text"])["limit"] == 7, r  # canonical wins
+
+r = _call("counter_tool", "", {"count": 4})
+assert r["isError"] is False, r
+assert json.loads(r["content"][0]["text"])["count"] == 4, r
+print("tools/call legacy count alias OK")
+
 srv.stop()
 print("ALL TRANSPORT TESTS PASSED")

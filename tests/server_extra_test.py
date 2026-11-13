@@ -146,6 +146,17 @@ def _cap_lines(text, max_lines):
     lines = text.split(chr(10))
     if len(lines) <= max_lines: return text, None
     return chr(10).join(lines[:max_lines]), len(lines)
+def _as_int(value, default=0):
+    if isinstance(value, bool): return default
+    if isinstance(value, int): return value
+    try:
+        text = str(value).strip()
+        try: return int(text, 0)
+        except ValueError:
+            num = float(text)
+            return int(num) if num.is_integer() else default
+    except (TypeError, ValueError):
+        return default
 def discover_instances():
     return list(_FAKE_INSTANCES)
 def register_instance(*a, **k):

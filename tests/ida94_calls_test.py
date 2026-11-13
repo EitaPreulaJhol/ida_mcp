@@ -45,6 +45,7 @@ sys.modules["ida_bytes"] = ida_bytes
 # --- segment comment: get_segm_cmt -> get_segment_cmt ---------------------
 class FakeSeg:
     start_ea, end_ea = 0x1000, 0x2000
+    bitness = 2
 
 
 ida_segment = types.ModuleType("ida_segment")
@@ -134,6 +135,11 @@ print("get_original_bytes (per-byte) OK")
 r = json.loads(segments.get_segment_comment("0x1000"))
 assert r == {"name": ".text", "comment": "segment comment"}, r
 print("get_segment_comment (get_segment_cmt) OK")
+
+# segment_t.bitness is IDA's 0/1/2 code; the tool reports 16/32/64
+r = json.loads(segments.get_segment_bitness("0x1000"))
+assert r["bitness"] == 64 and r["raw"] == 2, r
+print("get_segment_bitness maps the 0/1/2 code OK")
 
 # --- register names come from ida_idp ------------------------------------
 r = json.loads(instructions.get_instruction("0x1000"))

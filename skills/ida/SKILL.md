@@ -13,7 +13,7 @@ metadata:
 
 I connect to IDA Pro lazily: verify the bridge is up, triage with a minimal
 toolset, then progressively unlock more tools (profiles → unsafe → debugger)
-only when the task demands it. I never preload all 243 tools into context —
+only when the task demands it. I never preload all 242 tools into context —
 most MCP clients cap tool slots, and a 16-tool triage set keeps small models
 on-task.
 
@@ -29,8 +29,8 @@ are available — otherwise assume read-only and escalate later.
 | Step | Endpoint suffix | Tools visible | Use when |
 |------|----------------|---------------|----------|
 | 1 | `?profile=triage` | 16 (health, survey, list, decompile, xrefs) | **Always start here** |
-| 2 | `?profile=readonly` | 186 (all safe reads) | Triage is insufficient |
-| 3 | _(no profile)_ | 186 (same safe set, no profile filter) | Rarely needed: identical to readonly, just unfiltered |
+| 2 | `?profile=readonly` | 185 (all safe reads) | Triage is insufficient |
+| 3 | _(no profile)_ | 185 (same safe set, no profile filter) | Rarely needed: identical to readonly, just unfiltered |
 | 4 | `?unsafe=true` | + renames, comments, types, patches, scripts | Annotating / modifying the IDB |
 | 5 | `?unsafe=true&ext=dbg` | + 19 debugger tools | Live debugging session |
 

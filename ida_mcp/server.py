@@ -27,7 +27,7 @@ from .rpc import tool, unsafe, MCP_SERVER
 from .sync import idasync, IDAError, hard_interrupt
 from .sync import ensure_analysis
 from .api_python import _run_code
-from .api_analysis import parse_addr, _cap_lines
+from .api_analysis import parse_addr, _cap_lines, _as_int
 from .discovery import (discover_instances, register_instance,
                         unregister_instance)
 
@@ -120,15 +120,20 @@ def get_functions(filter_pattern: str = "*", limit: int = 1000,
     Paginated: returns at most ``limit`` functions starting at ``offset``
     (``limit=0`` means no cap). A full page means more may follow — advance
     ``offset`` to continue. Use ``filter_pattern`` to narrow instead of paging.
+    Returns ``{data, total, offset, count, limit}``, the same pagination shape
+    as the other listing tools.
     """
     ensure_analysis()
+    limit = _as_int(limit, 1000)
+    offset = max(_as_int(offset, 0), 0)
     funcs = []
     for ea in idautils.Functions():
         name = ida_funcs.get_func_name(ea)
         if fnmatch.fnmatch(name, filter_pattern):
             funcs.append({"address": hex(ea), "name": name})
     page = funcs[offset:] if limit <= 0 else funcs[offset:offset + limit]
-    return json.dumps(page, indent=2)
+    return json.dumps({"data": page, "total": len(funcs), "offset": offset,
+                       "count": len(page), "limit": limit}, indent=2)
 
 
 @tool
@@ -159,15 +164,19 @@ def decompile_function(address: str) -> str:
 
 @tool
 @idasync
-def get_disassembly(address: str, count: int = 20) -> str:
-    """Get disassembly starting at the given address or name."""
+def get_disassembly(address: str, limit: int = 20) -> str:
+    """Get disassembly starting at the given address or name.
+
+    ``limit``: maximum number of instructions to return; the deprecated
+    ``count`` argument is mapped to ``limit`` by the server.
+    """
     ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
         raise IDAError(str(e)) from None
     lines = []
-    for _ in range(count):
+    for _ in range(limit):
         if ea == idaapi.BADADDR:
             break
         lines.append(f"{hex(ea)}: {ida_lines.generate_disasm_line(ea, 0)}")

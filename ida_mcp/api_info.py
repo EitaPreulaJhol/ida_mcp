@@ -385,10 +385,12 @@ def get_analysis_prompt() -> str:
         nstrings = sum(1 for _ in idautils.Strings())
     except Exception:
         nstrings = "?"
+    modules = (f"{nimps} import module" if nimps == 1
+               else f"{nimps} import modules")
     prompt = (
         f"# Analysis target: {module}\n\n"
         f"- Processor: {proc} ({bits}-bit), image base {base}\n"
-        f"- Scale: {nfuncs} functions, {nstrings} strings, {nimps} import modules\n"
+        f"- Scale: {nfuncs} functions, {nstrings} strings, {modules}\n"
         f"- Segments: {', '.join(segs) if segs else '(none)'}\n"
         f"- Entry points: {'; '.join(entries) if entries else '(none)'}\n\n"
         f"Suggested first calls: `survey_binary()` for triage, then "

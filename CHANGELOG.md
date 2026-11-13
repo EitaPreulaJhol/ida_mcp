@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- Pagination arguments are `limit` everywhere (`list_imports`,
+  `list_exports`, `list_strings`, `get_all_names`, `list_funcs`,
+  `list_globals`, `func_query`, `entity_query`, `imports_query`,
+  `get_strings_by_length`, `get_instructions`, `disasm`,
+  `get_disassembly_text`, `get_disassembly`). The old `count` spelling still
+  works: the server maps it before the call. Tools with a genuine `count`
+  argument (`make_data`) are untouched.
+- `get_local_variable_references` takes `name` instead of `var_name`; the
+  server maps the old spelling.
+- `get_functions` returns the standard pagination object
+  `{data,total,offset,count,limit}` instead of a bare list.
+- `list_strings` is the single string listing: the duplicate `get_strings`
+  was removed and the surviving implementation bounds the enumeration, caps
+  the scan and polls cancellation.
+- Every tool schema carries MCP annotations: `readOnlyHint`/`idempotentHint`
+  for reads and `destructiveHint` for the unsafe/mutating surface.
+
 ### Fixed
 - The plugin never auto-started: `IdaMcp.init()` called
   `ida_kernwin.install_ui_hook()`, which does not exist (the UI hook is
@@ -55,6 +73,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   type in the til first), `search_structs` filters on the name before
   formatting, and both poll `check_cancelled()`. `get_all_comments` polls it
   too and reports `partial` when interrupted.
+- `get_data_flags` decodes the FF_* bits and the data type instead of
+  returning only the raw value.
+- `get_segment_bitness` (and the segment listings) report 16/32/64 instead
+  of IDA's internal 0/1/2 code; the raw code is kept under `raw`.
+- `get_analysis_prompt` no longer says "1 import modules".
 
 ## [0.2.2] - 2026-11-10
 

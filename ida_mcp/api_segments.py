@@ -47,6 +47,14 @@ def _find_segment(address: str):
     return None
 
 
+_BITS_BY_CODE = {0: 16, 1: 32, 2: 64}
+
+
+def _bits(seg) -> int | None:
+    """Segment width in bits (``segment_t.bitness`` is 0/1/2 for 16/32/64)."""
+    return _BITS_BY_CODE.get(getattr(seg, "bitness", None))
+
+
 def _seg_to_dict(seg) -> dict:
     """Convert an IDA segment to a JSON-serializable dict."""
     return {
@@ -55,7 +63,7 @@ def _seg_to_dict(seg) -> dict:
         "end_ea": hex(seg.end_ea),
         "size": seg.end_ea - seg.start_ea,
         "class": _segment_class(seg),
-        "bitness": seg.bitness,
+        "bitness": _bits(seg),
     }
 
 
@@ -178,7 +186,8 @@ def get_segment_bitness(address: str) -> str:
     seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
-    return json.dumps({"name": ida_segment.get_segm_name(seg), "bitness": seg.bitness})
+    return json.dumps({"name": ida_segment.get_segm_name(seg),
+                       "bitness": _bits(seg), "raw": seg.bitness})
 
 
 @tool

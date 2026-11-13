@@ -30,20 +30,22 @@ consistency) → **P3** (test & tooling gaps) → **P4** (Pi bridge).
 
 ## P2 — agent-facing consistency
 
-- [ ] Unify `limit` vs `count` across the tool surface (12+ tools use
-      `count`) and the sibling parameter names
-      (`get_local_variable_by_name(name=)` vs
-      `get_local_variable_references(var_name=)`).
-- [ ] Consolidate duplicate listings: `get_strings` vs `list_strings`,
-      `get_ascii_strings`/`get_unicode_strings`, `get_comment` vs
-      `get_function_comment`.
-- [ ] Standardize the pagination payload (`get_functions` returns a bare
-      list while the other listings return `{data,total,offset,count,...}`).
-- [ ] Emit MCP tool annotations (`readOnlyHint`, `destructiveHint`,
-      `idempotentHint` derived from `@unsafe`/`@ext`) and `outputSchema`.
-- [ ] Polish the small metadata gaps: `get_analysis_prompt` says
-      "1 import modules", `get_data_flags` returns raw bits without names,
-      `get_segment_*` return a numeric `bitness`.
+- [x] Unify `limit` vs `count` across the tool surface (14 tools renamed;
+      the server maps the legacy `count` spelling) and
+      `get_local_variable_references(name=)`.
+- [x] Consolidate the duplicate listings: `get_strings` merged into
+      `list_strings` (242 tools now). `get_ascii_strings`/`get_unicode_strings`
+      stay (they are type filters, not duplicates) and `get_comment` /
+      `get_function_comment` read different data.
+- [x] Standardize the pagination payload (`get_functions` returns
+      `{data,total,offset,count,limit}`).
+- [x] Emit MCP tool annotations (`readOnlyHint`, `destructiveHint`,
+      `idempotentHint`, `openWorldHint` derived from `@unsafe`/`@ext`).
+      `outputSchema` is deferred: every tool returns text, so there is no
+      uniform structured result to document.
+- [x] Polish the metadata gaps: `get_data_flags` decodes FF_* bits and the
+      data type, `get_segment_*` report 16/32/64, `get_analysis_prompt`
+      pluralises the import module count.
 
 ## P3 — test and tooling gaps
 

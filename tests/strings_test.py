@@ -77,15 +77,15 @@ mod = load("api_strings", {
 # Tests
 # =========================================================================
 
-r = json.loads(mod.get_strings())
+r = json.loads(mod.list_strings())
 assert r["total"] == 4 and r["count"] == 4, r
-r = json.loads(mod.get_strings(limit=2, offset=0))
+r = json.loads(mod.list_strings(limit=2, offset=0))
 assert r["count"] == 2 and r["next_offset"] == 2, r
-r = json.loads(mod.get_strings(limit=2, offset=2))
+r = json.loads(mod.list_strings(limit=2, offset=2))
 assert r["count"] == 2 and r["next_offset"] is None, r
-r = json.loads(mod.get_strings(filter_pattern="*error*"))
+r = json.loads(mod.list_strings(filter_pattern="*error*"))
 assert r["total"] == 1 and r["data"][0]["value"] == "error: failed", r
-print("get_strings OK")
+print("list_strings OK")
 
 r = json.loads(mod.get_strings_in_range("0x1000", "0x1020"))
 assert [s["value"] for s in r["data"]] == ["hello", "error: failed"], r
@@ -124,14 +124,14 @@ assert r["total"] == 1 and r["data"][0]["value"] == "wide", r
 print("ascii/unicode OK")
 
 # --- oversized pagination is clamped and reported, not reset (14.11) ---
-r = json.loads(mod.get_strings(limit=99999))
+r = json.loads(mod.list_strings(limit=99999))
 assert r["limit"] == 5000, r          # clamped to the cap
 assert r["count"] == 4, r            # all four fake strings fit
-r = json.loads(mod.get_strings(limit=0))
+r = json.loads(mod.list_strings(limit=0))
 assert r["limit"] == 100, r           # non-positive -> documented default
 r = json.loads(mod.get_ascii_strings(limit=99999))
 assert r["limit"] == 5000, r
-r = json.loads(mod.get_strings_by_length(count=99999))
+r = json.loads(mod.get_strings_by_length(limit=99999))
 assert r["limit"] == 5000, r
 r = json.loads(mod.get_strings_in_range("0x1000", "0x2000", limit=99999))
 assert r["limit"] == 10000, r
@@ -143,7 +143,7 @@ mod.check_cancelled = lambda: _cancel_polls.append(1)
 try:
     _STRS.extend(FakeStr(0x20000 + i, "s%d" % i) for i in range(60_000))
     assert len(_STRS) > mod._MAX_STRINGS
-    r = json.loads(mod.get_strings(limit=5))
+    r = json.loads(mod.list_strings(limit=5))
     assert r["count"] == 5, r
     assert r["iterated_cap_reached"] is True, r
     assert _cancel_polls, "check_cancelled() was never polled"

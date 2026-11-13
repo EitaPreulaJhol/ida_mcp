@@ -289,6 +289,7 @@ print("idb_meta OK")
 
 r = json.loads(info.get_analysis_prompt())
 assert "fake.exe" in r["prompt"] and "survey_binary" in r["prompt"], r
+assert "1 import module\n" in r["prompt"], r   # singular, not "1 import modules"
 print("get_analysis_prompt OK")
 
 # =========================================================================

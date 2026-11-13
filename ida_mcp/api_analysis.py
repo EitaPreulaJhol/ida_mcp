@@ -475,21 +475,23 @@ def get_string(address: str) -> str:
 
 @tool
 @idasync
-def list_imports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
+def list_imports(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -> str:
     """List all imported symbols with their module names.
 
     Supports glob-based filtering (e.g. ``"*Create*"``) with fnmatch.
-    Pagination via ``offset`` / ``count`` (max 5000).
+    Pagination via ``offset`` / ``limit`` (max 5000); the deprecated
+    ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
 
-    count = clamp_int(count, 100, 5000)
+    limit = clamp_int(limit, 100, 5000)
 
     imports_list: list[dict] = []
     nimps = ida_nalt.get_import_module_qty()
 
     if nimps == 0:
-        return json.dumps({"data": [], "total": 0, "offset": offset, "count": 0}, indent=2)
+        return json.dumps({"data": [], "total": 0, "offset": offset,
+                           "count": 0, "limit": limit}, indent=2)
 
     current_module: str = ""
 
@@ -510,26 +512,28 @@ def list_imports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     else:
         filtered = imports_list
 
-    page = filtered[offset:offset + count]
+    page = filtered[offset:offset + limit]
     return json.dumps({
         "data": page,
         "total": len(filtered),
         "offset": offset,
         "count": len(page),
+        "limit": limit,
     }, indent=2)
 
 
 @tool
 @idasync
-def list_exports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
+def list_exports(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -> str:
     """List all exported symbols with their addresses and ordinals.
 
     Supports glob filtering (e.g. ``"*Initialize*"``).
-    Pagination via ``offset`` / ``count`` (max 5000).
+    Pagination via ``offset`` / ``limit`` (max 5000); the deprecated
+    ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
 
-    count = clamp_int(count, 100, 5000)
+    limit = clamp_int(limit, 100, 5000)
 
     exports_list: list[dict] = []
     for i in range(ida_entry.get_entry_qty()):
@@ -549,12 +553,13 @@ def list_exports(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
     else:
         filtered = exports_list
 
-    page = filtered[offset:offset + count]
+    page = filtered[offset:offset + limit]
     return json.dumps({
         "data": page,
         "total": len(filtered),
         "offset": offset,
         "count": len(page),
+        "limit": limit,
     }, indent=2)
 
 
@@ -816,48 +821,13 @@ def find_bytes(pattern: str, limit: int = 100, offset: int = 0) -> str:
 
 @tool
 @idasync
-def list_strings(filter_pattern: str = "*", offset: int = 0, count: int = 100) -> str:
-    """List all strings in the binary with glob filtering and pagination.
-
-    ``filter_pattern`` uses fnmatch (e.g. ``"*error*"``).
-    Pagination via ``offset`` / ``count`` (max 5000).
-    """
-    ensure_analysis()
-
-    count = clamp_int(count, 100, 5000)
-
-    strings_list: list[dict] = []
-    for si in idautils.Strings():
-        strings_list.append({
-            "addr": hex(si.ea),
-            "value": str(si),
-            "length": si.length,
-            "type": si.strtype,
-        })
-
-    if filter_pattern != "*":
-        filtered = [s for s in strings_list if fnmatch.fnmatch(s["value"], filter_pattern)]
-    else:
-        filtered = strings_list
-
-    page = filtered[offset:offset + count]
-    return json.dumps({
-        "data": page,
-        "total": len(filtered),
-        "offset": offset,
-        "count": len(page),
-        "limit": count,
-    }, indent=2)
-
-
-@tool
-@idasync
-def disasm(address: str, count: int = 50) -> str:
+def disasm(address: str, limit: int = 50) -> str:
     """Disassemble instructions starting at the given address or name.
 
     Returns a JSON object with ``addr`` (the requested address), ``next_ea``
     (where the walk stopped), ``instructions`` and the applied ``limit``.
-    ``count`` is clamped to [1, 500] (0/oversized -> the default 50).
+    ``limit`` is clamped to [1, 500] (0/oversized -> the default 50); the
+    deprecated ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
     try:
@@ -865,7 +835,7 @@ def disasm(address: str, count: int = 50) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    count = clamp_int(count, 50, 500)
+    limit = clamp_int(limit, 50, 500)
 
     ea = start_ea
     seg = ida_segment.getseg(ea)
@@ -874,7 +844,7 @@ def disasm(address: str, count: int = 50) -> str:
 
     lines: list[dict] = []
     end_ea = seg.end_ea
-    for _ in range(count):
+    for _ in range(limit):
         if ea == idaapi.BADADDR or ea >= end_ea:
             break
         line = ida_lines.tag_remove(ida_lines.generate_disasm_line(ea, 0) or "")
@@ -893,7 +863,7 @@ def disasm(address: str, count: int = 50) -> str:
     return json.dumps({"addr": hex(start_ea),
                        "next_ea": hex(ea) if ea != idaapi.BADADDR else None,
                        "instructions": lines, "count": len(lines),
-                       "limit": count}, indent=2)
+                       "limit": limit}, indent=2)
 
 
 @tool

@@ -32,20 +32,21 @@ from .compat import (FUNC_STATIC, frame_soff, frame_udt_members, get_cc_name,
 @idasync
 def list_funcs(
     offset: int = 0,
-    count: int = 100,
+    limit: int = 100,
 ) -> str:
     """List functions with pagination support.
 
     ``offset``: starting position (0-based).
-    ``count``: number of functions to return (max 1000; ``count=0`` means no
-    cap -- a full page means more may follow).
+    ``limit``: number of functions to return (max 1000; ``limit=0`` means no
+    cap -- a full page means more may follow). The deprecated ``count``
+    argument is mapped to ``limit`` by the server.
     Returns JSON with ``{addr, name, size}`` objects, plus ``total`` and the
     applied ``limit``.
     """
     ensure_analysis()
-    count = _as_int(count, 100)
-    if count > 1000:
-        count = 1000
+    limit = _as_int(limit, 100)
+    if limit > 1000:
+        limit = 1000
     offset = max(_as_int(offset, 0), 0)
 
     # Single pass: the old code walked Functions() twice (page + total),
@@ -53,7 +54,7 @@ def list_funcs(
     funcs: list[dict] = []
     total = 0
     for ea in idautils.Functions():
-        if total >= offset and (count <= 0 or len(funcs) < count):
+        if total >= offset and (limit <= 0 or len(funcs) < limit):
             name = ida_funcs.get_func_name(ea)
             fn = ida_funcs.get_func(ea)
             funcs.append({
@@ -64,7 +65,7 @@ def list_funcs(
         total += 1
 
     return json.dumps({"data": funcs, "total": total, "offset": offset,
-                       "count": len(funcs), "limit": count}, indent=2)
+                       "count": len(funcs), "limit": limit}, indent=2)
 
 
 @tool

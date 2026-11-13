@@ -2,7 +2,7 @@
 
 `pip install .` used to produce a wheel with `ida_mcp/profiles.py` but no
 `ida_mcp/profiles/*.txt`. `get_profile()` then returns None for every name, so
-`?profile=triage` silently means "no filter" (186 tools) instead of the
+`?profile=triage` silently means "no filter" (185 tools) instead of the
 documented 16. The fix lives in `pyproject.toml`; this test keeps it there
 without building a wheel (dependency-free, runs in milliseconds).
 """

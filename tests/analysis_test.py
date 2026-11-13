@@ -1,5 +1,5 @@
 """Tests for analysis tools: xrefs, callees, callers, xref_query,
-lookup_funcs, int_convert, find_bytes, list_strings, disasm, basic_blocks.
+lookup_funcs, int_convert, find_bytes, disasm, basic_blocks.
 
 Stubs all IDA modules and loads the source via exec.
 """
@@ -385,21 +385,6 @@ r = mod.find_bytes("ZZ")
 assert '"matches": []' in r, f"expected empty matches: {r}"
 print("find_bytes bad pattern OK")
 
-# --- list_strings ---
-
-setup_module()
-_fake_strings.append(FakeStringItem(ea=0x1000, value="Hello"))
-_fake_strings.append(FakeStringItem(ea=0x2000, value="World"))
-
-r = mod.list_strings()
-assert "Hello" in r and "World" in r, f"expected strings: {r}"
-print("list_strings basic OK")
-
-r = mod.list_strings(filter_pattern="*Hello*")
-assert "Hello" in r, f"expected filtered Hello: {r}"
-assert "World" not in r, f"expected no World: {r}"
-print("list_strings filter OK")
-
 # --- disasm ---
 
 # disasm needs a segment. For now test error path.
@@ -474,7 +459,7 @@ class _DisasmSeg:
 _orig_getseg = ida_segment.getseg
 ida_segment.getseg = lambda ea: _DisasmSeg() if 0x7000 <= ea < _DisasmSeg.end_ea else None
 try:
-    r = _json.loads(mod.disasm("0x7000", count=99999))
+    r = _json.loads(mod.disasm("0x7000", limit=99999))
 finally:
     ida_segment.getseg = _orig_getseg
 assert r["limit"] == 500, r
