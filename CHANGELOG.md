@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-11-13
+
 ### Added
 - `tests/idalib_all_tools_test.py` (`make idalib`): opt-in live sweep that
   runs every safe tool once against a real IDB (temp DB copy) and fails on
@@ -81,8 +83,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reports the requested address in `addr` and the stop address in `next_ea`
   (it used to report the end address in `addr`).
 - `limit=0` consistently means "no cap": `get_callers` returned an empty list
-  and `list_funcs(count=0)` an empty page; `list_funcs` also clamps oversized
-  counts to 1000.
+  and `list_funcs(limit=0)` an empty page; `list_funcs` also clamps oversized
+  limits to 1000.
 - `func_count` uses `ida_funcs.get_func_qty()` (O(1)) instead of walking the
   whole function list.
 - `type_query` stops as soon as the requested page is full (it formatted every
