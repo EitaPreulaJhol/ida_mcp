@@ -29,7 +29,8 @@ from .sync import (idasync, tool_timeout, get_tool_deadline, check_cancelled,
                    update_wait_box, ensure_analysis, CancelledError,
                    IDASyncError)
 from .api_analysis import parse_addr
-from .compat import inf_is_64bit, is_loaded as _is_loaded, get_func as _get_func, getseg as _getseg, get_segm_name as _get_segm_name
+from .compat import (inf_is_64bit, is_loaded as _is_loaded, get_func as _get_func,
+                     get_func_comment, getseg as _getseg, get_segm_name as _get_segm_name)
 
 
 _DECOMPILE_LINE_CAP = 100
@@ -186,7 +187,7 @@ def _func_comments(ea: int) -> dict:
         pass
     if func:
         try:
-            out["function"] = ida_funcs.get_func_cmt(func, False) or None
+            out["function"] = get_func_comment(func, False) or None
         except Exception:
             pass
     return out

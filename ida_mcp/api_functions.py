@@ -19,7 +19,8 @@ from .sync import idasync
 from .sync import ensure_analysis
 from .api_analysis import parse_addr, type_label
 from .compat import (FUNC_STATIC, frame_soff, frame_udt_members, get_cc_name,
-                     get_func_cc, get_func_regvars, get_frame_tinfo, is_frame_arg)
+                     get_func_cc, get_func_comment, get_func_regvars,
+                     get_frame_size, get_frame_tinfo, is_frame_arg)
 
 
 # ===========================================================================
@@ -213,7 +214,7 @@ def get_function_comment(address: str) -> str:
     if not func:
         return json.dumps({"error": f"No function at {address}"})
 
-    comment = ida_funcs.get_func_cmt(func, True)
+    comment = get_func_comment(func, True)
     return json.dumps({
         "name": ida_funcs.get_func_name(func.start_ea) or "",
         "comment": comment if comment else None,
@@ -333,7 +334,7 @@ def get_function_frame_size(address: str) -> str:
     return json.dumps({
         "name": ida_funcs.get_func_name(func.start_ea) or "",
         # idc kept the classic frame-size wrappers (frame_t did not survive 9.4)
-        "frame_size": idc.get_frame_size(func.start_ea),
+        "frame_size": get_frame_size(func),
         "args_size": idc.get_frame_args_size(func.start_ea),
         "saved_regs_size": idc.get_frame_regs_size(func.start_ea),
     }, indent=2)

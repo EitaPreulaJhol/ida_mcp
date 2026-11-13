@@ -46,6 +46,10 @@ _SILENCED_DEPRECATIONS = (
     r"get_func\(\) is deprecated",
     r"getseg\(\) is deprecated",
     r"get_segm_name\(\) is deprecated",
+    # Emitted by idautils' own helpers (Functions/FuncItems), not by our
+    # call sites: IDA 9.5 deprecated the iterator types they build on.
+    r"get_next_func\(\) is deprecated",
+    r"func_item_iterator_t is deprecated",
 )
 
 
@@ -512,19 +516,33 @@ def get_cc_name(cc: int | None) -> str | None:
 # Stack frames (IDA 9.4 removed frame_t / ida_frame.get_frame)
 # ---------------------------------------------------------------------------
 
+def _func_ea(pfn) -> int | None:
+    """``pfn.start_ea`` when ``pfn`` looks like a ``func_t``, else None."""
+    ea = getattr(pfn, "start_ea", None)
+    return ea if isinstance(ea, int) else None
+
+
 def get_frame_tinfo(pfn):
     """Stack frame of ``pfn`` as a ``tinfo_t``, or None when it has none.
 
     IDA 9.4 replaced ``frame_t`` with the ``struct __fixed(...)`` type built by
     ``get_func_frame``; its members expose ``name``, ``offset`` (frame offset in
-    bits), ``size`` and ``type``.
+    bits), ``size`` and ``type``. 9.5 deprecated the ``func_t`` form in favour
+    of ``get_func_frame_ea``, so the address variant is preferred.
     """
     if ida_frame is None or ida_typeinf is None:
         return None
+    tif = ida_typeinf.tinfo_t()
+    ea = _func_ea(pfn)
+    getter_ea = getattr(ida_frame, "get_func_frame_ea", None)
+    if callable(getter_ea) and ea is not None:
+        try:
+            return tif if getter_ea(tif, ea) else None
+        except Exception:
+            return None
     getter = getattr(ida_frame, "get_func_frame", None)
     if not callable(getter):
         return None
-    tif = ida_typeinf.tinfo_t()
     try:
         if not getter(tif, pfn):
             return None
@@ -571,9 +589,17 @@ def frame_soff(pfn, frameoff: int) -> int:
 
     ``soff_to_fpoff`` converts a struct offset into the fp-relative offset the
     stack-frame window (and the old ``frame_t``) used: negative for locals, 0 at
-    the return address, positive for arguments.
+    the return address, positive for arguments. 9.5 deprecated the ``func_t``
+    form in favour of ``soff_to_fpoff_ea``.
     """
     if ida_frame is not None:
+        ea = _func_ea(pfn)
+        fn_ea = getattr(ida_frame, "soff_to_fpoff_ea", None)
+        if callable(fn_ea) and ea is not None:
+            try:
+                return int(fn_ea(ea, frameoff))
+            except Exception:
+                pass
         fn = getattr(ida_frame, "soff_to_fpoff", None)
         if callable(fn):
             try:
@@ -586,6 +612,13 @@ def frame_soff(pfn, frameoff: int) -> int:
 def is_frame_arg(pfn, frameoff: int) -> bool:
     """True when ``frameoff`` (a frame-tinfo offset) belongs to the arguments."""
     if ida_frame is not None:
+        ea = _func_ea(pfn)
+        fn_ea = getattr(ida_frame, "is_funcarg_off_ea", None)
+        if callable(fn_ea) and ea is not None:
+            try:
+                return bool(fn_ea(ea, frameoff))
+            except Exception:
+                pass
         fn = getattr(ida_frame, "is_funcarg_off", None)
         if callable(fn):
             try:
@@ -593,6 +626,54 @@ def is_frame_arg(pfn, frameoff: int) -> bool:
             except Exception:
                 pass
     return False
+
+
+def get_frame_size(pfn) -> int:
+    """Full stack-frame size of ``pfn`` in bytes (0 when it has no frame).
+
+    ``ida_frame.get_frame_size`` was deprecated in 9.5; ``get_frame_size_ea``
+    takes the function address instead.
+    """
+    if ida_frame is None:
+        return 0
+    ea = _func_ea(pfn)
+    fn_ea = getattr(ida_frame, "get_frame_size_ea", None)
+    if callable(fn_ea) and ea is not None:
+        try:
+            return int(fn_ea(ea))
+        except Exception:
+            pass
+    fn = getattr(ida_frame, "get_frame_size", None)
+    if callable(fn):
+        try:
+            return int(fn(pfn))
+        except Exception:
+            pass
+    return 0
+
+
+def get_func_comment(pfn, repeatable: bool = False) -> str | None:
+    """Comment of ``pfn`` (``get_func_cmt`` was deprecated in 9.5).
+
+    ``get_func_cmt_ea`` takes the function address; the ``func_t`` form is the
+    fallback for older bindings.
+    """
+    if ida_funcs is None or pfn is None:
+        return None
+    ea = _func_ea(pfn)
+    fn_ea = getattr(ida_funcs, "get_func_cmt_ea", None)
+    if callable(fn_ea) and ea is not None:
+        try:
+            return fn_ea(ea, repeatable)
+        except Exception:
+            pass
+    fn = getattr(ida_funcs, "get_func_cmt", None)
+    if callable(fn):
+        try:
+            return fn(pfn, repeatable)
+        except Exception:
+            pass
+    return None
 
 
 def get_func_regvars(ea: int) -> list:
@@ -687,9 +768,20 @@ def get_extra_cmt(ea: int, what: int, index: int = 0) -> str | None:
 
 
 def get_segment_comment(seg, repeatable: bool = False) -> str | None:
-    """Comment of ``seg`` (``get_segment_cmt`` replaced ``get_segm_cmt``)."""
+    """Comment of ``seg`` (``get_segment_cmt`` replaced ``get_segm_cmt``).
+
+    9.5 deprecated ``get_segment_cmt(seg, ...)`` in favour of
+    ``get_segment_cmt_by_ea(ea, ...)``; the address form is tried first.
+    """
     if ida_segment is None:
         return None
+    ea = getattr(seg, "start_ea", None)
+    fn_ea = getattr(ida_segment, "get_segment_cmt_by_ea", None)
+    if callable(fn_ea) and isinstance(ea, int):
+        try:
+            return fn_ea(ea, repeatable)
+        except Exception:
+            pass
     for fn_name in ("get_segment_cmt", "get_segm_cmt"):
         fn = getattr(ida_segment, fn_name, None)
         if not callable(fn):
@@ -698,6 +790,30 @@ def get_segment_comment(seg, repeatable: bool = False) -> str | None:
             return fn(seg, repeatable)
         except Exception:
             continue
+    return None
+
+
+def segment_class(seg) -> str | None:
+    """Class of ``seg`` (``get_segm_class`` was deprecated in 9.5).
+
+    ``get_segment_class`` takes the segment's start address rather than the
+    ``segment_t``, so both spellings are supported.
+    """
+    if ida_segment is None or seg is None:
+        return None
+    ea = getattr(seg, "start_ea", None)
+    fn_ea = getattr(ida_segment, "get_segment_class", None)
+    if callable(fn_ea) and isinstance(ea, int):
+        try:
+            return fn_ea(ea)
+        except Exception:
+            pass
+    fn = getattr(ida_segment, "get_segm_class", None)
+    if callable(fn):
+        try:
+            return fn(seg)
+        except Exception:
+            pass
     return None
 
 
@@ -795,11 +911,14 @@ __all__ = [
     "frame_udt_members",
     "frame_soff",
     "is_frame_arg",
+    "get_frame_size",
+    "get_func_comment",
+    "get_segment_comment",
+    "segment_class",
     "get_func_regvars",
     "get_original_bytes",
     "get_extra_cmt_qty",
     "get_extra_cmt",
-    "get_segment_comment",
     "get_reg_name",
     "get_entry_qty",
     "get_entry_ordinal",

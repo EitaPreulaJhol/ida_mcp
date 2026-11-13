@@ -263,7 +263,7 @@ mod = load("api_composite", {
     "    raise ValueError(f'Unknown: {s}')",
     "compat": ("inf_is_64bit = lambda: True\n_is_loaded = lambda ea: True\n"
     "import ida_funcs as _cf_f, idaapi as _cf_a, ida_segment as _cf_s\n"
-    "_get_func = _cf_f.get_func\n_getseg = _cf_a.getseg\n_get_segm_name = _cf_s.get_segm_name" + '\nis_loaded = _is_loaded\nget_func = _get_func\ngetseg = _getseg\nget_segm_name = _get_segm_name'),
+    "_get_func = _cf_f.get_func\n_getseg = _cf_a.getseg\n_get_segm_name = _cf_s.get_segm_name" + '\nis_loaded = _is_loaded\nget_func = _get_func\ngetseg = _getseg\nget_segm_name = _get_segm_name\nget_func_comment = lambda pfn, repeatable=False: _cf_f.get_func_cmt(pfn, repeatable)'),
 }, alias="composite_test")
 
 # =========================================================================

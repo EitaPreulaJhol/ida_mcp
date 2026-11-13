@@ -232,6 +232,94 @@ assert compat.detect_ida_version() == "9.4"
 print("compat 9.4 bytes/comments/registers/version OK")
 
 # =========================================================================
+# IDA 9.5: the *_ea variants must win over the deprecated func_t forms
+# =========================================================================
+
+
+class _FakeFunc:
+    start_ea = 0x4000
+
+
+class _FakeSeg:
+    start_ea = 0x5000
+
+
+class _FakeArgType:
+    def get_type_name(self):
+        return "_BYTE"
+
+
+class _FakeArgFrameTif(_FakeFrameTif):
+    def get_udt_details(self, udt):
+        udt._members = []
+        return True
+
+
+_ea_calls: list[str] = []
+
+
+def _must_not_call(*args, **kwargs):
+    raise AssertionError("the deprecated func_t/seg form must not be used")
+
+
+_install({
+    "idaapi": {},  # no kernel version: detect() stays at 9.4 from the prior block
+    "ida_typeinf": {"tinfo_t": _FakeArgFrameTif, "udt_type_data_t": _FakeUdt},
+    "ida_frame": {
+        "get_func_frame_ea": lambda tif, ea: _ea_calls.append("frame_ea") or True,
+        "get_func_frame": _must_not_call,
+        "soff_to_fpoff_ea": lambda ea, off: _ea_calls.append("soff_ea") or off - 0x38,
+        "soff_to_fpoff": _must_not_call,
+        "is_funcarg_off_ea": lambda ea, off: _ea_calls.append("arg_ea") or off >= 0x40,
+        "is_funcarg_off": _must_not_call,
+        "get_frame_size_ea": lambda ea: _ea_calls.append("size_ea") or 0x60,
+        "get_frame_size": _must_not_call,
+    },
+    "ida_funcs": {
+        "get_func_cmt_ea": lambda ea, rep: _ea_calls.append("cmt_ea") or "ea comment",
+        "get_func_cmt": _must_not_call,
+    },
+    "ida_segment": {
+        "get_segment_cmt_by_ea": lambda ea, rep: _ea_calls.append("segcmt_ea") or "seg ea comment",
+        "get_segment_cmt": _must_not_call,
+        "get_segm_class": _must_not_call,
+        "get_segment_class": lambda ea: _ea_calls.append("class_ea") or "CODE",
+    },
+})
+compat = _load_compat()
+
+pfn, seg = _FakeFunc(), _FakeSeg()
+assert compat.get_frame_tinfo(pfn) is not None
+assert compat.frame_soff(pfn, 0x20) == -24
+assert compat.is_frame_arg(pfn, 0x40) is True and compat.is_frame_arg(pfn, 0x20) is False
+assert compat.get_frame_size(pfn) == 0x60
+assert compat.get_func_comment(pfn, True) == "ea comment"
+assert compat.get_segment_comment(seg) == "seg ea comment"
+assert compat.segment_class(seg) == "CODE"
+assert set(_ea_calls) == {"frame_ea", "soff_ea", "arg_ea", "size_ea",
+                          "cmt_ea", "segcmt_ea", "class_ea"}, _ea_calls
+print("compat 9.5 *_ea variants win over the deprecated forms OK")
+
+# The idautils-internal deprecations are silenced; unrelated ones are not.
+import warnings as _warnings  # noqa: E402
+
+def _emit(message):
+    # stacklevel=2 attributes the warning to this test module, which is what
+    # the default `default::DeprecationWarning:__main__` filter matches.
+    _warnings.warn(message, DeprecationWarning, stacklevel=2)
+
+
+with _warnings.catch_warnings(record=True) as _caught:
+    _emit("get_next_func() is deprecated, use get_next_func_ea()")
+    _emit("func_item_iterator_t is deprecated, use function_item_iterator_t")
+assert not _caught, [str(w.message) for w in _caught]
+
+with _warnings.catch_warnings(record=True) as _caught:
+    _emit("some_other_api() is deprecated")
+assert _caught, "an unrelated DeprecationWarning must still surface"
+print("compat deprecation filtering is narrow OK")
+
+# =========================================================================
 # 8.3..9.3: the pre-9.4 spellings must still win when they exist
 # =========================================================================
 

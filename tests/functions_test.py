@@ -158,9 +158,15 @@ class FakeRegvars:
 
 
 ida_frame = types.ModuleType("ida_frame")
+# 9.5 shape: the *_ea variants are what compat prefers (the func_t forms
+# below are kept so a regression to them is visible in the assertions).
+ida_frame.get_func_frame_ea = lambda tif, ea: ea == FRAME_FUNC
 ida_frame.get_func_frame = lambda tif, pfn: pfn.start_ea == FRAME_FUNC
+ida_frame.soff_to_fpoff_ea = lambda ea, frameoff: frameoff - 0x38
 ida_frame.soff_to_fpoff = lambda pfn, frameoff: frameoff - 0x38
+ida_frame.is_funcarg_off_ea = lambda ea, frameoff: frameoff >= 0x40
 ida_frame.is_funcarg_off = lambda pfn, frameoff: frameoff >= 0x40
+ida_frame.get_frame_size_ea = lambda ea: 0x40 if ea == FRAME_FUNC else 0
 ida_frame.get_func_regvar_qty = lambda ea: 1 if ea == FRAME_FUNC else 0
 
 
@@ -175,7 +181,6 @@ ida_frame.regvars_t = FakeRegvars
 sys.modules["ida_frame"] = ida_frame
 
 idc = types.ModuleType("idc")
-idc.get_frame_size = lambda ea: 0x40 if ea == FRAME_FUNC else 0
 idc.get_frame_args_size = lambda ea: 0x10 if ea == FRAME_FUNC else 0
 idc.get_frame_regs_size = lambda ea: 0x8 if ea == FRAME_FUNC else 0
 sys.modules["idc"] = idc

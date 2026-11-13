@@ -317,8 +317,8 @@ def list_patches() -> str:
     ensure_analysis()
     results: list[dict] = []
 
-    for i in range(ida_segment.get_segm_qty()):
-        seg = ida_segment.getnseg(i)
+    for seg_ea in idautils.Segments():
+        seg = ida_segment.getseg(seg_ea)
         if not seg:
             continue
         for ea in range(seg.start_ea, min(seg.end_ea, seg.start_ea + 100000)):

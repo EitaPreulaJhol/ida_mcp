@@ -7,6 +7,7 @@ in-process IDA SDK access.
 import json
 
 import ida_segment
+import idautils
 
 from .rpc import tool
 from .sync import idasync
@@ -14,6 +15,36 @@ from .sync import ensure_analysis
 from .api_analysis import parse_addr
 # aliased: this module's own ``get_segment_comment`` tool would shadow it
 from .compat import get_segment_comment as _compat_segment_comment
+from .compat import segment_class as _segment_class
+
+
+def _segments():
+    """Yield every segment (``getnseg`` was deprecated in 9.5).
+
+    ``idautils.Segments()`` yields start addresses through the current
+    ``get_segment_info_by_num``; ``getseg`` is the long-standing accessor
+    (silenced centrally in compat).
+    """
+    for seg_ea in idautils.Segments():
+        seg = ida_segment.getseg(seg_ea)
+        if seg:
+            yield seg
+
+
+def _find_segment(address: str):
+    """Segment at ``address`` (hex/symbol) or with that exact name, else None."""
+    try:
+        ea = parse_addr(address)
+    except ValueError:
+        ea = None
+    if ea is not None:
+        seg = ida_segment.getseg(ea)
+        if seg:
+            return seg
+    for seg in _segments():
+        if ida_segment.get_segm_name(seg) == address:
+            return seg
+    return None
 
 
 def _seg_to_dict(seg) -> dict:
@@ -23,7 +54,7 @@ def _seg_to_dict(seg) -> dict:
         "start_ea": hex(seg.start_ea),
         "end_ea": hex(seg.end_ea),
         "size": seg.end_ea - seg.start_ea,
-        "class": ida_segment.get_segm_class(seg),
+        "class": _segment_class(seg),
         "bitness": seg.bitness,
     }
 
@@ -43,10 +74,8 @@ def get_segments() -> str:
     ensure_analysis()
     results: list[dict] = []
 
-    for i in range(ida_segment.get_segm_qty()):
-        seg = ida_segment.getnseg(i)
-        if seg:
-            results.append(_seg_to_dict(seg))
+    for seg in _segments():
+        results.append(_seg_to_dict(seg))
 
     return json.dumps(results, indent=2)
 
@@ -80,9 +109,8 @@ def get_segment_by_name(name: str) -> str:
     """
     ensure_analysis()
 
-    for i in range(ida_segment.get_segm_qty()):
-        seg = ida_segment.getnseg(i)
-        if seg and ida_segment.get_segm_name(seg) == name:
+    for seg in _segments():
+        if ida_segment.get_segm_name(seg) == name:
             return json.dumps(_seg_to_dict(seg), indent=2)
 
     return json.dumps({"error": f"Segment '{name}' not found"})
@@ -102,18 +130,7 @@ def get_segment_count() -> str:
 def get_segment_size(address: str) -> str:
     """Get the size of the segment containing or named by the given address/name."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        # Try by name
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
 
@@ -125,17 +142,7 @@ def get_segment_size(address: str) -> str:
 def get_segment_start(address: str) -> str:
     """Get the start address of the segment containing or named by the given address/name."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
     return json.dumps({"name": ida_segment.get_segm_name(seg), "start_ea": hex(seg.start_ea)})
@@ -146,17 +153,7 @@ def get_segment_start(address: str) -> str:
 def get_segment_end(address: str) -> str:
     """Get the end address of the segment containing or named by the given address/name."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
     return json.dumps({"name": ida_segment.get_segm_name(seg), "end_ea": hex(seg.end_ea)})
@@ -167,20 +164,10 @@ def get_segment_end(address: str) -> str:
 def get_segment_class(address: str) -> str:
     """Get the class of a segment (CODE, DATA, BSS, etc.)."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
-    return json.dumps({"name": ida_segment.get_segm_name(seg), "class": ida_segment.get_segm_class(seg)})
+    return json.dumps({"name": ida_segment.get_segm_name(seg), "class": _segment_class(seg)})
 
 
 @tool
@@ -188,17 +175,7 @@ def get_segment_class(address: str) -> str:
 def get_segment_bitness(address: str) -> str:
     """Get the bitness of a segment (16, 32, or 64)."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
     return json.dumps({"name": ida_segment.get_segm_name(seg), "bitness": seg.bitness})
@@ -209,17 +186,7 @@ def get_segment_bitness(address: str) -> str:
 def get_segment_permissions(address: str) -> str:
     """Get the permissions of a segment (read, write, execute)."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
 
@@ -239,9 +206,8 @@ def get_code_segments() -> str:
     """Get all executable (code) segments."""
     ensure_analysis()
     results: list[dict] = []
-    for i in range(ida_segment.get_segm_qty()):
-        seg = ida_segment.getnseg(i)
-        if seg and ida_segment.get_segm_class(seg) == "CODE":
+    for seg in _segments():
+        if _segment_class(seg) == "CODE":
             results.append(_seg_to_dict(seg))
     return json.dumps(results, indent=2)
 
@@ -252,9 +218,8 @@ def get_data_segments() -> str:
     """Get all non-code (data/BSS) segments."""
     ensure_analysis()
     results: list[dict] = []
-    for i in range(ida_segment.get_segm_qty()):
-        seg = ida_segment.getnseg(i)
-        if seg and ida_segment.get_segm_class(seg) != "CODE":
+    for seg in _segments():
+        if _segment_class(seg) != "CODE":
             results.append(_seg_to_dict(seg))
     return json.dumps(results, indent=2)
 
@@ -264,17 +229,7 @@ def get_data_segments() -> str:
 def get_segment_comment(address: str) -> str:
     """Get the comment on a segment."""
     ensure_analysis()
-    try:
-        ea = parse_addr(address)
-        seg = ida_segment.getseg(ea)
-    except ValueError:
-        seg = None
-        for i in range(ida_segment.get_segm_qty()):
-            s = ida_segment.getnseg(i)
-            if s and ida_segment.get_segm_name(s) == address:
-                seg = s
-                break
-
+    seg = _find_segment(address)
     if not seg:
         return json.dumps({"error": f"Segment not found: {address}"})
 
