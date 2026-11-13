@@ -141,6 +141,22 @@ explicit allowlist, while bare `/mcp` is the unfiltered safe set. Step 4
 unhides the 39 non-debugger write tools (total 224); step 5 adds the 19
 debugger tools (total 243, the full registry).
 
+### Focus profiles
+
+Orthogonal to the ladder, `?profile=` can narrow the visible tools for a
+workflow. Unsafe/extension tools in a profile still require `?unsafe=true`
+and/or `?ext=<group>`:
+
+| Profile | Tools | What it is for |
+|---|---|---|
+| `malware` | 97 | imports, strings, xrefs, signatures, passive hooks |
+| `ctf` | 67 | decompiler, search, signatures, patching, annotations |
+| `annotate` | 46 | rename/comment/type/batch writes + context to verify them |
+| `debug` | 36 | `dbg_*` group + paused-target inspection (needs `ext=dbg`) |
+
+For example, `?profile=ctf&unsafe=true` exposes the CTF allowlist including
+patch tools; `?profile=debug&unsafe=true&ext=dbg` exposes the debugger group.
+
 > **Auth token (steps 4-5 only).** The unsafe and debugger tools additionally
 > require a secret token the server prints to IDA's Output window on startup
 > (loopback binding alone does not stop another local process). Pass it as the
@@ -373,5 +389,5 @@ python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift g
 - [`skills/ida/SKILL.md`](skills/ida/SKILL.md) - generic `/ida` orchestrator skill; [`skills/ida-scripting/SKILL.md`](skills/ida-scripting/SKILL.md) - IDAPython scripting skill.
 - [`.pi/skills/ida/SKILL.md`](.pi/skills/ida/SKILL.md) - Pi `/ida` skill; [`.pi/skills/ida-scripting/SKILL.md`](.pi/skills/ida-scripting/SKILL.md) - Pi IDAPython scripting skill.
 - [`.pi/extensions/ida-mcp.ts`](.pi/extensions/ida-mcp.ts) - Pi extension (bridge, `/ida` command, footer indicator, `IDA_MCP_URL` override).
-- [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/185-tool allowlists.
+- [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/185-tool built-in allowlists; `malware.txt`, `ctf.txt`, `annotate.txt` and `debug.txt` are the focus profiles.
 - [`tests/`](tests/) - (Almost) complete test suite (`run_all.py`, `tool_inventory_test.py` guards registry <-> docs drift).

@@ -30,7 +30,7 @@ An agent running inside the IDA session identifies a SHA-1 transform from its ro
 - **Zero dependencies.** The MCP transport is a vendored, trimmed server (`ida_mcp/zeromcp`) on top of stdlib `ThreadingHTTPServer`. No `mcp`, `uvicorn`, `fastapi` or `pip` packages at runtime.
 - **Main-thread safety.** All IDA API calls are marshalled to the IDA main thread via `idaapi.execute_sync` through an `@idasync` layer with a queue-based result container, timeouts and cancellation support.
 - **Simple tool model.** Tools are plain Python functions registered with `@tool` into a single `MCP_SERVER` registry. Unsafe tools are marked with `@unsafe` and hidden/refused unless the client opts in.
-- **Lazy profiles.** Clients start with a 16-tool `triage` profile and escalate to `readonly` and then the full set only as needed, keeping agent context small.
+- **Lazy profiles.** Clients start with a 16-tool `triage` profile and escalate to `readonly` and then the full set only as needed, keeping agent context small. Focused `malware`, `ctf`, `annotate` and `debug` profiles narrow the surface further for common workflows.
 - **Multi-instance aware.** A second IDA whose port is taken falls back to the next free one (up to +9), and running instances register themselves on disk so tooling can discover and address several open IDA sessions.
 - **IDA 9.x native.** Uses current APIs (`idaapi.BADADDR`, `insn.get_canon_mnem()`, `ida_bytes.find_bytes()`, `inf_get_min_ea/max_ea`) with shims for 8.3+ in `compat.py`.
 
@@ -105,7 +105,7 @@ Everything is configured through environment variables - there is no config file
 | `IDA_MCP_CLIENT_TIMEOUT_MS` | `90000` | Client tool-call timeout. Keep it above the server's `IDA_MCP_TOOL_TIMEOUT_SEC` so the client reports "busy" (and cancels) rather than "offline". |
 
 ## Safety model
-By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage` / `?profile=readonly`) further restrict which tools are listed, so an agent only sees what the task requires; an unknown profile name is rejected (`-32602`, naming the available ones) instead of being ignored, which used to widen the tool list silently.
+By default the server is **read-only**. Mutating tools (renames, comments, type application, patching, script execution, IDB hooks) are invisible and rejected unless the endpoint is opened with `?unsafe=true`. Debugger tools additionally require the `dbg` extension group (`?unsafe=true&ext=dbg`). Profiles (`?profile=triage`, `readonly`, `malware`, `ctf`, `annotate`, `debug`) further restrict which tools are listed, so an agent only sees what the task requires; an unknown profile name is rejected (`-32602`, naming the available ones) instead of being ignored, which used to widen the tool list silently.
 
 **Auth token for the unsafe surface.** Because `?unsafe=true` exposes script execution and patching (effectively local RCE), the unsafe and debugger tools additionally require a secret token - loopback binding and the DNS-rebinding/Origin guards do not stop another local process or user. On startup the server prints a random token to the IDA output window; clients pass it as the `X-IDA-MCP-Token` header or `?token=<token>`. Read-only tools need no token while the server is bound to loopback; bound anywhere else, every request needs it (HTTP 401 otherwise), since the Host guard cannot apply there. Set `IDA_MCP_TOKEN` to pin a stable token for a fixed client config, or `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user workstation. On a shared or potentially compromised box, `IDA_MCP_REQUIRE_TOKEN=1` asks for the token on every request (read-only tools included) while staying on loopback. The token is never written to the discovery file.
 
@@ -271,7 +271,7 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 | `ida_mcp/api_*.py` | Tool modules (analysis, functions, xrefs, memory, strings, types, segments, instructions, info, comments, names, composite, query, hexrays, debug, hooks, sigmaker, search, modify, entries) |
 | `ida_mcp/rpc.py` | `@tool` / `@unsafe` decorators and registry |
 | `ida_mcp/sync.py` | `@idasync` main-thread bridge |
-| `ida_mcp/profiles.py` + `profiles/` | Lazy-loading tool allowlists (`triage`, `readonly`) |
+| `ida_mcp/profiles.py` + `profiles/` | Lazy-loading tool allowlists (`triage`, `readonly`, `malware`, `ctf`, `annotate`, `debug`) |
 | `ida_mcp/compat.py` | IDA 8.3 to 9.x API shims |
 | `ida_mcp/regex_guard.py` | Rejects ReDoS-prone client regexes before compiling |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |
@@ -299,7 +299,7 @@ This repo includes a ready-to-use skill and extension for the [Pi Agent](https:/
 - `decompile_function` output is plain text capped at 2000 lines. Everything else returns JSON.
 - `get_bytes` is BSS-safe (unloaded bytes read as `0x00`).
 - Oversized request bodies, non-loopback `Host` headers and foreign `Origin` values are rejected.
-- Besides tools, the server exposes MCP **resources** (`ida://triage` → `survey_binary`, `ida://health` → `server_health`) and a **prompt** (`reverse-engineer`), so a client can attach binary context without a tool call. These are read-only and advertised in `initialize` capabilities.
+- Besides tools, the server exposes MCP **resources** (`ida://triage`, `ida://health`, `ida://binary`, `ida://segments`, `ida://functions`, `ida://strings`) and a **prompt** (`reverse-engineer`), so a client can attach binary context without a tool call. `ida://functions` and `ida://strings` accept `?filter=`/`?filter_pattern=`, `?limit=` and `?offset=` (advertised as resource templates). These are read-only and advertised in `initialize` capabilities.
 - `server_health` reports per-tool call/error counts and main-thread timing (`stats`); set `IDA_MCP_AUDIT=<path>` for a JSONL trail of mutating calls.
 - Timeouts, host/port and autostart are configurable; per-IDB settings persist via netnodes.
 - Requires IDA Pro 8.3+ (9.3 recommended) with Python 3.11+; IDA Free is not supported and Hex-Rays is needed for decompiler-backed tools.

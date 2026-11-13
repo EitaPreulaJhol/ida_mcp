@@ -1126,6 +1126,10 @@ class McpServer:
         self.tools = McpRpcRegistry()
         self.resources = McpRpcRegistry()
         self.prompts = McpRpcRegistry()
+        # RFC 6570-style resource templates (advertised by
+        # resources/templates/list). Each entry also names its backing tool so
+        # it follows the same profile/unsafe/ext/token gates as a resource.
+        self._resource_templates: list[dict] = []
 
         self._http_server: Any = None
         self._server_thread: Any = None
@@ -1292,6 +1296,25 @@ class McpServer:
                 setattr(func, "__resource_tool__", tool)
             return self.resources.method(func)
         return decorator
+
+    def add_resource_template(self, uri_template: str, *, name: str,
+                              mime: str | None = None,
+                              description: str = "",
+                              tool: str | None = None) -> None:
+        """Advertise a queryable resource template.
+
+        The static resource registered for the same base URI does the actual
+        reading; query parameters are passed to its reader as keyword
+        arguments (see ``_mcp_resources_read``). ``tool`` applies the same
+        access gates as ``resource(tool=...)``.
+        """
+        self._resource_templates.append({
+            "uriTemplate": uri_template,
+            "name": name,
+            "mimeType": mime or "application/json",
+            "description": description,
+            "tool": tool,
+        })
 
     def prompt(self, func: Callable) -> Callable:
         return self.prompts.method(func)
@@ -2084,14 +2107,36 @@ class McpServer:
         return {"resources": resources}
 
     def _mcp_resource_templates_list(self, _meta=None):
-        return {"resourceTemplates": []}
+        templates = []
+        for tmpl in self._resource_templates:
+            backing = tmpl.get("tool")
+            if backing and self._tool_access_error(backing) is not None:
+                continue
+            templates.append({
+                "uriTemplate": tmpl["uriTemplate"],
+                "name": tmpl["name"],
+                "description": tmpl["description"],
+                "mimeType": tmpl["mimeType"],
+            })
+        return {"resourceTemplates": templates}
 
     def _mcp_resources_read(self, uri, _meta=None):
         target = None
+        query: dict[str, list[str]] = {}
         for func in self.resources.methods.values():
             if getattr(func, "__resource_uri__", None) == uri:
                 target = func
                 break
+        if target is None:
+            # Queryable resource: ida://functions?limit=10, ida://strings?... .
+            # The static reader supplies defaults and receives only the
+            # keyword arguments it declares, so unknown query keys are ignored.
+            base, _, raw_query = uri.partition("?")
+            for func in self.resources.methods.values():
+                if getattr(func, "__resource_uri__", None) == base:
+                    target = func
+                    query = parse_qs(raw_query, keep_blank_values=True)
+                    break
         if target is None:
             raise JsonRpcException(-32602, f"Unknown resource: {uri}")
         denied = self._resource_access_error(target)
@@ -2110,7 +2155,12 @@ class McpServer:
         t0 = time.perf_counter()
         errored = True
         try:
-            result = target()
+            kwargs: dict[str, str] = {}
+            if query:
+                params = inspect.signature(target).parameters
+                kwargs = {k: v[0] for k, v in query.items()
+                          if k in params and v}
+            result = target(**kwargs)
             errored = False
         finally:
             if gate is not None:

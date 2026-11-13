@@ -31,6 +31,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `apply_annotations(items, dry_run, stop_on_error)`: one unsafe call for
   batch rename/comment/type operations, with per-item results, dry-run
   previews and optional stop-at-first-error.
+- Focus profiles `malware`, `ctf`, `annotate` and `debug`, selected with
+  `?profile=`. They narrow the visible tool set; unsafe/extension entries
+  still require `?unsafe=true` / `?ext=`.
+- Queryable MCP resources: `ida://binary`, `ida://segments`,
+  `ida://functions` and `ida://strings`, with `filter_pattern`/`limit`/
+  `offset` passed through as resource query parameters. The last two are
+  advertised via `resources/templates/list`.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

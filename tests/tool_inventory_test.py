@@ -461,16 +461,29 @@ def main() -> int:
         else:
             triage, readonly = loaded["triage"], loaded["readonly"]
             before = len(failures)
-            unknown = (triage | readonly) - all_tools
-            if unknown:
-                failures.append(f"profiles reference unknown tools: {sorted(unknown)}")
+            # Every shipped profile, not just the two built-ins, must reference
+            # real tools. Profiles may include unsafe/ext tools: those stay
+            # hidden until ?unsafe / ?ext is also present.
+            profile_sets = {}
+            for fname in prof_files:
+                name = fname[:-4]
+                aset = _pmod.get_profile(name)
+                if aset is None or not aset:
+                    failures.append(f"profile {name!r} did not load")
+                    continue
+                profile_sets[name] = aset
+                unknown = aset - all_tools
+                if unknown:
+                    failures.append(
+                        f"profile {name!r} references unknown tools: {sorted(unknown)}")
             privileged = (triage | readonly) & (unsafe_tools | ext_tools)
             if privileged:
                 failures.append(f"triage/readonly must be privilege-free: {sorted(privileged)}")
             if not triage < readonly:
                 failures.append("triage must be a strict subset of readonly")
             if len(failures) == before:
-                print(f"profiles OK (triage={len(triage)}, readonly={len(readonly)})")
+                counts = ", ".join(f"{k}={len(v)}" for k, v in sorted(profile_sets.items()))
+                print(f"profiles OK ({counts})")
     if _pmod.get_profile("nope") is not None:
         failures.append("get_profile('nope') must return None")
     else:

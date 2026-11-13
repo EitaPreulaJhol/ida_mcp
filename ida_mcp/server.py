@@ -599,14 +599,77 @@ def _resource_health():
     return server_health()
 
 
+def _resource_tool(name: str, **kwargs):
+    """Call a registered tool for a resource reader.
+
+    Readers are plain (not @idasync) and call the @idasync tool, so there is
+    exactly one main-thread marshal. The tool may be absent under a profile.
+    """
+    fn = MCP_SERVER.tools.methods.get(name)
+    if fn is None:
+        return json.dumps({"error": f"{name} tool unavailable"})
+    return fn(**kwargs)
+
+
 @MCP_SERVER.resource("ida://triage", name="binary-triage", mime="application/json",
                      tool="survey_binary")
 def _resource_triage():
     """One-call binary triage (same payload as the survey_binary tool)."""
-    fn = MCP_SERVER.tools.methods.get("survey_binary")
-    if fn is None:
-        return json.dumps({"error": "survey_binary tool unavailable"})
-    return fn()
+    return _resource_tool("survey_binary")
+
+
+@MCP_SERVER.resource("ida://binary", name="binary-info", mime="application/json",
+                     tool="get_binary_info")
+def _resource_binary():
+    """Binary metadata, compiler, architecture and analysis status."""
+    return _resource_tool("get_binary_info")
+
+
+@MCP_SERVER.resource("ida://segments", name="segments", mime="application/json",
+                     tool="get_segments")
+def _resource_segments():
+    """Segments with permissions, classes and address ranges."""
+    return _resource_tool("get_segments")
+
+
+@MCP_SERVER.resource("ida://functions", name="functions", mime="application/json",
+                     tool="get_functions")
+def _resource_functions(filter_pattern: str = "*", limit: str = "50",
+                        offset: str = "0", filter: str | None = None):
+    """Function list; supports ?filter_pattern= (or ?filter=), ?limit=, ?offset=."""
+    if filter is not None:
+        filter_pattern = filter
+    try:
+        limit_i, offset_i = int(limit), max(int(offset), 0)
+    except (TypeError, ValueError):
+        limit_i, offset_i = 50, 0
+    return _resource_tool("get_functions", filter_pattern=filter_pattern,
+                          limit=limit_i, offset=offset_i)
+
+
+@MCP_SERVER.resource("ida://strings", name="strings", mime="application/json",
+                     tool="list_strings")
+def _resource_strings(filter_pattern: str = "*", limit: str = "50",
+                      offset: str = "0", filter: str | None = None):
+    """String list; supports ?filter_pattern= (or ?filter=), ?limit=, ?offset=."""
+    if filter is not None:
+        filter_pattern = filter
+    try:
+        limit_i, offset_i = int(limit), max(int(offset), 0)
+    except (TypeError, ValueError):
+        limit_i, offset_i = 50, 0
+    return _resource_tool("list_strings", filter_pattern=filter_pattern,
+                          limit=limit_i, offset=offset_i)
+
+
+MCP_SERVER.add_resource_template(
+    "ida://functions{?filter,filter_pattern,limit,offset}", name="functions",
+    mime="application/json", tool="get_functions",
+    description="Function list filtered by name pattern, with limit/offset.")
+MCP_SERVER.add_resource_template(
+    "ida://strings{?filter,filter_pattern,limit,offset}", name="strings",
+    mime="application/json", tool="list_strings",
+    description="Strings filtered by substring/pattern, with limit/offset.")
 
 
 @MCP_SERVER.prompt

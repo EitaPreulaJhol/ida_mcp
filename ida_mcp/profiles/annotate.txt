@@ -1,0 +1,53 @@
+# Annotation profile for ida_mcp
+#
+# The read tools needed to identify/verify a target, plus rename, comment,
+# type, batch and script writes. Every write needs ?unsafe=true.
+#
+# Use with: http://127.0.0.1:13337/mcp?profile=annotate&unsafe=true
+
+server_health
+lookup_funcs
+list_funcs
+func_query
+get_function_signature
+get_local_variables
+get_function_comment
+get_function_bounds
+decompile_function
+analyze_function
+disasm
+get_bytes
+get_cstring
+get_xrefs_to
+get_callees
+get_callers
+get_name
+get_demangled_name
+get_comment
+get_repeatable_comment
+get_extra_comments
+get_all_comments
+get_segment_at
+type_query
+type_inspect
+get_type_at
+get_type_by_name
+read_struct
+set_name
+force_name
+delete_name
+rename_function
+set_function_name
+make_name_public
+make_name_non_public
+set_comment
+delete_comment
+set_repeatable_comment
+set_extra_comment
+set_function_comment
+set_type
+declare_type
+apply_annotations
+diff_before_after
+idb_save
+execute_script

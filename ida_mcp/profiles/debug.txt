@@ -1,0 +1,43 @@
+# Debugger profile for ida_mcp
+#
+# The dbg_* group plus enough context to inspect the paused target. The
+# debugger tools also require the dbg extension and unsafe mode:
+#
+# Use with: http://127.0.0.1:13337/mcp?profile=debug&unsafe=true&ext=dbg
+
+server_health
+server_warmup
+list_instances
+get_instance_info
+get_binary_info
+get_problems
+get_segments
+get_segment_at
+get_function_bounds
+get_function_signature
+get_local_variables
+decompile_function
+disasm
+get_bytes
+get_instructions
+get_xrefs_to
+get_callees
+dbg_start
+dbg_status
+dbg_exit
+dbg_continue
+dbg_run_to
+dbg_step_into
+dbg_step_over
+dbg_bps
+dbg_add_bp
+dbg_delete_bp
+dbg_toggle_bp
+dbg_set_bp_condition
+dbg_regs
+dbg_gpregs
+dbg_regs_named
+dbg_get_threads
+dbg_stacktrace
+dbg_read
+dbg_write

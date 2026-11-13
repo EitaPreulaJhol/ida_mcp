@@ -6,7 +6,15 @@ one via ``?profile=<name>`` on the endpoint URL:
 
 - ``triage`` — ~16 starter tools (survey, enumerate, decompile, trace)
 - ``readonly`` — every non-mutating, non-debugger tool
+- ``malware`` — imports, strings, xrefs, signatures and passive hooks
+- ``ctf`` — decompiler/search/signatures plus patch and annotation tools
+- ``annotate`` — rename/comment/type/batch writes with enough context to verify
+- ``debug`` — ``dbg_*`` tools plus paused-target inspection
 - (no profile) — the full set, still gated by ``?unsafe=`` / ``?ext=``
+
+Profiles may name unsafe or extension tools; those stay hidden until the URL
+also carries ``?unsafe=true`` and/or ``?ext=<group>``. A profile is a focus
+filter, never a privilege grant.
 
 Stdlib-only: importable from ``zeromcp`` without touching IDA modules.
 """

@@ -45,6 +45,17 @@ def plain():
     return "just text"
 
 
+@srv.resource("demo://query")
+def query(q: str = "", limit: str = "10"):
+    """A queryable resource (static base + template)."""
+    return json.dumps({"q": q, "limit": limit})
+
+
+srv.add_resource_template("demo://query{?q,limit}", name="query-template",
+                          mime="application/json", tool=None,
+                          description="Query demo")
+
+
 @srv.prompt
 def greet(who: str = "world", _hidden: int = 0):
     """Greet someone."""
@@ -74,6 +85,15 @@ check(rr["mimeType"] == "application/json", "read carries mime")
 rr2 = rpc(srv, "resources/read", {"uri": "demo://plain"})["result"]["contents"][0]
 check(rr2["text"] == "just text", "plain resource content")
 check(rr2["mimeType"] == "text/plain", "plain resource mime inferred")
+
+# queryable resource: static base + ?query forwarded as kwargs
+rq = rpc(srv, "resources/read", {"uri": "demo://query?q=abc&limit=2"})["result"]["contents"][0]
+check(json.loads(rq["text"]) == {"q": "abc", "limit": "2"}, "query resource forwards args")
+
+# resource templates are advertised and carry the URI template
+tl = rpc(srv, "resources/templates/list")["result"]["resourceTemplates"]
+check(any(t["uriTemplate"] == "demo://query{?q,limit}" for t in tl),
+      "resource template advertised")
 
 # unknown resource -> error
 err = rpc(srv, "resources/read", {"uri": "demo://nope"})

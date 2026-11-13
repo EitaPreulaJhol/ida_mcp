@@ -132,6 +132,8 @@ class _FakeMCP:
         return lambda fn: fn
     def prompt(self, fn):
         return fn
+    def add_resource_template(self, *args, **kwargs):
+        pass
 
 MCP_SERVER = _FakeMCP()
 def tool(func):
