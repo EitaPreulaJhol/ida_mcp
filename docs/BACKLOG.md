@@ -78,5 +78,5 @@ consistency) → **P3** (test & tooling gaps) → **P4** (Pi bridge).
 - The copy in `~/.idapro/plugins/ida_mcp/` predates these fixes and wins on
   IDA's `sys.path`: re-copy the repo (or `make package`) before testing in the
   GUI.
-- `CHANGELOG.md` keeps everything under `[Unreleased]`; cut a `0.2.4` when a
+- `CHANGELOG.md` keeps everything under `[Unreleased]`; cut a `0.3.0` when a
   batch is declared done.

@@ -23,6 +23,7 @@ TESTS = [
     "compat_test.py",
     "api_test.py",
     "plugin_test.py",
+    "loader_namespace_test.py",
     "server_test.py",
     "sync_test.py",
     "smoke.py",
@@ -60,6 +61,7 @@ TESTS = [
     "robustness_test.py",
     "skills_sync_test.py",
     "packaging_test.py",
+    "plugin_manifest_test.py",
     "package_test.py",
     "idadocs_crosscheck_test.py",  # skips if IDAPYTHON_DOCS_DIR absent
 ]

@@ -18,6 +18,15 @@ _PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
 if _PLUGIN_DIR not in sys.path:
     sys.path.insert(0, _PLUGIN_DIR)
 
+# IDA 8.5+ can load an ``ida-plugin.json`` entryPoint under a generated
+# namespace (e.g. ``__plugins__ida_mcp.ida_mcp_loader``).  ``ida_mcp/plugin.py``
+# re-exports the class by importing the bare ``ida_mcp_loader`` name, so publish
+# that alias rather than letting the package import a second copy of this file
+# (or fall into its emergency stub).
+_this_module = sys.modules.get(__name__)
+if _this_module is not None:
+    sys.modules.setdefault("ida_mcp_loader", _this_module)
+
 # ---------------------------------------------------------------------------
 # Try to import the plugin base class.  If the import fails (very old IDA,
 # broken install, etc.) we fall back to a minimal stub so the plugin can
@@ -242,6 +251,30 @@ else:
             pass
 
 
+def _warn_legacy_layout() -> None:
+    """Warn once when the old root-level install is still next to us.
+
+    The modern layout lives in ``$IDAUSR/plugins/ida-mcp-bridge/``.  Keeping
+    ``plugins/ida_mcp_loader.py`` or ``plugins/ida_mcp/`` around lets IDA load
+    the stale copy as well, which can start a second server.
+    """
+    if os.path.basename(_PLUGIN_DIR) != "ida-mcp-bridge":
+        return
+    parent = os.path.dirname(_PLUGIN_DIR)
+    stale = [p for p in (os.path.join(parent, "ida_mcp_loader.py"),
+                         os.path.join(parent, "ida_mcp"))
+             if os.path.exists(p)]
+    if not stale or ida_kernwin is None:
+        return
+    try:
+        ida_kernwin.msg(
+            "[ida-mcp] WARNING: legacy plugin files still present next to "
+            "the new folder: " + ", ".join(stale) + "\n"
+            "[ida-mcp] remove them, or IDA may load the stale copy too.\n")
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # MCP server controller — imported lazily so this module loads even when
 # the package has internal issues.
@@ -285,6 +318,7 @@ class IdaMcp(_PluginBase):
     def init(self):
         if ida_kernwin is None:
             return self.flags
+        _warn_legacy_layout()
         self.host = _get_host(self.DEFAULT_HOST)
         # requested_port is what the IDB stores; port is what is bound (it
         # differs when the requested one was taken and start fell back).

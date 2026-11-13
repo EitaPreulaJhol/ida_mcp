@@ -1,0 +1,47 @@
+{
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "ida-mcp-bridge",
+    "version": "0.3.0",
+    "entryPoint": "ida_mcp_loader.py",
+    "description": "Expose a running IDA Pro session to AI coding agents over the Model Context Protocol (MCP).",
+    "license": "MIT",
+    "urls": {
+      "repository": "https://github.com/EitaPreulaJhol/ida_mcp"
+    },
+    "authors": [
+      {
+        "name": "EitaPreulaJhol",
+        "email": "carlos.pdesanti@gmail.com"
+      }
+    ],
+    "idaVersions": [
+      "8.5",
+      "9.0",
+      "9.0sp1",
+      "9.1",
+      "9.2",
+      "9.3",
+      "9.4",
+      "9.5",
+      "10.0"
+    ],
+    "platforms": [
+      "windows-x86_64",
+      "linux-x86_64",
+      "macos-x86_64",
+      "macos-aarch64"
+    ],
+    "categories": [
+      "api-scripting-and-automation",
+      "integration-with-third-parties-interoperability"
+    ],
+    "keywords": [
+      "mcp",
+      "model-context-protocol",
+      "ai",
+      "automation",
+      "reverse-engineering"
+    ]
+  }
+}

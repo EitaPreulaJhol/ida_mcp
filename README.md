@@ -3,6 +3,11 @@
 
 It is built specifically for reverse-engineering workflows: read-first, lazy tool loading so small models stay on-task, and a strict opt-in gate for anything that mutates the IDB.
 
+The IDA plugin id is **`ida-mcp-bridge`** (display name **IDA MCP**); the
+`-bridge` suffix keeps it unique in the Hex-Rays index. See
+[INSTALL.md](INSTALL.md) for the IDA 8.5+ folder layout and the IDA 8.3/8.4
+legacy ZIP.
+
 Special thanks to [Eduardo](https://github.com/lluiseduardo-silva), which provided means for further improving the project.
 
 ## In action
@@ -255,7 +260,8 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 ## Layout
 | Path | Purpose |
 |------|---------|
-| `ida_mcp_loader.py` | IDA plugin entry point (`PLUGIN_ENTRY`) |
+| `ida-plugin.json` | IDA 8.5+ plugin metadata (folder layout, `entryPoint`) |
+| `ida_mcp_loader.py` | IDA plugin entry point (`PLUGIN_ENTRY`); re-exported by `ida_mcp/plugin.py` |
 | `ida_mcp/server.py` | Core tools, server lifecycle, module wiring |
 | `ida_mcp/api_*.py` | Tool modules (analysis, functions, xrefs, memory, strings, types, segments, instructions, info, comments, names, composite, query, hexrays, debug, hooks, sigmaker, search, modify, entries) |
 | `ida_mcp/rpc.py` | `@tool` / `@unsafe` decorators and registry |

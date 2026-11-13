@@ -124,12 +124,19 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
 
 ## Releasing
 
-1. Bump `ida_mcp/__version__` and add a `CHANGELOG.md` entry under a new
-   `## [X.Y.Z]` heading.
-2. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-3. `release.yml` runs the suite, builds the plugin zip
-   (`scripts/package.py --expect-version X.Y.Z`, which fails if the tag and
-   `__version__` disagree), and attaches it to the GitHub Release.
+1. Bump `ida_mcp/__version__` **and** `ida-plugin.json` (`plugin.version`)
+   and add a `CHANGELOG.md` entry under a new `## [X.Y.Z]` heading.
+2. Run `make package`. It builds both layouts:
+   - `dist/ida_mcp-X.Y.Z.zip` — `ida-mcp-bridge/` folder with `ida-plugin.json`
+     (IDA 8.5+ / HCLI);
+   - `dist/ida-mcp-legacy-X.Y.Z.zip` — root layout for IDA 8.3/8.4.
+   Optionally validate the modern ZIP with
+   `hcli plugin lint dist/ida_mcp-X.Y.Z.zip`.
+3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. `release.yml` runs the suite, builds both ZIPs via
+   `scripts/package.py --expect-version X.Y.Z` (which fails if the tag,
+   `__version__` and manifest disagree), and attaches them to the GitHub
+   Release.
 
 ## Commit / PR etiquette
 

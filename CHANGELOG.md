@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
+### Added
+- `ida-plugin.json` (IDA metadata descriptor v1, plugin id `ida-mcp-bridge`)
+  so IDA 8.5+ / HCLI / the Plugin Manager recognize the plugin and load it
+  from a single folder.
+- `dist/ida_mcp-<version>.zip` now contains one top-level `ida-mcp-bridge/` folder
+  with the manifest, entry point, `ida_mcp/` package and docs.
+- `dist/ida-mcp-legacy-<version>.zip` keeps the old root layout for IDA
+  8.3/8.4 (no manifest).
+
+### Changed
+- The recommended install is now `$IDAUSR/plugins/ida-mcp-bridge/`; remove the old
+  `plugins/ida_mcp/` + root `ida_mcp_loader.py` before upgrading.
+- `ida_mcp_loader.py` publishes the bare `ida_mcp_loader` alias when IDA loads
+  it under a generated `__plugins__...` namespace, so `ida_mcp/plugin.py`
+  re-exports the same class instead of importing a second copy.
+- `scripts/package.py` builds both ZIPs and checks `__version__` against
+  `ida-plugin.json`; the release guard uses the same version.
+
 ## [0.2.4] - 2026-11-13
 
 ### Fixed

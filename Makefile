@@ -15,7 +15,7 @@ help:
 	@echo "  crosscheck - IDAPython docs cross-check (needs IDAPYTHON_DOCS_DIR)"
 	@echo "  idalib     - live sweep of every safe tool (IDA_MCP_IDALIB=1 + binary)"
 	@echo "  coverage   - run suite under coverage (informational)"
-	@echo "  package    - build the plugin zip into dist/"
+	@echo "  package    - build the modern + legacy plugin ZIPs into dist/"
 	@echo "  clean      - remove caches and dist/"
 
 test:

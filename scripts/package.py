@@ -1,26 +1,35 @@
-"""Build the IDA plugin zip: dist/ida_mcp-<version>.zip.
+"""Build the IDA plugin ZIPs.
 
-Contains exactly what IDA needs to load the plugin (the ``ida_mcp/`` package
-plus ``ida_mcp_loader.py``) and the user docs. No tests, caches, plans, or the
-vendored reference. Version is read from ``ida_mcp/__init__.py`` without
-importing the package (which would require IDA).
+Outputs:
+
+- ``dist/ida_mcp-<version>.zip``: one top-level ``ida-mcp-bridge/`` folder containing
+  ``ida-plugin.json``, the entry point, the ``ida_mcp/`` package and docs.
+  This is the IDA 8.5+ / HCLI / Plugin Manager layout.
+- ``dist/ida-mcp-legacy-<version>.zip``: the old root layout
+  (``ida_mcp/`` + ``ida_mcp_loader.py``) for IDA 8.3/8.4, which do not
+  understand ``ida-plugin.json`` folders.
+
+Version is read from ``ida_mcp/__init__.py`` without importing the package
+(which would require IDA).
 
 Usage:
     python scripts/package.py
-    python scripts/package.py --expect-version 0.2.2   # release: tag guard
+    python scripts/package.py --expect-version 0.3.0   # release: tag guard
 """
 import argparse
 import ast
+import json
 import os
 import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Top-level files shipped alongside the package.
-EXTRA_FILES = ["ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE"]
-# Directories (recursively) shipped. zeromcp is part of the package.
+PLUGIN_NAME = "ida-mcp-bridge"
+MANIFEST_NAME = "ida-plugin.json"
 PACKAGE_DIR = "ida_mcp"
+# Shipped next to the package in both layouts.
+EXTRA_FILES = ["ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE"]
 EXCLUDE_DIR_NAMES = {"__pycache__"}
 EXCLUDE_SUFFIXES = (".pyc", ".pyo")
 
@@ -36,6 +45,46 @@ def read_version():
     raise SystemExit("could not find __version__ in ida_mcp/__init__.py")
 
 
+def read_manifest(version):
+    """Load and validate the root ``ida-plugin.json`` (shared by both ZIPs)."""
+    path = os.path.join(ROOT, MANIFEST_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+    except FileNotFoundError:
+        raise SystemExit(f"missing {MANIFEST_NAME} at the repository root") from None
+    except (OSError, json.JSONDecodeError) as e:
+        raise SystemExit(f"could not parse {MANIFEST_NAME}: {e}") from e
+    if manifest.get("IDAMetadataDescriptorVersion") != 1:
+        raise SystemExit("ida-plugin.json: unsupported IDAMetadataDescriptorVersion")
+    plugin = manifest.get("plugin")
+    if not isinstance(plugin, dict):
+        raise SystemExit("ida-plugin.json: missing 'plugin' object")
+    if plugin.get("name") != PLUGIN_NAME:
+        raise SystemExit(
+            f"ida-plugin.json: plugin.name must be {PLUGIN_NAME!r} "
+            f"(found {plugin.get('name')!r})")
+    if plugin.get("version") != version:
+        raise SystemExit(
+            f"version mismatch: ida_mcp/__init__.py has {version!r} but "
+            f"ida-plugin.json has plugin.version {plugin.get('version')!r}")
+    entry = plugin.get("entryPoint")
+    if entry != "ida_mcp_loader.py" or os.path.dirname(entry):
+        raise SystemExit(
+            "ida-plugin.json: entryPoint must be the top-level "
+            "'ida_mcp_loader.py'")
+    if not os.path.isfile(os.path.join(ROOT, entry)):
+        raise SystemExit(f"ida-plugin.json: entryPoint file {entry!r} is missing")
+    urls = plugin.get("urls")
+    if not isinstance(urls, dict) or not urls.get("repository"):
+        raise SystemExit("ida-plugin.json: plugin.urls.repository is required")
+    authors = plugin.get("authors")
+    if not isinstance(authors, list) or not any(
+            isinstance(a, dict) and (a.get("email") or a.get("name")) for a in authors):
+        raise SystemExit("ida-plugin.json: at least one author/maintainer is required")
+    return manifest
+
+
 def iter_package_files():
     base = os.path.join(ROOT, PACKAGE_DIR)
     for dirpath, dirnames, filenames in os.walk(base):
@@ -47,38 +96,57 @@ def iter_package_files():
             yield full, os.path.relpath(full, ROOT)
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
-        "--expect-version", metavar="X.Y.Z",
-        help="fail (before building) unless ida_mcp.__version__ equals this; "
-             "the release workflow passes the pushed tag without its 'v'")
-    args = parser.parse_args(argv)
-    version = read_version()
-    if args.expect_version is not None and args.expect_version != version:
-        raise SystemExit(
-            f"version mismatch: tag says {args.expect_version!r} but "
-            f"ida_mcp/__init__.py has __version__ = {version!r}. Bump __version__ "
-            f"(and CHANGELOG) before tagging, or re-tag.")
-    dist = os.path.join(ROOT, "dist")
-    os.makedirs(dist, exist_ok=True)
-    out = os.path.join(dist, f"ida_mcp-{version}.zip")
-
+def _write_zip(out, prefix, include_manifest):
+    """Write one archive; every entry is under ``prefix``."""
     count = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for full, arc in iter_package_files():
-            z.write(full, arc)
+        for full, rel in iter_package_files():
+            z.write(full, prefix + rel)
             count += 1
         for rel in EXTRA_FILES:
             full = os.path.join(ROOT, rel)
             if not os.path.isfile(full):
                 print(f"[warn] missing {rel}, skipping")
                 continue
-            z.write(full, rel)
+            z.write(full, prefix + rel)
             count += 1
+        if include_manifest:
+            full = os.path.join(ROOT, MANIFEST_NAME)
+            z.write(full, prefix + MANIFEST_NAME)
+            count += 1
+    return count
 
-    size = os.path.getsize(out)
-    print(f"built {os.path.relpath(out, ROOT)}  ({count} files, {size} bytes, v{version})")
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument(
+        "--expect-version", metavar="X.Y.Z",
+        help="fail (before building) unless ida_mcp.__version__ and "
+             "ida-plugin.json plugin.version equal this; the release workflow "
+             "passes the pushed tag without its 'v'")
+    args = parser.parse_args(argv)
+    version = read_version()
+    read_manifest(version)
+    if args.expect_version is not None and args.expect_version != version:
+        raise SystemExit(
+            f"version mismatch: tag says {args.expect_version!r} but "
+            f"ida_mcp/__init__.py and ida-plugin.json say {version!r}. Bump "
+            f"both before tagging, or re-tag.")
+
+    dist = os.path.join(ROOT, "dist")
+    os.makedirs(dist, exist_ok=True)
+    modern = os.path.join(dist, f"ida_mcp-{version}.zip")
+    legacy = os.path.join(dist, f"ida-mcp-legacy-{version}.zip")
+
+    modern_count = _write_zip(modern, f"{PLUGIN_NAME}/", include_manifest=True)
+    legacy_count = _write_zip(legacy, "", include_manifest=False)
+
+    print(f"built {os.path.relpath(modern, ROOT)}  "
+          f"({modern_count} files, {os.path.getsize(modern)} bytes, v{version}, "
+          f"modern folder layout)")
+    print(f"built {os.path.relpath(legacy, ROOT)}  "
+          f"({legacy_count} files, {os.path.getsize(legacy)} bytes, v{version}, "
+          f"legacy IDA 8.3/8.4 layout)")
     return 0
 
 

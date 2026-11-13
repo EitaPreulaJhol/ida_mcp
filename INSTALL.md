@@ -23,32 +23,76 @@ signatures). Installation has two halves:
 
 | Requirement | Notes |
 |---|---|
-| IDA Pro 8.3+ (9.3 recommended) | IDA Free is **not** supported |
+| IDA Pro 8.3+ (8.5+ recommended; 9.3+ best) | IDA Free is **not** supported; 8.3/8.4 use the legacy ZIP |
 | Python 3.11+ inside IDA | Run `idapyswitch` if IDA uses an older Python |
 | Hex-Rays Decompiler | Only needed for decompilation tools; disassembly works without it |
 | An MCP-capable agent | Pi, Claude Code, Cursor, Windsurf, VS Code Copilot, Cline/Zoo Code, … |
-| This repo (or at least `ida_mcp/` + `ida_mcp_loader.py`) | No `pip install` - stdlib only |
+| `ida_mcp-<version>.zip` (8.5+) or `ida-mcp-legacy-<version>.zip` (8.3/8.4) | No `pip install` - stdlib only |
 
 ---
 
 ## A. Install the IDA plugin
 
-1. Copy **both** items into the IDA plugins directory:
-   - the `ida_mcp/` folder
-   - `ida_mcp_loader.py` (this is the file IDA actually loads)
+The release ships two ZIPs:
 
-   | OS | Plugins directory |
+| ZIP | IDA | Layout |
+|---|---|---|
+| `ida_mcp-<version>.zip` | **8.5+** | one `ida-mcp-bridge/` folder with `ida-plugin.json` |
+| `ida-mcp-legacy-<version>.zip` | **8.3/8.4** | `ida_mcp_loader.py` + `ida_mcp/` at the plugins root |
+
+### A.1 IDA 8.5+ (recommended, `ida-plugin.json` layout)
+
+> The plugin id is **`ida-mcp-bridge`** (display name **IDA MCP**). The
+> `-bridge` suffix keeps it globally unique in the Hex-Rays index, where plain
+> `ida-mcp` is already used by other plugins.
+
+1. Build or download `dist/ida_mcp-<version>.zip`.
+2. Install it into the plugins directory:
+
+   ```bash
+   # Manual install (works even when the HCLI index has a same-name plugin):
+   unzip dist/ida_mcp-<version>.zip -d "$IDAUSR/plugins"
+
+   # The result must be:
+   #   $IDAUSR/plugins/ida-mcp-bridge/ida-plugin.json
+   #   $IDAUSR/plugins/ida-mcp-bridge/ida_mcp_loader.py
+   #   $IDAUSR/plugins/ida-mcp-bridge/ida_mcp/
+
+   # HCLI alternative; if the repository reports the bare name as ambiguous,
+   # use the manual extraction above.
+   hcli plugin install dist/ida_mcp-<version>.zip
+   ```
+
+   | OS | `$IDAUSR` |
    |---|---|
-   | Windows | `%APPDATA%\Hex-Rays\IDA Pro\plugins` |
-   | Linux / macOS | `~/.idapro/plugins` |
+   | Windows | `%APPDATA%\Hex-Rays\IDA Pro` |
+   | Linux / macOS | `~/.idapro` |
 
-2. Restart IDA Pro and open any binary. Click on Edit, then Plugins, then IDA MCP. In the **Output window** you should see:
+3. If you installed the old layout before, remove it first. Having both makes
+   IDA load the stale root loader as well:
+
+   ```text
+   $IDAUSR/plugins/ida_mcp/
+   $IDAUSR/plugins/ida_mcp_loader.py
+   $IDAUSR/plugins/__pycache__/ida_mcp_loader.*.pyc
+   ```
+
+4. Restart IDA Pro and open any binary. Click on Edit, then Plugins, then IDA MCP.
+
+### A.2 IDA 8.3/8.4 (legacy root layout)
+
+Use `ida-mcp-legacy-<version>.zip`. Extract it directly into `$IDAUSR/plugins/`
+so that `ida_mcp_loader.py` **and** the `ida_mcp/` folder are at the plugins
+root. This layout has no `ida-plugin.json` and is intentionally not indexed by
+the modern Plugin Manager.
+
+In the **Output window** you should see:
 
    ```
    [ida-mcp] listening on http://127.0.0.1:13337/mcp (append ?unsafe=true for write tools)
    ```
 
-3. Verify the bridge (any terminal):
+### Verify the bridge (any terminal)
 
    ```bash
    curl -s -X POST http://127.0.0.1:13337/mcp \

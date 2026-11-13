@@ -22,7 +22,7 @@ jobs:
       - name: Run test suite
         run: python tests/run_all.py
       # Refuse to publish e.g. tag v0.2.0 as ida_mcp-0.1.0.zip.
-      - name: Build plugin zip (tag must match __version__)
+      - name: Build plugin ZIPs (tag must match __version__)
         run: python scripts/package.py --expect-version "${GITHUB_REF_NAME#v}"
       # Release notes come from CHANGELOG.md. GitHub's generated notes list only
       # merged PRs, and this repo's commits go straight to main, so the tag
@@ -53,5 +53,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: dist/ida_mcp-*.zip
+          files: |
+            dist/ida_mcp-*.zip
+            dist/ida-mcp-legacy-*.zip
           body_path: release-notes.md
