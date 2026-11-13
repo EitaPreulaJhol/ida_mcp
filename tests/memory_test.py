@@ -33,13 +33,30 @@ def _fake_get_bytes(ea, size):
 
 
 def _fake_get_bytes_and_mask(ea, size, *args, **kwargs):
-    """Real 9.x API: (bytes, mask) or None; mask bit 0 = uninitialized byte."""
+    """Real 9.x API: (bytes, mask) with a BIT-PACKED mask (one bit/byte).
+
+    Unmapped memory is reported the way IDA 9.5 reports it: a 0xFF-filled
+    buffer with an all-zero mask (not ``None``).  That is what used to make
+    ``get_bytes("0xDEAD")`` look like a valid zero block.
+    """
     data = _fake_bytes_data.get(ea)
     if data is None:
-        return None
+        chunk = b"\xff" * size
+        return chunk, b"\x00" * ((size + 7) // 8)
     chunk = data[:size]
-    mask = b"\x00" * len(chunk) if ea in _fake_bss else b"\x01" * len(chunk)
-    return chunk, mask
+    mask = bytearray((len(chunk) + 7) // 8)
+    for i in range(len(chunk)):
+        addr = ea + i
+        if not any(start <= addr < start + 0x1000 for start in _fake_bss):
+            mask[i >> 3] |= 1 << (i & 7)
+    return chunk, bytes(mask)
+
+
+def _fake_is_mapped(ea):
+    if ea in _fake_bss or any(start <= ea < start + 0x1000 for start in _fake_bss):
+        return True
+    return any(start <= ea < start + len(data)
+               for start, data in _fake_bytes_data.items())
 
 
 def _fake_strlit_contents(ea, length=-1, strtype=0):
@@ -49,6 +66,7 @@ def _fake_strlit_contents(ea, length=-1, strtype=0):
 ida_bytes = types.ModuleType("ida_bytes")
 ida_bytes.get_bytes = _fake_get_bytes
 ida_bytes.get_bytes_and_mask = _fake_get_bytes_and_mask
+ida_bytes.is_mapped = _fake_is_mapped
 ida_bytes.get_strlit_contents = _fake_strlit_contents
 sys.modules["ida_bytes"] = ida_bytes
 
@@ -136,9 +154,9 @@ setup()
 _fake_bytes_data[0x1000] = bytes(range(256))
 r = mod.get_bytes("0x1000", size=16)
 assert '"addr": "0x1000"' in r, f"missing addr: {r}"
-assert "00 01 02 03" in r, f"expected hex prefix: {r}"
+assert "00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F" in r, r
 assert '"size": 16' in r, f"expected size 16: {r}"
-print("get_bytes basic OK")
+print("get_bytes basic (bit-packed mask keeps every byte) OK")
 
 # 2) ascii representation
 assert "...." in r, f"expected ascii dots (non-printable): {r}"

@@ -148,6 +148,10 @@ r = json.loads(instructions.get_operand_info("0x1000", 0))
 assert r["register"] == "rbx" and r["reg_no"] == 1, r
 r = json.loads(instructions.get_operand_info("0x1000", 1))  # o_void is skipped
 assert "out of range" in r["error"], r
-print("register name via ida_idp OK")
+# A negative index used to reach SWIG's size_t accessor and raise
+# OverflowError instead of returning a tool-level error.
+r = instructions.get_operand("0x1000", -1)
+assert "No operand -1" in r, r
+print("register name via ida_idp OK / negative operand index handled")
 
 print("ALL IDA94 CALLS TESTS PASSED")

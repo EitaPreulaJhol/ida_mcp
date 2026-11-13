@@ -96,7 +96,10 @@ def _make_idb_tracer(hook_id: str):
                 pass
             return 0
 
-        def cmt_changed(self, ea, cmt, rpt):
+        # IDA 9.5 calls this with (ea, repeatable_cmt); there is no comment
+        # argument.  A 3-argument signature raised TypeError on every comment
+        # change and the tracer never recorded the event.
+        def cmt_changed(self, ea, rpt):
             try:
                 _log(hook_id, "comment_changed",
                      {"addr": hex(ea), "repeatable": bool(rpt)})

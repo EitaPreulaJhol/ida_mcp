@@ -434,6 +434,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         if "chunked" in self.headers.get("Transfer-Encoding", "").lower():
             raw = self._read_chunked()
             if raw is None:
+                # Framing is broken; do not try to parse the rest of this
+                # connection as a new request.
+                self.close_connection = True
                 self._safe_send_error(400, "Malformed chunked body")
                 return None
         else:
@@ -442,6 +445,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             except ValueError:
                 content_length = 0
             if content_length > self.mcp_server.post_body_limit:
+                # The body was not read; close the connection so its bytes
+                # cannot be interpreted as the next (smuggled) request.
+                self.close_connection = True
                 self._safe_send_error(
                     413,
                     f"Payload Too Large: exceeds {self.mcp_server.post_body_limit} bytes",
@@ -449,6 +455,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 return None
             raw = self.rfile.read(content_length) if content_length > 0 else b""
         if len(raw) > self.mcp_server.post_body_limit:
+            self.close_connection = True
             self._safe_send_error(
                 413,
                 f"Payload Too Large: exceeds {self.mcp_server.post_body_limit} bytes",
@@ -499,6 +506,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self._safe_send_error(400, "Bad Content-Encoding")
             return None
         if len(out) > limit:
+            # The compressed stream may still have unread input; close rather
+            # than leave it to be parsed as a pipelined request.
+            self.close_connection = True
             self._safe_send_error(413, f"Payload Too Large: exceeds {limit} bytes")
             return None
         return out
@@ -642,6 +652,11 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_mcp_get(self) -> None:
         # Streamable HTTP SSE stream (server -> client notifications).
+        # This response has no Content-Length and is delimited by EOF.  Mark
+        # the connection single-use so BaseHTTPRequestHandler does not keep it
+        # open for another request after the stream loop ends (clients would
+        # never see EOF and would hang after stop()/close_instance).
+        self.close_connection = True
         session_id = self.headers.get("Mcp-Session-Id")
         if session_id and not self.mcp_server.has_http_session(session_id):
             # Opening a stream for a dead session is a stale client: tell it to
@@ -652,7 +667,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
+            self.send_header("Connection", "close")
             self.send_cors_headers()
             self.end_headers()
             self.wfile.write(b": connected\n\n")
@@ -694,6 +709,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
     def _handle_sse_get(self) -> None:
         # Legacy SSE transport: client GETs /sse, receives an `endpoint`
         # event with its session id, then POSTs to /sse?session=<id>.
+        # No Content-Length: the stream ends at EOF, so close the connection
+        # when the handler returns instead of keeping it alive.
+        self.close_connection = True
         conn = _McpSseConnection(self.wfile)
         with self.mcp_server._sse_lock:
             self.mcp_server._sse_connections[conn.session_id] = conn
@@ -701,7 +719,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
+            self.send_header("Connection", "close")
             self.send_cors_headers()
             self.end_headers()
             if not conn.send_event("endpoint", f"/sse?session={conn.session_id}"):
@@ -1593,14 +1611,16 @@ class McpServer:
                 "structuredContent": {"busy": True, "tool": name},
             }
         request_id = get_current_request_id()
-        if request_id is not None:
-            register_pending_request(request_id)
         _t0 = time.perf_counter()
         # Pessimistic defaults: an unexpected exception escaping below is
         # still recorded (and audited) as a failure.
         _errored = True
         _error_text: str | None = "internal error"
         try:
+            # Registration can raise (e.g. a malformed id key); it MUST be
+            # inside the try so the finally below releases the gate.
+            if request_id is not None:
+                register_pending_request(request_id)
             arguments = self._apply_legacy_aliases(name, arguments)
             arguments = self._coerce_tool_arguments(name, arguments)
             tool_response = self.tools.dispatch({
@@ -1648,7 +1668,12 @@ class McpServer:
             }
         finally:
             if request_id is not None:
-                unregister_pending_request(request_id)
+                try:
+                    unregister_pending_request(request_id)
+                except Exception:
+                    # An unhashable id can fail here too; never let it skip
+                    # the gate release below.
+                    pass
             if gate is not None:
                 try:
                     gate.release()

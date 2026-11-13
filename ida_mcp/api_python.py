@@ -200,19 +200,51 @@ def _make_exec_globals() -> dict:
     return g
 
 
+class _TrackedGlobals(dict):
+    """Module globals that remember every assignment in execution order.
+
+    A normal dict preserves the *insertion* position of a key, so ``a=1; b=2;
+    a=3`` still iterates ``a, b`` and a "last binding" fallback returned 2.
+    STORE_NAME calls ``__setitem__``, which lets us keep the real order.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.assignment_order: list[str] = []
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        self.assignment_order.append(key)
+
+
 def _script_bindings(namespace: dict, before: dict) -> dict:
-    """Names the script bound or rebound in ``namespace``, in binding order."""
+    """Names the script bound or rebound in ``namespace``."""
     return {k: v for k, v in namespace.items()
             if k not in before or before[k] is not v}
 
 
-def _pick_result(bound: dict):
-    """Return the value to surface: ``result`` or ``__result__`` if the
-    script set it, else the last variable it assigned."""
+def _explicit_result(bound: dict):
+    """``result``/``__result__`` set by the script, or None when absent."""
     if "result" in bound:
         return str(bound["result"])
     if "__result__" in bound:
         return str(bound["__result__"])
+    return None
+
+
+def _pick_result(bound: dict, assignment_order=None):
+    """Return the value to surface.
+
+    Priority: ``result``/``__result__``, then the last variable actually
+    assigned (``assignment_order`` tracks real assignments, including loops
+    and re-assignments), then the last insertion-order binding as a fallback.
+    """
+    explicit = _explicit_result(bound)
+    if explicit is not None:
+        return explicit
+    for name in reversed(assignment_order or ()):
+        if name in bound:
+            return str(bound[name])
     if bound:
         return str(bound[next(reversed(bound))])
     return None
@@ -267,7 +299,7 @@ def _run_code(code: str) -> dict:
         # IDA console. With separate dicts, top-level names land in the
         # locals dict while functions/comprehensions resolve free names via
         # globals, so `BASE = 1; def f(): return BASE` raised NameError.
-        exec_globals = _make_exec_globals()
+        exec_globals = _TrackedGlobals(_make_exec_globals())
         before = dict(exec_globals)
         result_value = None
 
@@ -276,7 +308,9 @@ def _run_code(code: str) -> dict:
         except SyntaxError:
             # Let exec raise the SyntaxError with its usual message/location.
             exec(code, exec_globals)
-            result_value = _pick_result(_script_bindings(exec_globals, before))
+            result_value = _pick_result(
+                _script_bindings(exec_globals, before),
+                getattr(exec_globals, "assignment_order", None))
         else:
             if not tree.body:
                 pass
@@ -287,18 +321,31 @@ def _run_code(code: str) -> dict:
                 # Multiple statements, last one is an expression (Jupyter-style).
                 exec_tree = ast.Module(body=tree.body[:-1], type_ignores=[])
                 exec(compile(exec_tree, "<string>", "exec"), exec_globals)
-                eval_tree = ast.Expression(body=tree.body[-1].value)
-                result_value = str(eval(compile(eval_tree, "<string>", "eval"), exec_globals))
+                # An explicit result assignment wins over the trailing
+                # expression (documented contract).  Without this,
+                # ``result = 42; print(...)`` returned "None".
+                explicit = _explicit_result(
+                    _script_bindings(exec_globals, before))
+                if explicit is not None:
+                    result_value = explicit
+                else:
+                    eval_tree = ast.Expression(body=tree.body[-1].value)
+                    result_value = str(eval(compile(eval_tree, "<string>", "eval"),
+                                            exec_globals))
             else:
                 exec(code, exec_globals)
-                result_value = _pick_result(_script_bindings(exec_globals, before))
+                result_value = _pick_result(
+                    _script_bindings(exec_globals, before),
+                    getattr(exec_globals, "assignment_order", None))
 
         ida_msgs = _collect_ida_messages(pre_count)
         stderr_text = stderr_capture.getvalue()
         if ida_msgs:
             stderr_text = (stderr_text + "\n" + ida_msgs).strip()
         return {
-            "result": result_value or "",
+            # ``or ""`` turned a legitimate result of 0/False into an empty
+            # string; only an absent result should be empty.
+            "result": "" if result_value is None else result_value,
             "stdout": stdout_capture.getvalue(),
             "stderr": stderr_text,
         }

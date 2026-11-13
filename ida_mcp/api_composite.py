@@ -396,7 +396,11 @@ def analyze_component(addresses: str) -> str:
                 for xref in idautils.XrefsFrom(head, 0):
                     if xref.iscode:
                         continue
-                    if ida_funcs.get_func(xref.to) is None and _is_loaded(xref.to):
+                    # BSS globals are mapped but uninitialized, so is_loaded()
+                    # is false for them.  Use is_mapped() here: otherwise every
+                    # shared .bss global silently disappears from the component.
+                    if (ida_funcs.get_func(xref.to) is None
+                            and ida_bytes.is_mapped(xref.to)):
                         accessed.add(xref.to)
         func_globals[ea] = accessed
 
@@ -573,7 +577,9 @@ def trace_data_flow(address: str, direction: str = "forward", max_depth: int = 5
                 "addr": hex(ea),
                 "func": ida_funcs.get_func_name(ea) if func else None,
                 "instruction": insn_text,
-                "type": "code" if func is not None or not _is_loaded(ea) else "data",
+                # A BSS address is mapped but uninitialized; it is data, not
+                # code.  Only membership in a function makes a node code.
+                "type": "code" if func is not None else "data",
                 "name": name_at,
                 "depth": depth,
             })
@@ -841,15 +847,22 @@ def _fetch_survey_raw(detail_level: str) -> dict:
     }
 
     if not minimal:
+        # Count every string; keep only the first _MAX_STRING_ITER for the
+        # xref-scoring pass.  Reporting len(cache) as the total made every
+        # binary with >5000 strings look like it had exactly 5000.
         str_cache: list[tuple[int, str]] = []
+        total_strings = 0
         try:
             for si in idautils.Strings():
-                str_cache.append((si.ea, str(si)))
-                if len(str_cache) >= _MAX_STRING_ITER:
-                    break
+                total_strings += 1
+                if len(str_cache) < _MAX_STRING_ITER:
+                    try:
+                        str_cache.append((si.ea, str(si)))
+                    except Exception:
+                        pass
         except Exception:
             pass
-        result["statistics"]["total_strings"] = len(str_cache)
+        result["statistics"]["total_strings"] = total_strings
         scored: list[tuple[int, int, str]] = []
         strings_partial = False
         deadline = get_tool_deadline()

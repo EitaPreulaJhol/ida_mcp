@@ -123,8 +123,17 @@ class JsonRpcRegistry:
         if not isinstance(method, str):
             return self._error(None, -32600, "Invalid request: 'method' must be a string")
 
-        request_id: JsonRpcId = request.get("id")
         is_notification = "id" not in request
+        request_id: JsonRpcId = request.get("id")
+        # JSON-RPC ids are String/Number/Null only.  A dict/list id used to
+        # reach the pending-request registry as an unhashable dict key, which
+        # raised after the tool gate had been acquired and leaked it forever.
+        if (not is_notification and request_id is not None
+                and (isinstance(request_id, bool)
+                     or not isinstance(request_id, (str, int, float)))):
+            return self._error(
+                None, -32600,
+                "Invalid request: 'id' must be a string, number or null")
         params = request.get("params")
 
         _current_request.id = request_id

@@ -3,6 +3,7 @@ lookup_funcs, int_convert, find_bytes, disasm, basic_blocks.
 
 Stubs all IDA modules and loads the source via exec.
 """
+import json
 import os
 import sys
 import types
@@ -299,7 +300,14 @@ assert "another_target" in r, f"expected another_target: {r}"
 import json as _json
 assert len(_json.loads(mod.get_callees("0x1000", limit=1))) == 1, mod.get_callees("0x1000", limit=1)
 full = _json.loads(mod.get_callees("0x1000"))
+assert all(c["indirect"] is False for c in full), full
 assert _json.loads(mod.get_callees("0x1000", offset=1)) == full[1:], full
+# A GOT-style ``call [mem]`` names a pointer slot, not the callee; flag it.
+_fake_insn_mnems[0x1008] = "call"
+_fake_insn_ops[0x1008] = [FakeOp(ida_ua.o_mem, addr=0x4000)]
+mem = [c for c in _json.loads(mod.get_callees("0x1000"))
+       if c["addr"] == "0x4000"]
+assert mem and mem[0]["indirect"] is True, mem
 print("get_callees basic OK")
 
 setup_module()
@@ -362,6 +370,15 @@ print("int_convert decimal OK")
 r = mod.int_convert("0xFF", size=2)
 assert '"decimal": "255"' in r, f"expected decimal 255: {r}"
 print("int_convert explicit size OK")
+
+# auto-sized values whose top bit is set used to be rejected: the width was
+# computed unsigned but to_bytes() was always called with signed=True.
+for text, expected in (("128", "80"), ("255", "ff"),
+                       ("256", "00 01"), ("-128", "80"),
+                       ("-129", "7f ff")):
+    r = json.loads(mod.int_convert(text))
+    assert r.get("bytes") == expected, (text, r)
+print("int_convert signed/unsigned auto-width OK")
 
 r = mod.int_convert("invalid")
 assert "Invalid number" in r, f"expected error: {r}"

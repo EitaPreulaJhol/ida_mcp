@@ -106,6 +106,7 @@ def _fake_find(pattern, ea, range_end=None):
 
 
 ida_bytes.find_bytes = _fake_find
+ida_bytes.is_code_ea = lambda ea: ea == 0x2000
 sys.modules["ida_bytes"] = ida_bytes
 
 ida_funcs = types.ModuleType("ida_funcs")
@@ -129,13 +130,16 @@ sys.modules["ida_funcs"] = ida_funcs
 
 
 class FakeXref:
-    def __init__(self, frm, to, iscode=True):
+    def __init__(self, frm, to, iscode=False):
         self.frm = frm
         self.to = to
         self.iscode = iscode
 
 
 idautils = types.ModuleType("idautils")
+# A code instruction reading a data address (e.g. a string) is a DATA xref:
+# ``iscode`` must be False.  The old filter kept only code refs and therefore
+# returned nothing for the tool's primary use case.
 idautils.XrefsTo = lambda ea, flags: iter(
     [FakeXref(0x2000, 0x3000)] if ea == 0x3000 else [])
 sys.modules["idautils"] = idautils
@@ -247,6 +251,17 @@ assert r["total_applied"] == 1, r
 assert r["new_signatures"][0]["desc"] == "test (3 matches)", r
 r = json.loads(mod.list_flirt_signatures())
 assert r["count"] == 1, r
+# Real IDA returns a tuple (name, libs, matches), not a string.  Storing
+# str(tuple) made `desc` unreadable and broke before/after comparisons.
+_orig_desc = ida_funcs.get_idasgn_desc_with_matches
+ida_funcs.get_idasgn_desc_with_matches = lambda i: ("libc", ["libc.so"], 3)
+try:
+    r = json.loads(mod.list_flirt_signatures())
+    assert r["signatures"][0]["desc"] == "libc", r
+    assert r["signatures"][0]["libs"] == ["libc.so"], r
+    assert r["signatures"][0]["matches"] == 3, r
+finally:
+    ida_funcs.get_idasgn_desc_with_matches = _orig_desc
 print("apply/list_flirt_signatures OK")
 
 # --- chunked uniqueness probe (plan 15, item 15.5) ---

@@ -103,8 +103,27 @@ def _is_pid_alive_windows(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
+def _valid_instance_info(info) -> bool:
+    """Validate the untrusted JSON read from an instance file.
+
+    The file is local, but it can be stale/corrupt.  A string pid used to
+    raise TypeError from os.kill and abort discovery for every instance.
+    """
+    if not isinstance(info, dict):
+        return False
+    pid = info.get("pid")
+    port = info.get("port")
+    host = info.get("host")
+    return (isinstance(pid, int) and not isinstance(pid, bool) and pid > 0
+            and isinstance(port, int) and not isinstance(port, bool)
+            and 0 < port <= 65535
+            and isinstance(host, str))
+
+
 def is_pid_alive(pid: int) -> bool:
     """Check if a process is still running (owned by any user)."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
     if sys.platform == "win32":
         return _is_pid_alive_windows(pid)
     try:
@@ -185,7 +204,7 @@ def discover_instances():
         except (json.JSONDecodeError, OSError):
             _quiet_unlink(file_path)
             continue
-        if not all(k in info for k in ("host", "port", "pid")):
+        if not _valid_instance_info(info):
             _quiet_unlink(file_path)
             continue
         if not is_pid_alive(info["pid"]):
@@ -202,5 +221,5 @@ def discover_instances():
             _quiet_unlink(file_path)
             continue
         result.append(info)
-    result.sort(key=lambda x: x.get("started_at", ""))
+    result.sort(key=lambda x: str(x.get("started_at", "")))
     return result

@@ -90,6 +90,9 @@ print("list_strings OK")
 r = json.loads(mod.get_strings_in_range("0x1000", "0x1020"))
 assert [s["value"] for s in r["data"]] == ["hello", "error: failed"], r
 assert r["truncated"] is False, r
+# exactly `limit` matches must not be reported as truncated
+r = json.loads(mod.get_strings_in_range("0x1000", "0x1020", limit=2))
+assert r["count"] == 2 and r["truncated"] is False, r
 print("get_strings_in_range OK")
 
 assert json.loads(mod.get_string_count()) == {"total": 4}
@@ -109,6 +112,8 @@ r = json.loads(mod.search_strings("ERROR", case_sensitive=True))
 assert r["count"] == 0, r
 r = json.loads(mod.search_strings("e", limit=1))
 assert r["count"] == 1 and r["truncated"] is True, r
+r = json.loads(mod.search_strings("hello", limit=1))
+assert r["count"] == 1 and r["truncated"] is False, r
 print("search_strings OK")
 
 r = json.loads(mod.get_strings_by_length(min_length=5))
@@ -121,7 +126,16 @@ r = json.loads(mod.get_ascii_strings())
 assert r["total"] == 3 and all(s["value"] != "wide" for s in r["data"]), r
 r = json.loads(mod.get_unicode_strings())
 assert r["total"] == 1 and r["data"][0]["value"] == "wide", r
-print("ascii/unicode OK")
+# 16/32-bit Pascal and length-prefixed strings are unicode too.
+_STRS.append(FakeStr(0x1040, "widep", strtype=5))  # STRTYPE_PASCAL_16
+try:
+    r = json.loads(mod.get_unicode_strings())
+    assert {s["value"] for s in r["data"]} == {"wide", "widep"}, r
+    r = json.loads(mod.get_ascii_strings())
+    assert r["total"] == 3 and all(s["value"] != "widep" for s in r["data"]), r
+finally:
+    _STRS.pop()
+print("ascii/unicode OK (incl. Pascal 16-bit)")
 
 # --- oversized pagination is clamped and reported, not reset (14.11) ---
 r = json.loads(mod.list_strings(limit=99999))

@@ -483,13 +483,20 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
             raise IDASyncError(error_str)
 
         call_stack.put(ff.__name__)
-        old_batch = idc.batch(1)
+        old_batch = None
+        # Captured BEFORE try so a failure below can restore the previous
+        # value rather than clobber it with None.
         prev_pre_call = getattr(_sync_state, "pre_call_batch", None)
-        _sync_state.pre_call_batch = old_batch
-        wait_shown = _show_tool_wait_box(ff.__name__)
+        wait_shown = False
         completed = False
         t0 = time.monotonic()
         try:
+            # Everything that can fail happens inside this try: if
+            # idc.batch() raised before the result container was filled, the
+            # HTTP waiter could block in its second (unbounded) get().
+            old_batch = idc.batch(1)
+            _sync_state.pre_call_batch = old_batch
+            wait_shown = _show_tool_wait_box(ff.__name__)
             res_container.put(ff())
             completed = True
         except BaseException as x:  # noqa: BLE001 - capture, never re-raise here
@@ -509,7 +516,7 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
                           ff.__name__, hold_ms)
             if wait_shown:
                 _hide_tool_wait_box()
-            if not (completed and keep_batch):
+            if old_batch is not None and not (completed and keep_batch):
                 try:
                     idc.batch(old_batch)
                 except Exception:

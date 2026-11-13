@@ -159,6 +159,19 @@ def type_label(tif) -> str:
     return "<unnamed>"
 
 
+def _defined_in_mask(mask: bytes, index: int, bit_packed: bool) -> bool:
+    """Whether byte ``index`` is initialized according to ``mask``.
+
+    IDA 9.5 returns a *bit-packed* mask (one bit per byte, ``ceil(size/8)``
+    bytes); older bindings/tests may hand back one mask byte per data byte.
+    ``bit_packed`` selects the interpretation.
+    """
+    if bit_packed:
+        byte = index >> 3
+        return byte < len(mask) and bool((mask[byte] >> (index & 7)) & 1)
+    return index < len(mask) and bool(mask[index])
+
+
 def read_bytes_bss_safe(ea: int, size: int) -> bytes | None:
     """Read ``size`` bytes at ``ea``; unloaded bytes read as 0, unmapped as None.
 
@@ -169,36 +182,65 @@ def read_bytes_bss_safe(ea: int, size: int) -> bytes | None:
     ``None`` (not a zero-filled block) is returned when the address is not
     mapped: ``ida_bytes.is_loaded()`` is false both for "in BSS" and for "not
     in the program at all", which used to make ``get_bytes("0xdeadbeef")``
-    look like a valid 64-byte block of zeros. ``get_bytes_and_mask()`` is the
-    API that distinguishes the two (``None`` on failure, mask bit 0 =
-    uninitialized).
+    look like a valid 64-byte block of zeros.
+
+    ``get_bytes_and_mask()`` reports uninitialized bytes with a *bit mask*
+    on IDA 9.5 (``ceil(size/8)`` bytes, least-significant bit first), not one
+    mask byte per data byte. The mask alone cannot distinguish BSS from an
+    unmapped address (both are masked out), so ``is_mapped()`` is consulted
+    for every masked-out byte.
     """
+    if size <= 0:
+        return None
     get_mask = getattr(ida_bytes, "get_bytes_and_mask", None)
     if get_mask is not None:
         try:
             res = get_mask(ea, size)
         except Exception:
             res = None
-        if res is None:
-            return None
-        raw, mask = res
-        # The 9.x signature documents both as ``str``; older/other builds
-        # hand back ``bytes``. Accept either.
-        if isinstance(raw, str):
-            raw = raw.encode("latin-1")
-        if isinstance(mask, str):
-            mask = mask.encode("latin-1")
-        return bytes(b if i < len(mask) and mask[i] else 0
-                     for i, b in enumerate(bytes(raw)))
+        if res is not None:
+            raw, mask = res
+            # The 9.x signature documents both as ``str``; older/other builds
+            # hand back ``bytes``. Accept either.
+            if isinstance(raw, str):
+                raw = raw.encode("latin-1")
+            if isinstance(mask, str):
+                mask = mask.encode("latin-1")
+            if raw is None:
+                return None
+            raw = bytes(raw)
+            if mask is None:
+                return raw[:size]
+            mask = bytes(mask)
+            # Bit-packed when it is shorter than the data it describes. This
+            # also keeps a legacy one-byte-per-data-byte mask working.
+            bit_packed = len(mask) < min(len(raw), size)
+            mapped_fn = getattr(ida_bytes, "is_mapped", None)
+            out = bytearray()
+            for i, b in enumerate(raw[:size]):
+                if _defined_in_mask(mask, i, bit_packed):
+                    out.append(b)
+                    continue
+                if callable(mapped_fn):
+                    try:
+                        if not mapped_fn(ea + i):
+                            return None
+                    except Exception:
+                        pass
+                out.append(0)
+            return bytes(out)
 
     # Fallback for older IDA / stubbed environments without the mask API.
     is_loaded = getattr(ida_bytes, "is_loaded", None)
     get_byte = getattr(ida_bytes, "get_byte", None)
-    if is_loaded is not None and get_byte is not None:
+    is_mapped = getattr(ida_bytes, "is_mapped", None)
+    if get_byte is not None:
         out = bytearray(size)
         for i in range(size):
             try:
-                if is_loaded(ea + i):
+                if callable(is_mapped) and not is_mapped(ea + i):
+                    return None
+                if is_loaded is None or is_loaded(ea + i):
                     out[i] = get_byte(ea + i)
             except Exception:
                 pass
@@ -313,8 +355,10 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
 def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
     """Get functions called BY the function at the given address or name.
 
-    Returns a JSON array of ``{addr, name, type}`` where ``type`` is
-    ``"internal"`` or ``"external"``. Paginated: at most ``limit`` entries
+    Returns a JSON array of ``{addr, name, type, indirect}`` where ``type`` is
+    ``"internal"`` or ``"external"``.  ``o_mem`` call operands (e.g. a GOT
+    slot) are flagged ``indirect``: the reported address is the pointer slot,
+    not a resolved function. Paginated: at most ``limit`` entries
     from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
     """
     ensure_analysis()
@@ -336,6 +380,7 @@ def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
             continue
         if insn.get_canon_mnem() == "call":
             op0 = insn.ops[0]
+            indirect = op0.type == ida_ua.o_mem
             if op0.type in (ida_ua.o_mem, ida_ua.o_near, ida_ua.o_far):
                 target = op0.addr
             elif op0.type == ida_ua.o_imm:
@@ -348,6 +393,7 @@ def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
                     "addr": hex(target),
                     "name": name or f"sub_{target:X}",
                     "type": "internal" if ida_funcs.get_func(target) else "external",
+                    "indirect": indirect,
                 }
         current_ea = idc.next_head(current_ea, func.end_ea)
 
@@ -725,16 +771,19 @@ def int_convert(text: str, size: int = 0) -> str:
         return json.dumps({"input": text, "error": f"Invalid number: {text}"})
 
     if size <= 0:
-        size = 0
-        n = abs(value)
-        while n:
-            size += 1
-            n >>= 1
-        size += 7
-        size //= 8
+        # Minimal two's-complement width.  Positive values are unsigned bytes
+        # (0xFF fits in one byte); negatives need the sign bit, so use the
+        # complement to count the leading sign bits.
+        if value < 0:
+            size = max(1, ((~value).bit_length() + 8) // 8)
+        else:
+            size = max(1, (value.bit_length() + 7) // 8)
 
     try:
-        bytes_data = value.to_bytes(max(1, size), "little", signed=True)
+        # Non-negative values are unsigned on the wire; only negatives need a
+        # signed conversion.  The old code always used signed=True, which made
+        # 128..255 overflow a one-byte auto-sized result.
+        bytes_data = value.to_bytes(max(1, size), "little", signed=value < 0)
     except OverflowError:
         return json.dumps({
             "input": text,
@@ -884,6 +933,7 @@ def basic_blocks(address: str, max_blocks: int = 100, offset: int = 0) -> str:
     if not func:
         return json.dumps({"error": f"No function at {address}"})
 
+    max_blocks = _as_int(max_blocks, 100)
     if max_blocks <= 0 or max_blocks > 10000:
         max_blocks = 100
 
@@ -901,6 +951,7 @@ def basic_blocks(address: str, max_blocks: int = 100, offset: int = 0) -> str:
         })
 
     total = len(all_blocks)
+    offset = max(_as_int(offset, 0), 0)
     page = all_blocks[offset:offset + max_blocks]
     more = offset + max_blocks < total
 

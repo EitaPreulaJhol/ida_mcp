@@ -22,13 +22,18 @@ from .sync import ensure_analysis
 from .api_analysis import _cap_lines, resolve_addr
 
 
+# Values are the mba_maturity_t enum from ida_hexrays (IDA 9.x).  Keep the
+# numeric keys in sync with the constants, not with the pre-9 maturity names.
 _MATURITY_NAMES = {
     0: "MMAT_ZERO",
-    1: "MMAT_VARS",
-    2: "MMAT_LVARS",
-    3: "MMAT_BBLVARS",
-    4: "MMAT_XMM",
-    5: "MMAT_GENERATED",
+    1: "MMAT_GENERATED",
+    2: "MMAT_PREOPTIMIZED",
+    3: "MMAT_LOCOPT",
+    4: "MMAT_CALLS",
+    5: "MMAT_GLBOPT1",
+    6: "MMAT_GLBOPT2",
+    7: "MMAT_GLBOPT3",
+    8: "MMAT_LVARS",
 }
 
 

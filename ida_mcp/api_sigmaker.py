@@ -407,7 +407,21 @@ def _fetch_xref_signatures(query: str, top: int, max_length: int,
         return {"query": query, "addr": None, "signatures": None,
                 "error": f"Unknown address or name: {query}"}
     try:
-        sites = [x.frm for x in idautils.XrefsTo(ea, 0) if x.iscode][:50]
+        # ``iscode`` is True only for code-to-code references (calls/jumps).
+        # The references this tool wants -- instructions loading a string or
+        # a global -- are DATA xrefs from code and have ``iscode=False``.
+        # Filter on the SOURCE being code, not on the xref kind.
+        def _code_origin(src_ea: int) -> bool:
+            is_code_ea = getattr(ida_bytes, "is_code_ea", None)
+            if not callable(is_code_ea):
+                return True  # older binding / test stub
+            try:
+                return bool(is_code_ea(src_ea))
+            except Exception:
+                return True
+
+        sites = [x.frm for x in idautils.XrefsTo(ea, 0)
+                 if _code_origin(x.frm)][:50]
     except Exception as e:
         return {"query": query, "addr": hex(ea), "signatures": None,
                 "error": str(e)}
@@ -524,12 +538,20 @@ def _applied_sigs() -> list[dict]:
     for i in range(qty):
         entry: dict = {"index": i}
         try:
-            if callable(desc_fn):
-                entry["desc"] = str(desc_fn(i))
-            elif callable(plain_fn):
-                entry["desc"] = str(plain_fn(i))
+            desc = desc_fn(i) if callable(desc_fn) else (
+                plain_fn(i) if callable(plain_fn) else None)
+            # IDA returns (signame, optional_libs, nmatches) from the _with_
+            # matches variant and (signame, optional_libs) from the plain one.
+            # Do not str() the tuple: that made ``desc`` unreadable and broke
+            # the before/after comparison in apply_flirt_signatures.
+            if isinstance(desc, tuple):
+                entry["desc"] = desc[0] if len(desc) > 0 else None
+                if len(desc) > 1:
+                    entry["libs"] = desc[1]
+                if len(desc) > 2:
+                    entry["matches"] = desc[2]
             else:
-                entry["desc"] = None
+                entry["desc"] = None if desc is None else str(desc)
         except Exception as e:
             entry["desc"] = None
             entry["error"] = str(e)

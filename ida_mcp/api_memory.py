@@ -385,16 +385,20 @@ def get_heads(start: str, end: str, limit: int = 200) -> str:
         return json.dumps({"error": str(e)})
     limit = clamp_int(limit, 200, 10000)
     heads: list[str] = []
+    more = False
     try:
         for ea in idautils.Heads(start_ea, end_ea):
-            heads.append(hex(ea))
             if len(heads) >= limit:
+                # Probe the next head so exactly ``limit`` results are not
+                # reported as truncated.
+                more = True
                 break
+            heads.append(hex(ea))
     except Exception as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"start": hex(start_ea), "end": hex(end_ea),
                        "heads": heads, "count": len(heads), "limit": limit,
-                       "truncated": len(heads) >= limit})
+                       "truncated": more})
 
 
 @tool

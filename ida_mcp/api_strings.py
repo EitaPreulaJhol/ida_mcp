@@ -67,9 +67,20 @@ def _row(si) -> dict:
             "strtype": getattr(si, "strtype", None)}
 
 
+# Every 16/32-bit-character string type, not just the C-style ones.  The
+# Pascal/LEN2/LEN4 variants were being shown by get_ascii_strings and hidden
+# from get_unicode_strings.
+_UNICODE_STRTYPE_CONSTANTS = (
+    ("STRTYPE_C_16", 1), ("STRTYPE_C_32", 2),
+    ("STRTYPE_PASCAL_16", 5), ("STRTYPE_PASCAL_32", 6),
+    ("STRTYPE_LEN2_16", 9), ("STRTYPE_LEN2_32", 10),
+    ("STRTYPE_LEN4_16", 13), ("STRTYPE_LEN4_32", 14),
+)
+
+
 def _unicode_types() -> set:
     types = set()
-    for attr, fallback in (("STRTYPE_C_16", 1), ("STRTYPE_C_32", 2)):
+    for attr, fallback in _UNICODE_STRTYPE_CONSTANTS:
         val = getattr(ida_nalt, attr, fallback)
         if isinstance(val, int):
             types.add(val)
@@ -119,15 +130,19 @@ def get_strings_in_range(start: str, end: str, limit: int = 500) -> str:
         return json.dumps({"error": str(e)})
     limit = clamp_int(limit, 500, 10000)
     rows = []
+    more = False
     for si in _iter_strings():
         if start_ea <= si.ea < end_ea:
-            rows.append(_row(si))
             if len(rows) >= limit:
+                # A limit-th match was found; probe once more so exactly
+                # ``limit`` total results are not reported as truncated.
+                more = True
                 break
+            rows.append(_row(si))
     return json.dumps({"start": hex(start_ea), "end": hex(end_ea),
                        "data": rows, "count": len(rows),
                        "limit": limit,
-                       "truncated": len(rows) >= limit}, indent=2)
+                       "truncated": more}, indent=2)
 
 
 @tool
@@ -189,6 +204,7 @@ def search_strings(query: str, case_sensitive: bool = False,
     limit = clamp_int(limit, 100, 5000)
     needle = query if case_sensitive else query.lower()
     rows = []
+    more = False
     for si in _iter_strings():
         try:
             value = str(si)
@@ -196,11 +212,12 @@ def search_strings(query: str, case_sensitive: bool = False,
             continue
         hay = value if case_sensitive else value.lower()
         if needle in hay:
-            rows.append(_row(si))
             if len(rows) >= limit:
+                more = True
                 break
+            rows.append(_row(si))
     return json.dumps({"query": query, "data": rows, "count": len(rows),
-                       "limit": limit, "truncated": len(rows) >= limit}, indent=2)
+                       "limit": limit, "truncated": more}, indent=2)
 
 
 @tool

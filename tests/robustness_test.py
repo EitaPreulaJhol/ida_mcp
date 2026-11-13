@@ -169,6 +169,17 @@ _RaisesInDel(KeyError("k"))
 check(captured == ["KeyError"], "restart does not chain duplicate hooks")
 
 # ===================================================================
+# 2b. a malformed JSON-RPC id must not leak the concurrency gate
+# ===================================================================
+bad_id = post({"jsonrpc": "2.0", "id": {"not": "scalar"},
+               "method": "tools/call",
+               "params": {"name": "fast", "arguments": {}}})
+check(bad_id.get("error", {}).get("code") == -32600,
+      "non-scalar JSON-RPC id rejected with -32600")
+check(call("fast")["result"]["isError"] is False,
+      "malformed id did not leave the tool gate held")
+
+# ===================================================================
 # 3. resources/read: gate, output cap, backing-tool access, metrics
 # ===================================================================
 check(json.loads(json.dumps(read_resource("demo://open")))["result"]["contents"][0]["text"]

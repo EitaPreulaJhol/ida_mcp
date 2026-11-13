@@ -71,11 +71,16 @@ print("install idb OK")
 entry = mod._HOOKS[idb_id]
 entry["hook"].renamed(0x1000, "main", True)
 entry["hook"].byte_patched(0x2000, 0x90)
+# IDA 9.5 calls cmt_changed(ea, repeatable_cmt); a third comment argument
+# raised TypeError on every comment change.
+entry["hook"].cmt_changed(0x3000, True)
 r = json.loads(mod.get_hook_info(idb_id))
-assert r["event_count"] == 2, r
+assert r["event_count"] == 3, r
 assert r["recent_events"][0]["event"] == "renamed", r
 assert r["recent_events"][0]["detail"]["new_name"] == "main", r
-print("idb tracer events OK")
+assert r["recent_events"][2]["event"] == "comment_changed", r
+assert r["recent_events"][2]["detail"]["repeatable"] is True, r
+print("idb tracer events (incl. cmt_changed arity) OK")
 
 r = json.loads(mod.install_hexrays_hook())
 hex_id = r["hook_id"]

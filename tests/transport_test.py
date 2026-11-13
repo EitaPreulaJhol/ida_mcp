@@ -386,5 +386,30 @@ assert r["isError"] is False, r
 assert json.loads(r["content"][0]["text"])["count"] == 4, r
 print("tools/call legacy count alias OK")
 
+# --- SSE streams must send EOF after stop(), not keep the socket alive ---
+import socket as _socket
+_sse = _socket.create_connection(("127.0.0.1", 18998), timeout=10)
+_sse.sendall(b"GET /mcp HTTP/1.1\r\nHost: 127.0.0.1:18998\r\n"
+             b"Accept: text/event-stream\r\n\r\n")
+_sse.settimeout(10)
+_hdr = b""
+while b"\r\n\r\n" not in _hdr:
+    _hdr += _sse.recv(4096)
+assert b"200" in _hdr.split(b"\r\n", 1)[0], _hdr
+assert b"connection: close" in _hdr.lower(), _hdr
+
 srv.stop()
+_sse.settimeout(5)
+_eof = False
+try:
+    while True:
+        if not _sse.recv(4096):
+            _eof = True
+            break
+except _socket.timeout:
+    pass
+_sse.close()
+assert _eof, "SSE connection did not reach EOF after stop()"
+print("SSE EOF on stop OK")
+
 print("ALL TRANSPORT TESTS PASSED")

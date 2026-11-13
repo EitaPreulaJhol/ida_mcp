@@ -137,8 +137,10 @@ mod = load("api_hexrays", {
 # Tests
 # =========================================================================
 
+# maturity 5 is MMAT_GLBOPT1 in the real mba_maturity_t enum; the old map
+# shifted every name and only MMAT_ZERO was correct.
 r = json.loads(mod.get_microcode("0x1000"))
-assert r["maturity"] == 5 and r["maturity_name"] == "MMAT_GENERATED", r
+assert r["maturity"] == 5 and r["maturity_name"] == "MMAT_GLBOPT1", r
 assert r["num_blocks"] == 2 and len(r["blocks"]) == 2, r
 assert r["blocks"][0]["start"] == "0x1000", r
 r = json.loads(mod.get_microcode("0x9999"))
@@ -147,6 +149,8 @@ _HEXRAYS_AVAILABLE[0] = False
 r = json.loads(mod.get_microcode("0x1000"))
 assert "not available" in r["error"], r
 _HEXRAYS_AVAILABLE[0] = True
+assert mod._MATURITY_NAMES[1] == "MMAT_GENERATED"
+assert mod._MATURITY_NAMES[8] == "MMAT_LVARS"
 print("get_microcode OK")
 
 r = json.loads(mod.get_flowchart("0x1000"))

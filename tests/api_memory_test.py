@@ -160,6 +160,8 @@ print("head/addr navigation OK")
 
 r = json.loads(mod.get_heads("0x1000", "0x1010"))
 assert r["heads"] == ["0x1000", "0x1004", "0x1008"] and r["truncated"] is False, r
+r = json.loads(mod.get_heads("0x1000", "0x1010", limit=3))
+assert r["count"] == 3 and r["truncated"] is False, r
 print("get_heads OK")
 
 assert json.loads(mod.is_code("0x1000"))["is_code"] is True

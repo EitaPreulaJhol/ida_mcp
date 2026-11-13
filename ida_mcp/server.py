@@ -291,10 +291,40 @@ _CLOSE_PENDING = False
 
 
 def _deferred_stop(port: int) -> None:
-    """Stop the server after the close_instance reply has been delivered."""
+    """Stop the server after the close_instance reply has been delivered.
+
+    The timer callback runs on its own thread, but stop_server() unhooks IDA
+    hooks and touches the kernel.  Marshal the actual stop onto the IDA main
+    thread when execute_sync is available; the tests' stub lacks it and falls
+    back to the direct call.
+    """
     global _CLOSE_PENDING
     try:
-        stop_server(port)
+        stopped_on_main = False
+        try:
+            execute_sync = getattr(ida_kernwin, "execute_sync", None)
+            # idalib has no UI message loop: execute_sync() queued from the
+            # timer thread would never run (the host thread is not pumping),
+            # so only marshal in the GUI.  The idalib path is safe to stop
+            # directly (no hooks/UI to unhook).
+            is_gui = True
+            is_idaq = getattr(ida_kernwin, "is_idaq", None)
+            if callable(is_idaq):
+                is_gui = bool(is_idaq())
+            if callable(execute_sync) and is_gui:
+                def _stop_on_main() -> int:
+                    stop_server(port)
+                    return 0
+
+                rc = execute_sync(
+                    _stop_on_main,
+                    getattr(ida_kernwin, "MFF_WRITE",
+                            getattr(idaapi, "MFF_WRITE", 2)))
+                stopped_on_main = rc != -1
+        except Exception:
+            stopped_on_main = False
+        if not stopped_on_main:
+            stop_server(port)
     finally:
         _CLOSE_PENDING = False
 

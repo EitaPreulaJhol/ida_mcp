@@ -39,7 +39,10 @@ ida_bytes.create_double = _maker(8, "double")
 ida_bytes.get_item_size = lambda ea: _ITEM_SIZE["value"]
 ida_bytes.is_mapped = lambda ea: ea != 0xBAD
 _NUL_AT = {0x6000}
-ida_bytes.get_byte = lambda ea: 0 if ea in _NUL_AT else 0x41
+_ORIGINAL_BYTES: dict[int, int] = {}
+_CURRENT_BYTES: dict[int, int] = {}
+ida_bytes.get_byte = lambda ea: _CURRENT_BYTES.get(ea, 0 if ea in _NUL_AT else 0x41)
+ida_bytes.get_original_byte = lambda ea: _ORIGINAL_BYTES.get(ea, 0x41)
 
 
 def _create_strlit(ea, length, strtype):
@@ -64,8 +67,14 @@ ida_nalt = types.ModuleType("ida_nalt")
 ida_nalt.STRTYPE_C = 0
 sys.modules["ida_nalt"] = ida_nalt
 
-sys.modules["ida_segment"] = types.ModuleType("ida_segment")
-sys.modules["idautils"] = types.ModuleType("idautils")
+ida_segment = types.ModuleType("ida_segment")
+_SEG = types.SimpleNamespace(start_ea=0x100000, end_ea=0x100000 + 100005)
+ida_segment.getseg = lambda ea: _SEG if _SEG.start_ea <= ea < _SEG.end_ea else None
+sys.modules["ida_segment"] = ida_segment
+
+idautils = types.ModuleType("idautils")
+idautils.Segments = lambda: iter([_SEG.start_ea])
+sys.modules["idautils"] = idautils
 
 # =========================================================================
 # Load api_modify.py
@@ -151,5 +160,17 @@ print("patch_bytes unmapped address OK")
 r = json.loads(mod.patch_bytes("0x1000", "zz"))
 assert "error" in r, r
 print("patch_bytes invalid hex OK")
+
+# list_patches used to scan only the first 100 KB of each segment.  The
+# patched byte below is 100001 bytes into .text, so the old code reported
+# zero patches.
+_PATCHED.clear()
+_target = _SEG.start_ea + 100001
+_ORIGINAL_BYTES[_target] = 0x41
+_CURRENT_BYTES[_target] = 0x90
+r = json.loads(mod.list_patches())
+assert any(int(p["addr"], 16) == _target for p in r["patches"]), r
+assert r["count"] >= 1 and r["truncated"] is False, r
+print("list_patches scans past the first 100 KB OK")
 
 print("ALL MODIFY TESTS PASSED")

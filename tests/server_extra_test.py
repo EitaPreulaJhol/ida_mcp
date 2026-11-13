@@ -55,6 +55,17 @@ sys.modules["ida_hexrays"] = ida_hexrays
 
 ida_kernwin = types.ModuleType("ida_kernwin")
 ida_kernwin.msg = lambda *a, **k: None
+# Simulate the GUI main-thread marshalling used by close_instance's deferred
+# stop.  The callback runs immediately in this stub (a real execute_sync
+# queues it to the IDA UI thread).
+_SYNC_CALLS = []
+def _fake_execute_sync(fn, flags):
+    _SYNC_CALLS.append(flags)
+    fn()
+    return 0
+ida_kernwin.is_idaq = lambda: True
+ida_kernwin.MFF_WRITE = 2
+ida_kernwin.execute_sync = _fake_execute_sync
 sys.modules["ida_kernwin"] = ida_kernwin
 
 ida_lines = types.ModuleType("ida_lines")
@@ -228,6 +239,7 @@ try:
     _time.sleep(0.3)
 finally:
     mod._CLOSE_INSTANCE_GRACE_SEC = _orig_grace
+assert _SYNC_CALLS and _SYNC_CALLS[-1] == 2, _SYNC_CALLS
 assert mod.MCP_SERVER._running is False, "the deferred stop did not run"
 assert 13337 in _UNREGISTERED, _UNREGISTERED
 print("close_instance OK")

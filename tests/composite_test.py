@@ -112,6 +112,7 @@ ida_bytes = types.ModuleType("ida_bytes")
 ida_bytes.get_cmt = lambda ea, rep: "check this" if (ea == 0x1000 and not rep) else None
 ida_bytes.set_cmt = lambda ea, cmt, rep: True
 ida_bytes.get_strlit_contents = lambda ea, length=-1, strtype=0: b"secret" if ea == 0x3000 else None
+ida_bytes.is_mapped = lambda ea: True
 sys.modules["ida_bytes"] = ida_bytes
 
 ida_nalt = types.ModuleType("ida_nalt")
@@ -188,12 +189,15 @@ class FakeXref:
         self.type = xtype
 
 
+_BSS_TARGET = 0x4500  # mapped, never initialized (a .bss-style global)
 _XREFS_FROM = {
     0x1005: [FakeXref(to=0x3000, iscode=False, xtype=1),
-             FakeXref(to=0x4000, iscode=False, xtype=1)],
+             FakeXref(to=0x4000, iscode=False, xtype=1),
+             FakeXref(to=_BSS_TARGET, iscode=False, xtype=1)],
     0x1008: [FakeXref(to=0x2000, iscode=True, xtype=16)],
     0x2000: [FakeXref(to=0x4000, iscode=False, xtype=1),
-             FakeXref(to=0x3000, iscode=False, xtype=1)],
+             FakeXref(to=0x3000, iscode=False, xtype=1),
+             FakeXref(to=_BSS_TARGET, iscode=False, xtype=1)],
 }
 _XREFS_TO = {
     0x1000: [FakeXref(frm=0x2002, iscode=True, xtype=17),
@@ -201,6 +205,8 @@ _XREFS_TO = {
     0x2000: [FakeXref(frm=0x1008, iscode=True, xtype=17)],
     0x3000: [FakeXref(frm=0x1005, iscode=False, xtype=1),
              FakeXref(frm=0x2000, iscode=False, xtype=1)],
+    _BSS_TARGET: [FakeXref(frm=0x1005, iscode=False, xtype=1),
+                  FakeXref(frm=0x2000, iscode=False, xtype=1)],
     0x3010: [],
     0x8000: [],
 }
@@ -261,7 +267,7 @@ mod = load("api_composite", {
     "    table = {'main': 0x1000, 'sub': 0x2000}\n"
     "    if s in table: return table[s]\n"
     "    raise ValueError(f'Unknown: {s}')",
-    "compat": ("inf_is_64bit = lambda: True\n_is_loaded = lambda ea: True\n"
+    "compat": ("inf_is_64bit = lambda: True\n_is_loaded = lambda ea: ea != 0x4500\n"
     "import ida_funcs as _cf_f, idaapi as _cf_a, ida_segment as _cf_s\n"
     "_get_func = _cf_f.get_func\n_getseg = _cf_a.getseg\n_get_segm_name = _cf_s.get_segm_name" + '\nis_loaded = _is_loaded\nget_func = _get_func\ngetseg = _getseg\nget_segm_name = _get_segm_name\nget_func_comment = lambda pfn, repeatable=False: _cf_f.get_func_cmt(pfn, repeatable)'),
 }, alias="composite_test")
@@ -311,6 +317,8 @@ assert r["shared_globals"] == [
     {"addr": "0x3000", "name": "0x3000",
      "accessed_by": ["main", "sub"]},
     {"addr": "0x4000", "name": "g_config",
+     "accessed_by": ["main", "sub"]},
+    {"addr": "0x4500", "name": "0x4500",
      "accessed_by": ["main", "sub"]}], r
 assert r["interface_functions"] == ["0x1000"], r  # outsider calls main
 assert r["internal_only"] == ["0x2000"], r
@@ -332,7 +340,11 @@ r = json.loads(mod.trace_data_flow("0x3000", direction="sideways"))
 assert "error" in r, r
 r = json.loads(mod.trace_data_flow("0x3000", direction="backward", max_depth=0))
 assert r["depth_reached"] <= 1, r
-print("trace_data_flow OK")
+# BSS is mapped but uninitialized: it must be data, not code (the old
+# "or not _is_loaded(ea)" branch classified every BSS address as code).
+r = json.loads(mod.trace_data_flow("0x4500", direction="backward", max_depth=0))
+assert r["nodes"][0]["type"] == "data", r["nodes"][0]
+print("trace_data_flow OK (BSS is data)")
 
 # --- callgraph ---
 r = json.loads(mod.callgraph("main"))
@@ -362,6 +374,16 @@ assert r["call_graph_summary"]["total_edges"] == 1, r
 assert r["call_graph_summary"]["leaf_functions_count"] == 2, r
 assert "outsider" in r["call_graph_summary"]["root_functions"], r
 print("survey_binary OK")
+
+# total_strings must count every string, not len(the first 5000 cached).
+_orig_strings = idautils.Strings
+idautils.Strings = lambda: iter(FakeStr(0x10000 + i, f"s{i}") for i in range(5005))
+try:
+    r = json.loads(mod.survey_binary("standard"))
+    assert r["statistics"]["total_strings"] == 5005, r["statistics"]
+finally:
+    idautils.Strings = _orig_strings
+print("survey_binary total_strings beyond cache cap OK")
 
 # expired deadline -> partial results with flag instead of timeout error
 mod.__dict__["get_tool_deadline"] = lambda: 0.0

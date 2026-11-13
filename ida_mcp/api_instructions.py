@@ -178,7 +178,9 @@ def get_operand(
     if not ok:
         return json.dumps({"error": f"No instruction at {hex(ea)}"})
 
-    if index >= len(insn.ops) or insn.ops[index].type == ida_ua.o_void:
+    # A negative index passes a plain ``index >= len`` check and then reaches
+    # SWIG's operands_array[index] with a size_t, raising OverflowError.
+    if index < 0 or index >= len(insn.ops) or insn.ops[index].type == ida_ua.o_void:
         return json.dumps({"error": f"No operand {index} at {hex(ea)}"})
 
     info = _insn_to_dict(ea, insn)

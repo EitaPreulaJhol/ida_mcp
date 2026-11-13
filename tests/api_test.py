@@ -117,6 +117,20 @@ r = mod._run_code("import os\nfirst = 'x'\nsecond = 'y'")
 assert r["result"] == "y", r
 r = mod._run_code("for i in range(3):\n    pass")
 assert r["result"] == "2", r  # the loop variable is the last binding
+r = mod._run_code("a = 1\nb = 2\na = 3")
+assert r["result"] == "3", r  # real assignment order, not dict insertion order
 print("last-binding result OK")
+
+# 10) an explicit result assignment wins over a trailing expression, and a
+#     legitimate 0/False result is not collapsed to "".
+r = mod._run_code("result = 42\nprint('hi')")
+assert r["result"] == "42", r
+r = mod._run_code("result = 7\nresult + 1")
+assert r["result"] == "7", r
+r = mod._run_code("result = 0")
+assert r["result"] == "0", r
+r = mod._run_code("result = False")
+assert r["result"] == "False", r
+print("explicit result wins over trailing expression / 0 preserved OK")
 
 print("ALL API_PYTHON _run_code TESTS PASSED")

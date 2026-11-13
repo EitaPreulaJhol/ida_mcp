@@ -323,20 +323,49 @@ def delete_bookmark(target: str) -> str:
     """Delete a bookmark by slot index or by address.
 
     **Unsafe** — requires ``?unsafe=true``. ``target`` accepts a slot number
-    (``"3"``) or an address/symbol (the bookmark at that address is removed).
+    (``"slot:3"`` or a bare ``"3"``) or an address/symbol.  A numeric target
+    that names both a low address and a slot prefers the address, so firmware
+    addresses such as ``0x10`` remain deletable.
     """
     ensure_analysis()
 
+    text = str(target).strip()
     slot: int | None = None
-    try:
-        candidate = int(target, 0)
-        if 0 <= candidate < _BOOKMARK_SLOTS:
-            slot = candidate
-    except (ValueError, TypeError):
-        slot = None
+    candidate: int | None = None
+    if text.lower().startswith("slot:"):
+        try:
+            slot = int(text[5:], 0)
+        except (ValueError, TypeError):
+            return json.dumps({"error": f"Invalid slot: {target!r}"})
+        if not 0 <= slot < _BOOKMARK_SLOTS:
+            return json.dumps({"error": f"Slot out of range (0-{_BOOKMARK_SLOTS - 1}): {slot}"})
+    else:
+        try:
+            candidate = int(text, 0)
+        except (ValueError, TypeError):
+            candidate = None
+        if candidate is not None:
+            # The address interpretation wins when it matches a bookmark.
+            slot = next((i for i in range(_BOOKMARK_SLOTS)
+                         if _bookmark_at(i) == candidate), None)
+            # A hex literal is unambiguously an address; never let a missing
+            # bookmark at 0x10 silently delete an unrelated slot 16.
+            address_syntax = text.lower().startswith("0x") or any(
+                c in "abcdefABCDEF" for c in text)
+            if (slot is None and not address_syntax
+                    and 0 <= candidate < _BOOKMARK_SLOTS
+                    and _bookmark_at(candidate) is not None):
+                slot = candidate
+            if slot is None:
+                if address_syntax:
+                    return json.dumps({"error": f"No bookmark at {target}"})
+                if 0 <= candidate < _BOOKMARK_SLOTS:
+                    return json.dumps({
+                        "error": f"No bookmark in slot {candidate} (and none at {target})"})
+
     if slot is None:
         try:
-            ea = parse_addr(target)
+            ea = parse_addr(text)
         except ValueError as e:
             return json.dumps({"error": str(e)})
         slot = next((i for i in range(_BOOKMARK_SLOTS)

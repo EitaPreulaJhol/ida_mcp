@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -120,5 +121,24 @@ try:
 finally:
     discovery.probe_instance = _real_probe
 print("discovery probes only local addresses OK")
+
+# A corrupt instance file (string pid) used to raise TypeError from os.kill
+# and abort the whole scan, hiding every healthy instance.
+_probed.clear()
+discovery.probe_instance = _recording_probe
+discovery._LOCAL_ADDRESSES = {"127.0.0.1", "::1", "localhost"}
+try:
+    discovery.register_instance("127.0.0.1", 18990, os.getpid(), "b", "i", "gui")
+    bad_path = os.path.join(discovery.get_instances_dir(), "instance_18991.json")
+    with open(bad_path, "w", encoding="utf-8") as f:
+        json.dump({"host": "127.0.0.1", "port": 18991, "pid": "not-a-pid"}, f)
+    found = {e["port"]: e for e in discovery.discover_instances()}
+    assert 18990 in found, found
+    assert 18991 not in found, found
+    assert not os.path.exists(bad_path), bad_path
+    discovery.unregister_instance(18990)
+finally:
+    discovery.probe_instance = _real_probe
+print("malformed instance file is skipped, healthy ones survive OK")
 
 print("ALL DISCOVERY TESTS PASSED")

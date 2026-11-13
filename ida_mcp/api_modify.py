@@ -17,7 +17,7 @@ import idautils
 from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
-from .sync import check_cancelled
+from .sync import check_cancelled, CancelledError, IDASyncError
 from .api_analysis import parse_addr
 # aliased: this module's own ``get_original_bytes`` tool would shadow it
 from .compat import get_original_bytes as _compat_original_bytes
@@ -310,18 +310,29 @@ def revert_patch(
 @tool
 @idasync
 def list_patches() -> str:
-    """List all patches in the database (where current byte differs from original).
+    """List patches in the database (current byte differs from original).
 
-    Returns up to 1000 patches.
+    Scans every byte of every segment, so a patch after the first 100 KB of a
+    segment is not silently missed. Stops after 1000 patches; ``truncated`` is
+    set when that cap (or a cancellation) stopped the scan early.
     """
     ensure_analysis()
     results: list[dict] = []
+    truncated = False
+    partial = False
 
     for seg_ea in idautils.Segments():
         seg = ida_segment.getseg(seg_ea)
         if not seg:
             continue
-        for ea in range(seg.start_ea, min(seg.end_ea, seg.start_ea + 100000)):
+        for i, ea in enumerate(range(seg.start_ea, seg.end_ea)):
+            if i % 4096 == 0:
+                try:
+                    check_cancelled()
+                except (CancelledError, IDASyncError):
+                    partial = True
+                    truncated = True
+                    break
             try:
                 orig = ida_bytes.get_original_byte(ea)
                 curr = ida_bytes.get_byte(ea)
@@ -332,10 +343,15 @@ def list_patches() -> str:
                         "current": hex(curr),
                     })
                     if len(results) >= 1000:
+                        truncated = True
                         break
             except Exception:
                 continue
-        if len(results) >= 1000:
+        if truncated:
             break
 
-    return json.dumps({"patches": results, "count": len(results)}, indent=2)
+    out: dict = {"patches": results, "count": len(results),
+                 "truncated": truncated}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)

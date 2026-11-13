@@ -156,6 +156,16 @@ r = json.loads(mod.add_bookmark("0x5000", "next"))
 assert r["slot"] == 1, r
 print("address 0 is not treated as a free slot OK")
 
+# 7a) a numeric address below 256 is not forced to be a slot: the address
+#     form used to delete slot 16 instead of the bookmark at 0x10.
+reset()
+r = json.loads(mod.add_bookmark("0x10", "low address"))
+assert r["slot"] == 0, r
+r = json.loads(mod.delete_bookmark("0x10"))
+assert r == {"ok": True, "slot": 0}, r
+assert SLOTS == [], SLOTS
+print("low numeric addresses are deletable by address OK")
+
 # 7b) no description: 9.5 rejects an empty comment, so a space is sent and
 #     stripped back to "" when listing
 reset()

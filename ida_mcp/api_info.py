@@ -178,7 +178,11 @@ def get_problems() -> str:
 @tool
 @idasync
 def get_image_size() -> str:
-    """Get the image size (max_ea - min_ea) of the binary."""
+    """Get the original image bounds/size (``omax_ea - omin_ea``).
+
+    This is the image as loaded, not the current database extent; use
+    ``get_binary_info`` for the current ``min_ea``/``max_ea``.
+    """
     ensure_analysis()
     omin = ida_ida.inf_get_omin_ea()
     omax = ida_ida.inf_get_omax_ea()
