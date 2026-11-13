@@ -14,7 +14,7 @@ import idautils
 from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
-from .sync import check_cancelled
+from .sync import check_cancelled, CancelledError, IDASyncError
 from .api_analysis import clamp_limit, paginate, parse_addr
 
 
@@ -32,6 +32,14 @@ def _iter_strings():
         return
 
 
+
+
+def _iter_strings_checked():
+    """Yield ``(index, StringItem)`` with periodic cancellation polling."""
+    for i, si in enumerate(_iter_strings()):
+        if i % _SCAN_CANCEL_EVERY == 0:
+            check_cancelled()
+        yield i, si
 def _collect_rows(keep=None) -> tuple[list[dict], bool]:
     """Rows for the indexed strings, optionally filtered, bounded.
 
@@ -131,18 +139,30 @@ def get_strings_in_range(start: str, end: str, limit: int = 500) -> str:
     limit = clamp_limit(limit, 500, 10000)
     rows = []
     more = False
-    for si in _iter_strings():
-        if start_ea <= si.ea < end_ea:
-            if len(rows) >= limit:
-                # A limit-th match was found; probe once more so exactly
-                # ``limit`` total results are not reported as truncated.
-                more = True
+    capped = False
+    partial = False
+    try:
+        for i, si in _iter_strings_checked():
+            if i >= _MAX_STRINGS:
+                capped = True
                 break
-            rows.append(_row(si))
-    return json.dumps({"start": hex(start_ea), "end": hex(end_ea),
-                       "data": rows, "count": len(rows),
-                       "limit": limit,
-                       "truncated": more}, indent=2)
+            if start_ea <= si.ea < end_ea:
+                if len(rows) >= limit:
+                    # A limit-th match was found; probe once more so exactly
+                    # ``limit`` total results are not reported as truncated.
+                    more = True
+                    break
+                rows.append(_row(si))
+    except (CancelledError, IDASyncError):
+        partial = True
+    out: dict = {"start": hex(start_ea), "end": hex(end_ea),
+                 "data": rows, "count": len(rows), "limit": limit,
+                 "truncated": more}
+    if capped:
+        out["iterated_cap_reached"] = True
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool
@@ -150,11 +170,19 @@ def get_strings_in_range(start: str, end: str, limit: int = 500) -> str:
 def get_string_count() -> str:
     """Count all strings indexed in the binary (no item lists)."""
     ensure_analysis()
+    total = 0
+    partial = False
     try:
-        total = sum(1 for _ in _iter_strings())
+        for _i, _si in _iter_strings_checked():
+            total += 1
+    except (CancelledError, IDASyncError):
+        partial = True
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"total": total})
+    out: dict = {"total": total}
+    if partial:
+        out["partial"] = True
+    return json.dumps(out)
 
 
 @tool
@@ -180,14 +208,26 @@ def get_string_at(address: str) -> str:
         except Exception:
             value = bytes(raw).hex()
         return json.dumps({"addr": hex(ea), "value": value, "exact": True})
-    for si in _iter_strings():
-        try:
-            if si.ea <= ea < si.ea + si.length:
-                row = _row(si)
-                row["exact"] = False
-                return json.dumps(row)
-        except Exception:
-            continue
+    try:
+        for i, si in _iter_strings_checked():
+            if i >= _MAX_STRINGS:
+                return json.dumps({
+                    "addr": hex(ea), "value": None,
+                    "iterated_cap_reached": True,
+                    "error": "No string found in the first "
+                             f"{_MAX_STRINGS} indexed strings",
+                })
+            try:
+                if si.ea <= ea < si.ea + si.length:
+                    row = _row(si)
+                    row["exact"] = False
+                    return json.dumps(row)
+            except Exception:
+                continue
+    except (CancelledError, IDASyncError):
+        return json.dumps({"addr": hex(ea), "value": None,
+                           "partial": True,
+                           "error": "String search was cancelled"})
     return json.dumps({"addr": hex(ea), "value": None, "error": "No string at address"})
 
 
@@ -205,19 +245,32 @@ def search_strings(query: str, case_sensitive: bool = False,
     needle = query if case_sensitive else query.lower()
     rows = []
     more = False
-    for si in _iter_strings():
-        try:
-            value = str(si)
-        except Exception:
-            continue
-        hay = value if case_sensitive else value.lower()
-        if needle in hay:
-            if len(rows) >= limit:
-                more = True
+    capped = False
+    partial = False
+    try:
+        for i, si in _iter_strings_checked():
+            if i >= _MAX_STRINGS:
+                capped = True
                 break
-            rows.append(_row(si))
-    return json.dumps({"query": query, "data": rows, "count": len(rows),
-                       "limit": limit, "truncated": more}, indent=2)
+            try:
+                value = str(si)
+            except Exception:
+                continue
+            hay = value if case_sensitive else value.lower()
+            if needle in hay:
+                if len(rows) >= limit:
+                    more = True
+                    break
+                rows.append(_row(si))
+    except (CancelledError, IDASyncError):
+        partial = True
+    out: dict = {"query": query, "data": rows, "count": len(rows),
+                 "limit": limit, "truncated": more}
+    if capped:
+        out["iterated_cap_reached"] = True
+    if partial:
+        out["partial"] = True
+    return json.dumps(out, indent=2)
 
 
 @tool

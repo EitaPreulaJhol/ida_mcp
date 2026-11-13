@@ -161,9 +161,37 @@ try:
     assert r["count"] == 5, r
     assert r["iterated_cap_reached"] is True, r
     assert _cancel_polls, "check_cancelled() was never polled"
+    r = json.loads(mod.get_strings_in_range("0xDEAD0000", "0xDEAD1000", limit=5))
+    assert r["iterated_cap_reached"] is True, r
+    r = json.loads(mod.search_strings("no-such-string", limit=5))
+    assert r["iterated_cap_reached"] is True, r
+    r = json.loads(mod.get_string_count())
+    assert r["total"] == len(_STRS), r
 finally:
     del _STRS[4:]
 print("string iteration cap + cancel poll OK")
+
+# --- cancellation is reported as partial data, not a traceback -----------
+_orig_check = mod.check_cancelled
+
+
+def _cancel_now():
+    raise mod.CancelledError("cancelled")
+
+
+mod.check_cancelled = _cancel_now
+try:
+    r = json.loads(mod.get_strings_in_range("0x1000", "0x2000"))
+    assert r["partial"] is True, r
+    r = json.loads(mod.search_strings("hello"))
+    assert r["partial"] is True, r
+    r = json.loads(mod.get_string_count())
+    assert r["partial"] is True and r["total"] == 0, r
+    r = json.loads(mod.get_string_at("0xDEAD"))
+    assert r["partial"] is True and "cancelled" in r["error"].lower(), r
+finally:
+    mod.check_cancelled = _orig_check
+print("string scan cancellation -> partial OK")
 
 # --- oversized search limit is clamped to 5000 ---------------------------
 r = json.loads(mod.search_strings("e", limit=99999))

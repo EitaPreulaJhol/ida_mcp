@@ -25,6 +25,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and the previously defaulting/clamped tools return their maximum instead of
   the old default page. Applied limits are echoed where the payload has a
   `limit` field.
+- String scans are interruptible and bounded: `get_strings_in_range`,
+  `search_strings`, `get_string_count` and the fallback in `get_string_at`
+  poll cancellation and return `partial`/`iterated_cap_reached` instead of
+  freezing the IDA main thread until the full string table is walked.
 
 ## [0.3.0] - 2026-11-13
 
