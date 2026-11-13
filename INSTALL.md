@@ -335,6 +335,8 @@ After installing, type **`/ida`** or just "analyze the binary open in IDA" and t
 ```bash
 python3 tests/run_all.py              # all 47 harnesses
 python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift guard
+# Optional, licensed IDA installs: safe-tool sweep + folder loader per version
+IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib-matrix
 ```
 
 ---

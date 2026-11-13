@@ -119,6 +119,13 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
   once with signature defaults, and fails on exceptions or on a new
   deprecation warning from our files. This is the sweep that found the
   9.5 tool breakages.
+- **idalib version matrix** (`tests/idalib_matrix_test.py`, `make idalib-matrix`):
+  discovers installations with `idalib/python` (override with
+  `IDA_MCP_IDALIB_MATRIX=/opt/ida-8.5:/opt/ida-9.5`), then runs the safe-tool
+  sweep and the extracted modern `ida-mcp-bridge/` folder-loader check in a
+  separate subprocess per version. Use this before a release when 8.5, 9.0,
+  9.5 and 10.0 trees are installed; one process per version avoids idalib
+  cross-version initialization.
 - **IDAPython docs cross-check** (`tests/idadocs_crosscheck_test.py`): point
   `IDAPYTHON_DOCS_DIR` at a local copy of the official reference; it fails on
   new drift against an allowlist of known false positives. Skips if absent.

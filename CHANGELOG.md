@@ -47,6 +47,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   malformed JSON-RPC ids/params/batches, client regex ReDoS shapes and deep
   nesting, HTTP chunked framing/413/gzip caps, pagination boundaries, and
   MCP sessions/cancellation/progress/SSE close.
+- Opt-in IDA version matrix (`tests/idalib_matrix_test.py`, `make
+  idalib-matrix`): discovers installed IDA trees with `idalib/python`, runs
+  the safe-tool sweep and the extracted modern `ida-mcp-bridge/` folder-loader
+  check in an isolated subprocess per version, and skips cleanly without a
+  license or install.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)
