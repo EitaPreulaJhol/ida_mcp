@@ -387,7 +387,6 @@ assert json.loads(r["content"][0]["text"])["count"] == 4, r
 print("tools/call legacy count alias OK")
 
 # --- SSE streams must send EOF after stop(), not keep the socket alive ---
-import socket as _socket
 _sse = _socket.create_connection(("127.0.0.1", 18998), timeout=10)
 _sse.sendall(b"GET /mcp HTTP/1.1\r\nHost: 127.0.0.1:18998\r\n"
              b"Accept: text/event-stream\r\n\r\n")
