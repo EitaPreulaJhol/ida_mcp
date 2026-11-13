@@ -43,6 +43,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `ida_mcp_loader.py` is a thin entry-point shim. Namespaced entry-point
   loads no longer publish a bare `ida_mcp_loader` alias or create a second
   plugin class.
+- Dependency-free fuzz/conformance harness (`fuzz_conformance_test.py`) for
+  malformed JSON-RPC ids/params/batches, client regex ReDoS shapes and deep
+  nesting, HTTP chunked framing/413/gzip caps, pagination boundaries, and
+  MCP sessions/cancellation/progress/SSE close.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

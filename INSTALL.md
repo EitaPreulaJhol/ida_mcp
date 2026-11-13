@@ -333,7 +333,7 @@ After installing, type **`/ida`** or just "analyze the binary open in IDA" and t
 (Optional) run the offline test suite - no IDA needed, IDA modules are stubbed:
 
 ```bash
-python3 tests/run_all.py              # all 30 harnesses
+python3 tests/run_all.py              # all 47 harnesses
 python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift guard
 ```
 

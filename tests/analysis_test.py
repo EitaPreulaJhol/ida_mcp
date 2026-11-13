@@ -348,6 +348,23 @@ assert regs[0]["indirect"] is True and regs[0]["register"] == 0, regs
 assert regs[0]["register_name"] == "r0" and regs[0]["name"] == "<call r0>", regs
 print("get_callees basic OK")
 
+# --- pagination boundaries: limit <= 0 = all, offset past end = empty ---
+all_rows = _json.loads(mod.get_callees("0x1000"))
+for _lim in (0, -1, -100):
+    assert _json.loads(mod.get_callees("0x1000", limit=_lim)) == all_rows, _lim
+assert _json.loads(mod.get_callees("0x1000", offset=9999)) == []
+assert _json.loads(mod.get_callees("0x1000", limit=0, offset=1)) == all_rows[1:]
+for _bad in (None, True, "nope", [], {}, "NaN"):
+    assert mod.clamp_limit(_bad, 100, 5000) == 100, _bad
+for _zero in (0, -1, -999):
+    assert mod.clamp_limit(_zero, 100, 5000) == 5000, _zero
+assert mod.clamp_limit("0x10", 100, 5000) == 16
+assert mod.paginate([1, 2, 3], 0, 0) == ([1, 2, 3], None)
+assert mod.paginate([1, 2, 3], 1, 99) == ([2, 3], None)
+assert mod.paginate([1, 2, 3], 3, 1) == ([], None)
+assert mod.paginate([1, 2, 3], 4, 1) == ([], None)
+print("pagination boundaries OK")
+
 setup_module()
 r = mod.get_callees("0x9999")
 assert "No function" in r, f"expected no function: {r}"

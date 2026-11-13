@@ -60,6 +60,7 @@ TESTS = [
     "metrics_audit_test.py",
     "resources_test.py",
     "robustness_test.py",
+    "fuzz_conformance_test.py",
     "skills_sync_test.py",
     "packaging_test.py",
     "plugin_manifest_test.py",
