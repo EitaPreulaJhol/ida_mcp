@@ -68,6 +68,31 @@ class ToolInterrupt(BaseException):
         self.message = message
 """
 
+# The real ``clamp_int`` / ``_as_int`` from ``api_analysis``, for harnesses that
+# stub that sibling: they must behave identically, otherwise a clamp test would
+# be asserting the stub instead of the shipped policy.
+API_ANALYSIS_HELPERS = """
+def _as_int(value, default=0):
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, int):
+        return value
+    try:
+        text = str(value).strip()
+        try:
+            return int(text, 0)
+        except ValueError:
+            num = float(text)
+            return int(num) if num.is_integer() else default
+    except (TypeError, ValueError):
+        return default
+
+
+def clamp_int(value, default, hi):
+    n = _as_int(value, default)
+    return default if n <= 0 else min(n, hi)
+"""
+
 
 def package() -> types.ModuleType:
     """The bare ``ida_mcp`` package (created once; ``__init__`` never runs)."""

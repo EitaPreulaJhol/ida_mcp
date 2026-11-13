@@ -252,19 +252,23 @@ info = _load("info_types_info", "api_info.py", [
 
 tinfo = _load("info_types_tinfo", "api_typeinfo.py", [
     ("from .rpc import tool, unsafe", "tool = lambda f: f\nunsafe = lambda f: f"),
-    ("from .sync import idasync", "idasync = lambda f: f"),
+    ("from .sync import check_cancelled, idasync",
+     "def check_cancelled(): return None\nidasync = lambda f: f"),
     ("from .sync import ensure_analysis", "def ensure_analysis(): return None"),
     ("from .compat import get_func_cc, get_type_ordinal_limit",
      "get_type_ordinal_limit = lambda til=None: ida_typeinf.get_ordinal_limit(til)\n"
      "get_func_cc = lambda ftd: ftd.get_cc()"),
-    ("from .api_analysis import parse_addr, type_label",
+    ("from .api_analysis import _as_int, parse_addr, type_label",
      "def parse_addr(s):\n"
      "    s = str(s).strip()\n"
      "    if s.startswith('0x'): return int(s, 16)\n"
      "    try: return int(s)\n"
      "    except ValueError: raise ValueError(f'Unknown: {s}')\n"
      "def type_label(tif):\n"
-     "    return tif.get_type_name() or tif.dstr() or '<unnamed>'"),
+     "    return tif.get_type_name() or tif.dstr() or '<unnamed>'\n"
+     "def _as_int(value, default=0):\n"
+     "    try: return int(value)\n"
+     "    except (TypeError, ValueError): return default"),
 ])
 
 # =========================================================================
@@ -361,5 +365,17 @@ assert _waits == [True], "wait_for_analysis still waits"
 ida_auto.auto_wait = lambda: None
 ida_auto.auto_is_ok = lambda: True
 print("get_analysis_status is non-blocking OK")
+
+# --- type_query formats only the requested page --------------------------
+_fmt_calls = []
+_real_fmt = tinfo._format_tinfo
+tinfo._format_tinfo = lambda tif: _fmt_calls.append(1) or _real_fmt(tif)
+try:
+    r = json.loads(tinfo.type_query("", limit=1))
+finally:
+    tinfo._format_tinfo = _real_fmt
+assert [e["ordinal"] for e in r] == [1], r
+assert len(_fmt_calls) == 1, _fmt_calls
+print("type_query stops once the page is full OK")
 
 print("ALL INFO/TYPES TESTS PASSED")

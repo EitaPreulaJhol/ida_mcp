@@ -66,7 +66,7 @@ for _name in ("ida_bytes", "ida_lines", "idautils"):
 # Load api_comments.py (siblings stubbed)
 # =========================================================================
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 
 mod = load("api_comments", {
     "rpc": RPC_STUB,
@@ -78,7 +78,7 @@ mod = load("api_comments", {
     "    try:\n"
     "        return int(s, 0)\n"
     "    except ValueError:\n"
-    "        raise ValueError(f'Unknown address or name: {s}')",
+    "        raise ValueError(f'Unknown address or name: {s}')" + API_ANALYSIS_HELPERS,
     "compat": "def badaddr():\n"
     "    return 0xFFFFFFFFFFFFFFFF\n"
     "def get_extra_cmt(ea, what, index=0):\n"

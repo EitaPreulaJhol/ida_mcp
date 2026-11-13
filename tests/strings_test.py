@@ -54,7 +54,7 @@ sys.modules["idautils"] = idautils
 # Load api_strings.py
 # =========================================================================
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 mod = load("api_strings", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
@@ -70,11 +70,7 @@ mod = load("api_strings", {
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
-    "    except ValueError: raise ValueError(f'Unknown: {s}')\n"
-    "def clamp_int(value, default, hi):\n"
-    "    try: n = int(value)\n"
-    "    except (TypeError, ValueError): return default\n"
-    "    return default if n <= 0 else min(n, hi)",
+    "    except ValueError: raise ValueError(f'Unknown: {s}')" + API_ANALYSIS_HELPERS,
 }, alias="strings_test")
 
 # =========================================================================
@@ -154,5 +150,10 @@ try:
 finally:
     del _STRS[4:]
 print("string iteration cap + cancel poll OK")
+
+# --- oversized search limit is clamped to 5000 ---------------------------
+r = json.loads(mod.search_strings("e", limit=99999))
+assert r["limit"] == 5000, r
+print("search_strings limit clamped + echoed OK")
 
 print("ALL STRINGS TESTS PASSED")

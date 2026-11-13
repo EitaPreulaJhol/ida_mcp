@@ -450,4 +450,37 @@ assert mod.type_label(_BareTif()) == "<unnamed>"
 print("type_label OK")
 
 
+# --- get_callers(limit=0) means no cap -----------------------------------
+setup_module()
+_fake_functions[0x1000] = FakeFunc(0x1000, 0x1020)
+_fake_functions[0x1100] = FakeFunc(0x1100, 0x1120)
+_fake_func_names[0x1000] = "caller_a"
+_fake_func_names[0x1100] = "caller_b"
+_fake_code_refs_to.extend([0x1000, 0x1100])
+for _ea in (0x1000, 0x1100):
+    _fake_insn_mnems[_ea] = "call"
+    _fake_insn_itype[_ea] = ida_ua.NN_call
+    _fake_insn_ops[_ea] = [FakeOp(ida_ua.o_near, addr=0x2000)]
+r = _json.loads(mod.get_callers("0x2000", limit=0))
+assert {c["name"] for c in r} == {"caller_a", "caller_b"}, r
+print("get_callers limit=0 = no cap OK")
+
+# --- disasm: addr is the requested start, limit clamped to 500 -----------
+class _DisasmSeg:
+    start_ea = 0x7000
+    end_ea = 0x7000 + 500 * 4
+
+
+_orig_getseg = ida_segment.getseg
+ida_segment.getseg = lambda ea: _DisasmSeg() if 0x7000 <= ea < _DisasmSeg.end_ea else None
+try:
+    r = _json.loads(mod.disasm("0x7000", count=99999))
+finally:
+    ida_segment.getseg = _orig_getseg
+assert r["limit"] == 500, r
+assert r["addr"] == "0x7000", r          # requested address, not the end
+assert r["next_ea"] == hex(_DisasmSeg.end_ea), r
+assert len(r["instructions"]) == 500, len(r["instructions"])
+print("disasm addr/limit OK")
+
 print("\nALL ANALYSIS TESTS PASSED")

@@ -12,9 +12,9 @@ import ida_nalt
 import ida_typeinf
 
 from .rpc import tool, unsafe
-from .sync import idasync
+from .sync import check_cancelled, idasync
 from .sync import ensure_analysis
-from .api_analysis import parse_addr, type_label
+from .api_analysis import _as_int, parse_addr, type_label
 from .compat import get_func_cc, get_type_ordinal_limit
 
 
@@ -136,25 +136,37 @@ def type_query(
 
     Optionally filter by a case-insensitive substring match on type names.
     Returns type names, sizes, and kinds. Paginated: at most ``limit`` types
-    from ``offset`` (``limit=0`` = no cap); a full page means more may follow.
+    from ``offset`` (``limit=0`` = no cap, positive values clamped to 5000);
+    a full page means more may follow. Enumeration stops as soon as the page
+    is full, so the whole til is not formatted for a small request.
     """
     ensure_analysis()
-    results: list[dict] = []
     til = _get_idati()
 
+    limit_n = _as_int(limit, 1000)
+    if limit_n > 5000:
+        limit_n = 5000
+    offset_n = max(_as_int(offset, 0), 0)
+
+    page: list[dict] = []
+    matched = 0
     # Enumerate ordinal-based types from the type library
     # (``get_ordinal_qty``/``get_ordinal_limit`` is an exclusive bound).
     for ordinal in range(1, get_type_ordinal_limit(til)):
+        if ordinal % 256 == 0:
+            check_cancelled()
         tif = ida_typeinf.tinfo_t()
-        if tif.get_numbered_type(til, ordinal):
-            info = _format_tinfo(tif)
-            if not filter or filter.lower() in info.get("name", "").lower():
-                results.append({
-                    "ordinal": ordinal,
-                    **info,
-                })
+        if not tif.get_numbered_type(til, ordinal):
+            continue
+        name = tif.get_type_name() or "<unnamed>"
+        if filter and filter.lower() not in name.lower():
+            continue
+        if matched >= offset_n:
+            page.append({"ordinal": ordinal, **_format_tinfo(tif)})
+            if limit_n > 0 and len(page) >= limit_n:
+                break
+        matched += 1
 
-    page = results[offset:] if limit <= 0 else results[offset:offset + limit]
     return json.dumps(page, indent=2)
 
 
@@ -306,16 +318,21 @@ def search_structs(
     til = _get_idati()
 
     for ordinal in range(1, get_type_ordinal_limit(til)):
+        if ordinal % 256 == 0:
+            check_cancelled()
         tif = ida_typeinf.tinfo_t()
-        if tif.get_numbered_type(til, ordinal):
-            if tif.is_struct() or tif.is_union():
-                info = _format_tinfo(tif)
-                name = info.get("name", "")
-                if not filter or filter.lower() in name.lower():
-                    results.append({
-                        "ordinal": ordinal,
-                        **info,
-                    })
+        if not tif.get_numbered_type(til, ordinal):
+            continue
+        if not (tif.is_struct() or tif.is_union()):
+            continue
+        # Filter on the (cheap) name before formatting the whole type.
+        name = tif.get_type_name() or "<unnamed>"
+        if filter and filter.lower() not in name.lower():
+            continue
+        results.append({
+            "ordinal": ordinal,
+            **_format_tinfo(tif),
+        })
 
     return json.dumps(results, indent=2)
 

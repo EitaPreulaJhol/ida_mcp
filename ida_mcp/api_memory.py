@@ -22,6 +22,7 @@ from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
 from .api_analysis import parse_addr, read_bytes_bss_safe, resolve_addr
+from .api_analysis import clamp_int
 from .compat import inf_get_max_ea, inf_get_min_ea, is_loaded
 
 
@@ -329,15 +330,18 @@ def get_prev_addr(address: str) -> str:
 @tool
 @idasync
 def get_heads(start: str, end: str, limit: int = 200) -> str:
-    """Enumerate defined items (heads) in ``[start, end)`` (capped)."""
+    """Enumerate defined items (heads) in ``[start, end)`` (capped).
+
+    ``limit`` is clamped to [1, 10000] (0/oversized -> the default 200) and the
+    applied value is echoed in the payload.
+    """
     ensure_analysis()
     try:
         start_ea = parse_addr(start)
         end_ea = parse_addr(end)
     except ValueError as e:
         return json.dumps({"error": str(e)})
-    if limit <= 0 or limit > 10000:
-        limit = 200
+    limit = clamp_int(limit, 200, 10000)
     heads: list[str] = []
     try:
         for ea in idautils.Heads(start_ea, end_ea):
@@ -347,7 +351,7 @@ def get_heads(start: str, end: str, limit: int = 200) -> str:
     except Exception as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"start": hex(start_ea), "end": hex(end_ea),
-                       "heads": heads, "count": len(heads),
+                       "heads": heads, "count": len(heads), "limit": limit,
                        "truncated": len(heads) >= limit})
 
 
@@ -393,14 +397,14 @@ def get_disassembly_text(address: str, count: int = 50) -> str:
     """Plain-text disassembly (``addr: text`` lines) from an address.
 
     Lighter than ``disasm`` (no JSON structure) for token-efficient reads.
-    ``count`` is capped at 500.
+    ``count`` is clamped to [1, 500] (0/oversized -> the default 50) and the
+    applied value is echoed in the payload.
     """
     ensure_analysis()
     ea, err = resolve_addr(address)
     if err:
         return err
-    if count <= 0 or count > 500:
-        count = 50
+    count = clamp_int(count, 50, 500)
     lines: list[str] = []
     try:
         for _ in range(count):
@@ -411,7 +415,7 @@ def get_disassembly_text(address: str, count: int = 50) -> str:
             ea = ida_bytes.next_head(ea, inf_get_max_ea())
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"lines": lines, "count": len(lines)})
+    return json.dumps({"lines": lines, "count": len(lines), "limit": count})
 
 
 __all__ = [

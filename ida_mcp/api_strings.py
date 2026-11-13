@@ -174,10 +174,13 @@ def get_string_at(address: str) -> str:
 @idasync
 def search_strings(query: str, case_sensitive: bool = False,
                    limit: int = 100) -> str:
-    """Substring search across all indexed strings (capped)."""
+    """Substring search across all indexed strings (capped).
+
+    ``limit`` is clamped to [1, 5000] (0/oversized -> the default 100) and the
+    applied value is echoed as ``limit``.
+    """
     ensure_analysis()
-    if limit <= 0 or limit > 5000:
-        limit = 100
+    limit = clamp_int(limit, 100, 5000)
     needle = query if case_sensitive else query.lower()
     rows = []
     for si in _iter_strings():
@@ -191,7 +194,7 @@ def search_strings(query: str, case_sensitive: bool = False,
             if len(rows) >= limit:
                 break
     return json.dumps({"query": query, "data": rows, "count": len(rows),
-                       "truncated": len(rows) >= limit}, indent=2)
+                       "limit": limit, "truncated": len(rows) >= limit}, indent=2)
 
 
 @tool

@@ -12,9 +12,9 @@ import idautils
 import idc
 
 from .rpc import tool, unsafe
-from .sync import idasync
+from .sync import (idasync, check_cancelled, CancelledError, IDASyncError)
 from .sync import ensure_analysis
-from .api_analysis import parse_addr
+from .api_analysis import _as_int, parse_addr
 from .compat import badaddr, get_extra_cmt, get_extra_cmt_qty
 
 
@@ -79,14 +79,24 @@ def get_all_comments(limit: int = 500, offset: int = 0) -> str:
     Paginated: returns at most ``limit`` comments starting at ``offset``
     (``limit=0`` = no cap). When ``next_offset`` is present, more comments
     follow — advance ``offset`` to continue. The scan stops once a full page is
-    collected, so it stays cheap on large databases.
+    collected, so it stays cheap on large databases, and polls
+    ``check_cancelled()`` so the walk can be interrupted.
     """
     ensure_analysis()
+    limit = _as_int(limit, 500)
+    offset = max(_as_int(offset, 0), 0)
     results: list[dict] = []
     # Collect one past the page end (when capped) to detect whether more exist.
     hard = None if limit <= 0 else offset + limit + 1
 
-    for ea in idautils.Heads():
+    partial = False
+    for i, ea in enumerate(idautils.Heads()):
+        if i % 4096 == 0:
+            try:
+                check_cancelled()
+            except (CancelledError, IDASyncError):
+                partial = True
+                break
         cmt = ida_bytes.get_cmt(ea, False)
         if cmt:
             results.append({"address": hex(ea), "comment": cmt, "type": "regular"})
@@ -100,8 +110,12 @@ def get_all_comments(limit: int = 500, offset: int = 0) -> str:
 
     page = results[offset:] if limit <= 0 else results[offset:offset + limit]
     out = {"comments": page, "count": len(page), "offset": offset}
+    if limit > 0:
+        out["limit"] = limit
     if limit > 0 and len(results) > offset + limit:
         out["next_offset"] = offset + limit
+    if partial:
+        out["partial"] = True
     return json.dumps(out, indent=2)
 
 

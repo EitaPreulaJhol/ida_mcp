@@ -100,13 +100,14 @@ for _name in ("idautils", "idc", "ida_nalt", "ida_funcs"):
 # =========================================================================
 
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 
 compat = load("compat")  # the real shim, against the 9.4-shaped stubs above
 analysis = types.ModuleType("ida_mcp.api_analysis")
 analysis.parse_addr = lambda s: (int(str(s).strip(), 16) if str(s).strip().startswith("0x")
                                  else int(str(s).strip()))
 analysis.type_label = lambda tif: "<unnamed>"
+exec(API_ANALYSIS_HELPERS, analysis.__dict__)
 _siblings = {"rpc": RPC_STUB, "sync": SYNC_STUB, "api_analysis": analysis, "compat": compat}
 
 comments = load("api_comments", _siblings)

@@ -193,13 +193,14 @@ for _name in ("ida_bytes", "ida_gdl", "ida_name", "idautils"):
 # Load compat.py + api_functions.py (relative imports redirected to stubs)
 # =========================================================================
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 
 compat = load("compat")
 analysis_stub = types.ModuleType("ida_mcp.api_analysis")
 analysis_stub.parse_addr = lambda s: (int(str(s).strip(), 16) if str(s).strip().startswith("0x")
                                       else int(str(s).strip()))
 analysis_stub.type_label = lambda tif: tif.get_type_name() or tif.dstr() or "<unnamed>"
+exec(API_ANALYSIS_HELPERS, analysis_stub.__dict__)
 mod = load("api_functions", {"rpc": RPC_STUB, "sync": SYNC_STUB,
                              "api_analysis": analysis_stub, "compat": compat})
 
@@ -268,5 +269,25 @@ assert r["calling_convention"] == "stdcall", r
 assert r["return_type"] == "int", r
 assert r["arguments"] == [{"name": "argc", "type": "int"}], r
 print("get_function_signature cc OK")
+
+# --- func_count is O(1): get_func_qty, never Functions() -----------------
+_idautils = sys.modules["idautils"]
+_idautils.Functions = lambda: iter([0x1000, 0x2000])
+ida_funcs.get_func_qty = lambda: 2
+_real_functions = _idautils.Functions
+_idautils.Functions = lambda: (_ for _ in ()).throw(
+    AssertionError("func_count must not walk Functions()"))
+r = json.loads(mod.func_count())
+assert r["count"] == 2, r
+print("func_count uses get_func_qty OK")
+_idautils.Functions = _real_functions
+
+# --- list_funcs: count=0 means no cap, oversized clamps to 1000 -----------
+_idautils.Functions = lambda: iter([0x1000, 0x2000])
+r = json.loads(mod.list_funcs(offset=0, count=0))
+assert len(r["data"]) == 2 and r["limit"] == 0 and r["total"] == 2, r
+r = json.loads(mod.list_funcs(offset=0, count=99999))
+assert r["limit"] == 1000 and len(r["data"]) == 2, r
+print("list_funcs count=0 / oversized OK")
 
 print("ALL FUNCTIONS TESTS PASSED")

@@ -41,6 +41,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   The two warnings emitted by `idautils`' own `Functions()`/`FuncItems()`
   iterators are filtered in `compat`, the only place that installs warning
   filters.
+- Pagination limits are clamped to each tool's documented maximum instead of
+  being silently reset to the default (xref, head, name, string, search and
+  disassembly tools); the applied value is echoed as `limit`. `disasm` now
+  reports the requested address in `addr` and the stop address in `next_ea`
+  (it used to report the end address in `addr`).
+- `limit=0` consistently means "no cap": `get_callers` returned an empty list
+  and `list_funcs(count=0)` an empty page; `list_funcs` also clamps oversized
+  counts to 1000.
+- `func_count` uses `ida_funcs.get_func_qty()` (O(1)) instead of walking the
+  whole function list.
+- `type_query` stops as soon as the requested page is full (it formatted every
+  type in the til first), `search_structs` filters on the name before
+  formatting, and both poll `check_cancelled()`. `get_all_comments` polls it
+  too and reports `partial` when interrupted.
 
 ## [0.2.2] - 2026-11-10
 

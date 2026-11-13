@@ -17,7 +17,7 @@ import idc
 from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import parse_addr, type_label
+from .api_analysis import _as_int, parse_addr, type_label
 from .compat import (FUNC_STATIC, frame_soff, frame_udt_members, get_cc_name,
                      get_func_cc, get_func_comment, get_func_regvars,
                      get_frame_size, get_frame_tinfo, is_frame_arg)
@@ -37,19 +37,23 @@ def list_funcs(
     """List functions with pagination support.
 
     ``offset``: starting position (0-based).
-    ``count``: number of functions to return (max 1000).
-    Returns JSON array of ``{addr, name, size}`` objects.
+    ``count``: number of functions to return (max 1000; ``count=0`` means no
+    cap -- a full page means more may follow).
+    Returns JSON with ``{addr, name, size}`` objects, plus ``total`` and the
+    applied ``limit``.
     """
     ensure_analysis()
-    count = min(int(count), 1000)
-    offset = max(int(offset), 0)
+    count = _as_int(count, 100)
+    if count > 1000:
+        count = 1000
+    offset = max(_as_int(offset, 0), 0)
 
     # Single pass: the old code walked Functions() twice (page + total),
     # doubling main-thread hold time on large binaries.
     funcs: list[dict] = []
     total = 0
     for ea in idautils.Functions():
-        if total >= offset and len(funcs) < count:
+        if total >= offset and (count <= 0 or len(funcs) < count):
             name = ida_funcs.get_func_name(ea)
             fn = ida_funcs.get_func(ea)
             funcs.append({
@@ -59,7 +63,8 @@ def list_funcs(
             })
         total += 1
 
-    return json.dumps({"data": funcs, "total": total, "offset": offset, "count": len(funcs)}, indent=2)
+    return json.dumps({"data": funcs, "total": total, "offset": offset,
+                       "count": len(funcs), "limit": count}, indent=2)
 
 
 @tool
@@ -67,7 +72,17 @@ def list_funcs(
 def func_count() -> str:
     """Get the total number of functions in the binary."""
     ensure_analysis()
-    total = len(list(idautils.Functions()))
+    # get_func_qty() is O(1) in the kernel; len(list(Functions())) walks every
+    # function and holds the main thread for the whole database.
+    qty = getattr(ida_funcs, "get_func_qty", None)
+    total = None
+    if callable(qty):
+        try:
+            total = int(qty())
+        except Exception:
+            total = None
+    if total is None:
+        total = len(list(idautils.Functions()))
     return json.dumps({"count": total})
 
 

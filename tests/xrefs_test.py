@@ -99,7 +99,7 @@ sys.modules["idautils"] = idautils
 # Load api_xrefs.py
 # =========================================================================
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 mod = load("api_xrefs", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
@@ -115,7 +115,7 @@ mod = load("api_xrefs", {
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
-    "    except ValueError: raise ValueError(f'Unknown: {s}')",
+    "    except ValueError: raise ValueError(f'Unknown: {s}')" + API_ANALYSIS_HELPERS,
     "compat": "badaddr = lambda: -1",
 }, alias="xrefs_test")
 
@@ -181,5 +181,12 @@ print("xrefs_to_field OK")
 r = json.loads(mod.get_xrefs("bogus"))
 assert "error" in r, r
 print("bad address OK")
+
+# --- oversized limit is clamped to the documented maximum, not reset ------
+r = json.loads(mod.get_xrefs("0x1000", limit=99999))
+assert r["limit"] == 5000, r
+r = json.loads(mod.get_xrefs("0x1000", limit=0))
+assert r["limit"] == 100, r
+print("xref limit clamped + echoed OK")
 
 print("ALL XREFS TESTS PASSED")

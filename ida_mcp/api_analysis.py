@@ -352,6 +352,8 @@ def get_callees(address: str, limit: int = 100, offset: int = 0) -> str:
         current_ea = idc.next_head(current_ea, func.end_ea)
 
     rows = list(callees.values())
+    limit = _as_int(limit, 100)
+    offset = max(_as_int(offset, 0), 0)
     page = rows[offset:] if limit <= 0 else rows[offset:offset + limit]
     return json.dumps(page, indent=2)
 
@@ -371,8 +373,9 @@ def get_callers(address: str, limit: int = 50) -> str:
         return json.dumps({"error": str(e)})
 
     callers_dict: dict[int, dict] = {}
+    limit = _as_int(limit, 50)
     for caller_ea in idautils.CodeRefsTo(ea, 0):
-        if len(callers_dict) >= limit:
+        if limit > 0 and len(callers_dict) >= limit:
             break
         # Verify this is actually a call instruction, not just any code ref.
         insn = ida_ua.insn_t()
@@ -764,8 +767,7 @@ def find_bytes(pattern: str, limit: int = 100, offset: int = 0) -> str:
     """
     ensure_analysis()
 
-    if limit <= 0 or limit > 10000:
-        limit = 10000
+    limit = clamp_int(limit, 10000, 10000)
     if offset < 0:
         offset = 0
 
@@ -853,18 +855,19 @@ def list_strings(filter_pattern: str = "*", offset: int = 0, count: int = 100) -
 def disasm(address: str, count: int = 50) -> str:
     """Disassemble instructions starting at the given address or name.
 
-    Returns a JSON array of ``{addr, instruction, label?}`` objects.
-    Use ``count`` to limit the number of instructions (max 500).
+    Returns a JSON object with ``addr`` (the requested address), ``next_ea``
+    (where the walk stopped), ``instructions`` and the applied ``limit``.
+    ``count`` is clamped to [1, 500] (0/oversized -> the default 50).
     """
     ensure_analysis()
     try:
-        ea = parse_addr(address)
+        start_ea = parse_addr(address)
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    if count <= 0 or count > 500:
-        count = 50
+    count = clamp_int(count, 50, 500)
 
+    ea = start_ea
     seg = ida_segment.getseg(ea)
     if not seg:
         return json.dumps({"error": f"No segment at {address}"})
@@ -887,7 +890,10 @@ def disasm(address: str, count: int = 50) -> str:
     if not lines:
         return json.dumps({"error": "Could not disassemble at this address"})
 
-    return json.dumps({"addr": hex(ea), "instructions": lines, "count": len(lines)}, indent=2)
+    return json.dumps({"addr": hex(start_ea),
+                       "next_ea": hex(ea) if ea != idaapi.BADADDR else None,
+                       "instructions": lines, "count": len(lines),
+                       "limit": count}, indent=2)
 
 
 @tool

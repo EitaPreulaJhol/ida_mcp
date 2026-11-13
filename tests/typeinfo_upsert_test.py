@@ -222,7 +222,7 @@ sys.modules["ida_typeinf"] = ida_typeinf
 # =========================================================================
 
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 tinfo = load("api_typeinfo", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
@@ -234,7 +234,7 @@ tinfo = load("api_typeinfo", {
     "        return int(s, 16)\n"
     "    return int(s)\n"
     "def type_label(tif):\n"
-    "    return tif.get_type_name() or '<unnamed>'",
+    "    return tif.get_type_name() or '<unnamed>'" + API_ANALYSIS_HELPERS,
 }, alias="ti_upsert_typeinfo")
 
 # =========================================================================

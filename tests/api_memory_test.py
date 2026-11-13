@@ -74,7 +74,7 @@ sys.modules["idautils"] = idautils
 # Load api_memory.py
 # =========================================================================
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 mod = load("api_memory", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
@@ -97,7 +97,7 @@ mod = load("api_memory", {
     "    for start, data in base.items():\n"
     "        if start <= ea < start + len(data):\n"
     "            return data[ea - start:ea - start + size]\n"
-    "    return None",
+    "    return None" + API_ANALYSIS_HELPERS,
     "compat": "inf_get_max_ea = lambda: 0x3000\n"
     "inf_get_min_ea = lambda: 0x1000\n"
     "is_loaded = lambda ea: not (0x2000 <= ea < 0x2100)",
@@ -171,5 +171,12 @@ print("get_disassembly_text OK")
 r = json.loads(mod.get_byte("nope"))
 assert "error" in r, r
 print("bad address OK")
+
+# --- oversized limits are clamped and echoed ------------------------------
+r = json.loads(mod.get_heads("0x1000", "0x1010", limit=99999))
+assert r["limit"] == 10000, r
+r = json.loads(mod.get_disassembly_text("0x1000", count=99999))
+assert r["limit"] == 500, r
+print("head/disassembly limits clamped + echoed OK")
 
 print("ALL MEMORY SCALAR TESTS PASSED")
