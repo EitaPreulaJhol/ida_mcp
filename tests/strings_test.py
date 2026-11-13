@@ -142,7 +142,7 @@ r = json.loads(mod.list_strings(limit=99999))
 assert r["limit"] == 5000, r          # clamped to the cap
 assert r["count"] == 4, r            # all four fake strings fit
 r = json.loads(mod.list_strings(limit=0))
-assert r["limit"] == 100, r           # non-positive -> documented default
+assert r["limit"] == 5000, r          # non-positive -> documented maximum
 r = json.loads(mod.get_ascii_strings(limit=99999))
 assert r["limit"] == 5000, r
 r = json.loads(mod.get_strings_by_length(limit=99999))

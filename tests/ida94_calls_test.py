@@ -91,8 +91,12 @@ ida_name = types.ModuleType("ida_name")
 ida_name.get_ea_name = lambda ea: "sub_1000"
 sys.modules["ida_name"] = ida_name
 
-for _name in ("idautils", "idc", "ida_nalt", "ida_funcs"):
+for _name in ("idautils", "ida_nalt", "ida_funcs"):
     sys.modules[_name] = types.ModuleType(_name)
+
+idc = types.ModuleType("idc")
+idc.next_head = lambda ea, end: ea + 4 if ea + 4 < end else end
+sys.modules["idc"] = idc
 
 
 
@@ -152,6 +156,9 @@ assert "out of range" in r["error"], r
 # OverflowError instead of returning a tool-level error.
 r = instructions.get_operand("0x1000", -1)
 assert "No operand -1" in r, r
+# limit=0 means the documented maximum (500), not one instruction.
+r = json.loads(instructions.get_instructions("0x1000", limit=0))
+assert r["limit"] == 500, r
 print("register name via ida_idp OK / negative operand index handled")
 
 print("ALL IDA94 CALLS TESTS PASSED")

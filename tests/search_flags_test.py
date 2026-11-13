@@ -69,6 +69,22 @@ def _find_imm(ea, sflag, search_value):
 ida_search.find_imm = _find_imm
 sys.modules["ida_search"] = ida_search
 
+
+class _FakeString:
+    def __init__(self, ea, value):
+        self.ea = ea
+        self._value = value
+        self.length = len(value)
+
+    def __str__(self):
+        return self._value
+
+
+idautils = types.ModuleType("idautils")
+idautils.Strings = lambda: iter([_FakeString(0x1000, "hello"),
+                                 _FakeString(0x1010, "world")])
+sys.modules["idautils"] = idautils
+
 # =========================================================================
 # Load api_search.py
 # =========================================================================
@@ -79,7 +95,13 @@ mod = load("api_search", {
     "rpc": RPC_STUB,
     "sync": SYNC_STUB,
     "compat": "inf_get_min_ea = lambda: 0x1000\ninf_get_max_ea = lambda: 0x3000",
-    "api_analysis": "def parse_addr(s):\n"
+    "api_analysis": "def clamp_limit(value, default, hi):\n"
+    "    try: n = int(value, 0)\n"
+    "    except (TypeError, ValueError):\n"
+    "        try: n = int(value)\n"
+    "        except (TypeError, ValueError): n = int(default)\n"
+    "    return hi if n <= 0 else min(n, hi)\n"
+    "def parse_addr(s):\n"
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
@@ -123,6 +145,10 @@ r = json.loads(mod.find_text_between("hello", "0x1000", "0x2000"))
 assert r["count"] == 0 and r["matches"] == [], r
 assert len(_CALLS) == 1, _CALLS
 print("find_text_between flags + range guard OK")
+
+r = json.loads(mod.find_regex("hello", limit=0))
+assert r["limit"] == 500 and r["count"] == 1, r
+print("find_regex limit=0 -> documented maximum OK")
 
 # --- search_bytes scans the image, not the whole address space (6.1) ---
 _FIND_CALLS = []

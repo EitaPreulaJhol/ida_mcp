@@ -185,6 +185,10 @@ r = json.loads(mod.get_heads("0x1000", "0x1010", limit=99999))
 assert r["limit"] == 10000, r
 r = json.loads(mod.get_disassembly_text("0x1000", limit=99999))
 assert r["limit"] == 500, r
+r = json.loads(mod.get_heads("0x1000", "0x1010", limit=0))
+assert r["limit"] == 10000, r
+r = json.loads(mod.get_disassembly_text("0x1000", limit=0))
+assert r["limit"] == 500, r
 print("head/disassembly limits clamped + echoed OK")
 
 print("ALL MEMORY SCALAR TESTS PASSED")

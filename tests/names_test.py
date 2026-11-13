@@ -185,11 +185,11 @@ mod.make_name_non_public("0x1000")
 assert json.loads(mod.is_name_public("0x1000"))["is_public"] is False
 print("make_name_public/non_public OK")
 
-# --- oversized count is clamped to 5000, zero means the default -----------
+# --- oversized count is clamped to 5000, zero means the maximum -----------
 r = json.loads(mod.get_all_names("*", 0, 99999))
 assert r["limit"] == 5000, r
 r = json.loads(mod.get_all_names("*", 0, 0))
-assert r["limit"] == 100, r
+assert r["limit"] == 5000, r
 print("get_all_names limit clamped + echoed OK")
 
 print("ALL NAMES TESTS PASSED")

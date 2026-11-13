@@ -22,7 +22,7 @@ from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
 from .api_analysis import parse_addr, read_bytes_bss_safe, resolve_addr
-from .api_analysis import clamp_int
+from .api_analysis import clamp_limit
 from .compat import inf_get_max_ea, inf_get_min_ea, is_loaded
 
 
@@ -374,7 +374,7 @@ def get_prev_addr(address: str) -> str:
 def get_heads(start: str, end: str, limit: int = 200) -> str:
     """Enumerate defined items (heads) in ``[start, end)`` (capped).
 
-    ``limit`` is clamped to [1, 10000] (0/oversized -> the default 200) and the
+    ``limit`` is clamped to [1, 10000] (0/negative -> 10000; oversized -> 10000) and the
     applied value is echoed in the payload.
     """
     ensure_analysis()
@@ -383,7 +383,7 @@ def get_heads(start: str, end: str, limit: int = 200) -> str:
         end_ea = parse_addr(end)
     except ValueError as e:
         return json.dumps({"error": str(e)})
-    limit = clamp_int(limit, 200, 10000)
+    limit = clamp_limit(limit, 200, 10000)
     heads: list[str] = []
     more = False
     try:
@@ -443,7 +443,7 @@ def get_disassembly_text(address: str, limit: int = 50) -> str:
     """Plain-text disassembly (``addr: text`` lines) from an address.
 
     Lighter than ``disasm`` (no JSON structure) for token-efficient reads.
-    ``limit`` is clamped to [1, 500] (0/oversized -> the default 50) and the
+    ``limit`` is clamped to [1, 500] (0/negative -> 500; oversized -> 500) and the
     applied value is echoed in the payload; the deprecated ``count`` argument
     is mapped to ``limit`` by the server.
     """
@@ -451,7 +451,7 @@ def get_disassembly_text(address: str, limit: int = 50) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 50, 500)
+    limit = clamp_limit(limit, 50, 500)
     lines: list[str] = []
     try:
         for _ in range(limit):

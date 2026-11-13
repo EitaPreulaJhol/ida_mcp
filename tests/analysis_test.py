@@ -251,6 +251,8 @@ _fake_functions[0x401000] = FakeFunc(0x401000, 0x401100)
 r = mod.get_xrefs_to("0x1234")
 assert "401000" in r and "402000" in r, f"expected xrefs: {r}"
 assert "code" in r and "data" in r, f"expected types: {r}"
+r = json.loads(mod.get_xrefs_to("0x1234", limit=0))
+assert r["limit"] == 5000 and r["count"] == 2, r
 print("get_xrefs_to basic OK")
 
 setup_module()
@@ -272,6 +274,8 @@ _fake_functions[0x401000] = FakeFunc(0x401000, 0x401100)
 
 r = mod.xref_query("0x1234", direction="both")
 assert "401000" in r, f"expected xref in xref_query: {r}"
+r = json.loads(mod.xref_query("0x1234", direction="both", limit=0))
+assert r["limit"] == 5000 and r["count"] >= 1, r
 print("xref_query basic OK")
 
 setup_module()
@@ -354,6 +358,14 @@ print("lookup_funcs basic OK")
 r = mod.lookup_funcs("0x9999")
 assert "No function" in r, f"expected no function: {r}"
 print("lookup_funcs no function OK")
+
+# --- pagination limit helper: one contract for every paginated tool ---
+assert mod.clamp_limit(0, 100, 5000) == 5000
+assert mod.clamp_limit(-5, 100, 5000) == 5000
+assert mod.clamp_limit(99999, 100, 5000) == 5000
+assert mod.clamp_limit("10", 100, 5000) == 10
+assert mod.clamp_limit(100, 100, 5000) == 100
+print("clamp_limit contract OK")
 
 # --- int_convert ---
 

@@ -19,7 +19,7 @@ import idautils
 from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import clamp_int, parse_addr
+from .api_analysis import clamp_limit, parse_addr
 from .compat import del_name
 
 
@@ -68,13 +68,13 @@ def get_name(address: str) -> str:
 def get_all_names(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -> str:
     """List all names in the IDB with glob filtering and pagination.
 
-    ``limit`` is clamped to [1, 5000] (0/oversized -> the default 100) and the
+    ``limit`` is clamped to [1, 5000] (0/negative -> 5000; oversized -> 5000) and the
     applied value is echoed; the deprecated ``count`` argument is mapped to
     ``limit`` by the server.
     """
     ensure_analysis()
 
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
     offset = max(int(offset), 0)
 
     names_list: list[dict] = []

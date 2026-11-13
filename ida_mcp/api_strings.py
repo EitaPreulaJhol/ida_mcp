@@ -15,7 +15,7 @@ from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
 from .sync import check_cancelled
-from .api_analysis import clamp_int, paginate, parse_addr
+from .api_analysis import clamp_limit, paginate, parse_addr
 
 
 # Upper bound on how many entries a single enumeration may scan. Big binaries
@@ -99,11 +99,11 @@ def list_strings(filter_pattern: str = "*", offset: int = 0,
     """List strings with glob filtering and pagination.
 
     ``filter_pattern`` uses fnmatch (e.g. ``"*error*"``). ``limit`` is clamped
-    to [1, 5000] (0/oversized -> the default 100); the deprecated ``count``
+    to [1, 5000] (0/negative -> 5000; oversized -> 5000); the deprecated ``count``
     argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
 
     def _match(row, pattern=filter_pattern):
         return pattern in ("", "*") or fnmatch.fnmatch(row["value"], pattern)
@@ -128,7 +128,7 @@ def get_strings_in_range(start: str, end: str, limit: int = 500) -> str:
         end_ea = parse_addr(end)
     except ValueError as e:
         return json.dumps({"error": str(e)})
-    limit = clamp_int(limit, 500, 10000)
+    limit = clamp_limit(limit, 500, 10000)
     rows = []
     more = False
     for si in _iter_strings():
@@ -197,11 +197,11 @@ def search_strings(query: str, case_sensitive: bool = False,
                    limit: int = 100) -> str:
     """Substring search across all indexed strings (capped).
 
-    ``limit`` is clamped to [1, 5000] (0/oversized -> the default 100) and the
+    ``limit`` is clamped to [1, 5000] (0/negative -> 5000; oversized -> 5000) and the
     applied value is echoed as ``limit``.
     """
     ensure_analysis()
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
     needle = query if case_sensitive else query.lower()
     rows = []
     more = False
@@ -230,7 +230,7 @@ def get_strings_by_length(min_length: int = 1, max_length: int = 0,
     mapped to ``limit`` by the server.
     """
     ensure_analysis()
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
     rows, capped = _collect_rows(
         lambda row: row["length"] >= min_length
         and (max_length <= 0 or row["length"] <= max_length))
@@ -248,7 +248,7 @@ def get_strings_by_length(min_length: int = 1, max_length: int = 0,
 def get_ascii_strings(limit: int = 200, offset: int = 0) -> str:
     """List non-Unicode (C-type) strings with pagination."""
     ensure_analysis()
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     uni = _unicode_types()
     rows, capped = _collect_rows(
         lambda row: row["strtype"] not in uni)
@@ -266,7 +266,7 @@ def get_ascii_strings(limit: int = 200, offset: int = 0) -> str:
 def get_unicode_strings(limit: int = 200, offset: int = 0) -> str:
     """List UTF-16/32 strings with pagination."""
     ensure_analysis()
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     uni = _unicode_types()
     rows, capped = _collect_rows(
         lambda row: row["strtype"] in uni)

@@ -15,7 +15,7 @@ import idautils
 from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import clamp_int, resolve_addr
+from .api_analysis import clamp_limit, resolve_addr
 from .compat import badaddr
 
 
@@ -113,7 +113,7 @@ def get_xrefs(address: str, limit: int = 100) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
     out = [{"direction": "to", **x} for x in _collect_to(ea, limit)]
     out += [{"direction": "from", **x} for x in _collect_from(ea, max(0, limit - len(out)))]
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
@@ -128,7 +128,7 @@ def get_xrefs_from(address: str, limit: int = 100) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
     out = _collect_from(ea, limit)
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -142,7 +142,7 @@ def get_code_refs_to(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_to(ea, limit, code_only=True)
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -156,7 +156,7 @@ def get_code_refs_from(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_from(ea, limit, code_only=True)
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -170,7 +170,7 @@ def get_data_refs_to(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_to(ea, limit, data_only=True)
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -184,7 +184,7 @@ def get_data_refs_from(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_from(ea, limit, data_only=True)
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -198,7 +198,7 @@ def get_calls_to(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_to(ea, limit, types=_call_types())
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -212,7 +212,7 @@ def get_calls_from(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_from(ea, limit, types=_call_types())
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -226,7 +226,7 @@ def get_jumps_to(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_to(ea, limit, types=tuple(t for t in _jump_types() if t is not None))
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -240,7 +240,7 @@ def get_reads_of(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_to(ea, limit, types=(_data_read_type(),))
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -254,7 +254,7 @@ def get_writes_to(address: str, limit: int = 200) -> str:
     ea, err = resolve_addr(address)
     if err:
         return err
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     out = _collect_to(ea, limit, types=(_data_write_type(),))
     return json.dumps({"addr": hex(ea), "xrefs": out, "count": len(out),
                        "limit": limit}, indent=2)
@@ -334,7 +334,7 @@ def xrefs_to_field(struct_name: str, field_name: str, limit: int = 200) -> str:
     and enumerates xrefs to its type id. Ported from ida-pro-mcp.
     """
     ensure_analysis()
-    limit = clamp_int(limit, 200, 5000)
+    limit = clamp_limit(limit, 200, 5000)
     try:
         til = ida_typeinf.get_idati()
     except Exception as e:

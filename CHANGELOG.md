@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Bounded `tools/call` admission queue (`IDA_MCP_TOOL_QUEUE`, default 8;
+  `IDA_MCP_TOOL_QUEUE_WAIT_SEC`, default 15) so agents that fan out parallel
+  calls wait for IDA's main thread instead of failing every call after the
+  first. Queue wait is reported separately and does not consume the tool
+  timeout; a full/timeout queue still returns a retryable `Server busy`.
+- `initialize.instructions` tells clients that IDA is single-threaded and that
+  tools must be called one at a time.
+- Queue metrics in `server_health`: depth, p50/p95 wait, timeouts, full and
+  cancelled counts.
+
+### Changed
+- Paginated tools now share one `limit` contract: `limit=0` (or negative)
+  means "no client-side cap" — the tool applies its documented maximum, or all
+  rows where no maximum is documented. `list_funcs(0)` uses its 1000 cap,
+  `get_xrefs_to`/`xref_query` use 5000, `get_instructions`/`find_regex` use 500,
+  and the previously defaulting/clamped tools return their maximum instead of
+  the old default page. Applied limits are echoed where the payload has a
+  `limit` field.
+
 ## [0.3.0] - 2026-11-13
 
 ### Added

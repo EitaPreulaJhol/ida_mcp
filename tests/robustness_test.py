@@ -88,6 +88,9 @@ class _RaisesInDel:
 
 
 srv = McpServer("robustness-test")
+# This harness checks the old fail-fast path for the multi-slot gate; the
+# bounded queue has its own coverage in tests/gate_test.py.
+srv.tool_queue_depth = 0
 AUDIT = os.path.join(tempfile.mkdtemp(prefix="idamcp_robust_"), "audit.jsonl")
 srv.audit_path = AUDIT
 

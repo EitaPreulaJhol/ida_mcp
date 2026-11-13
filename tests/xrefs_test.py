@@ -186,7 +186,7 @@ print("bad address OK")
 r = json.loads(mod.get_xrefs("0x1000", limit=99999))
 assert r["limit"] == 5000, r
 r = json.loads(mod.get_xrefs("0x1000", limit=0))
-assert r["limit"] == 100, r
+assert r["limit"] == 5000, r
 print("xref limit clamped + echoed OK")
 
 print("ALL XREFS TESTS PASSED")

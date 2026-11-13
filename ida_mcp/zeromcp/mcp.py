@@ -34,6 +34,7 @@ from .jsonrpc import (
     JsonRpcRegistry,
     JsonRpcException,
     get_current_request_id,
+    get_current_cancel_event,
     register_pending_request,
     unregister_pending_request,
     cancel_request,
@@ -948,6 +949,113 @@ def _coerce_scalar(value, annotation):
     return value
 
 
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw, 0)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+class _ToolAdmission:
+    """Bounded admission queue for IDA's single main thread.
+
+    IDA tools are serialized by the main thread, but MCP clients routinely
+    send several ``tools/call`` requests at once.  Rather than rejecting every
+    call after the first with ``Server busy``, admit up to ``max_waiting``
+    callers into a bounded queue and run them in arrival order.  A full queue
+    (or a queue wait timeout) still returns ``busy``; ``allow_wait=False``
+    preserves the old fail-fast behavior for resources.
+    """
+
+    def __init__(self, slots: int = 1, max_waiting: int = 8,
+                 wait_sec: float = 15.0) -> None:
+        self._cond = threading.Condition()
+        self._slots = max(0, int(slots))
+        self._max_waiting = max(0, int(max_waiting))
+        self._wait_sec = max(0.0, float(wait_sec))
+        self._active = 0
+        self._waiting = 0
+
+    def configure(self, slots, max_waiting, wait_sec) -> None:
+        with self._cond:
+            self._slots = max(0, int(slots))
+            self._max_waiting = max(0, int(max_waiting))
+            self._wait_sec = max(0.0, float(wait_sec))
+            # Wake waiters on any resize: increasing slots admits more,
+            # disabling (0) must release queued callers immediately.
+            self._cond.notify_all()
+
+    @property
+    def waiting(self) -> int:
+        with self._cond:
+            return self._waiting
+
+    def acquire(self, cancel_event=None, *, allow_wait: bool = True):
+        """Return ``(admitted, waited_ms, reason, depth)``.
+
+        ``reason`` is one of ``disabled``/``admitted``/``full``/``timeout``/
+        ``cancelled``.  The caller releases with :meth:`release` only when
+        ``admitted`` is True.
+        """
+        start = time.monotonic()
+        with self._cond:
+            if self._slots <= 0:
+                return True, 0.0, "disabled", 0
+            if self._active < self._slots:
+                self._active += 1
+                return True, 0.0, "admitted", 0
+            if not allow_wait or self._max_waiting <= 0:
+                return False, 0.0, "full", self._waiting
+            if self._waiting >= self._max_waiting:
+                return False, 0.0, "full", self._waiting
+
+            self._waiting += 1
+            try:
+                deadline = start + self._wait_sec
+                while self._active >= self._slots:
+                    if self._slots <= 0:
+                        return (True, (time.monotonic() - start) * 1000.0,
+                                "disabled", self._waiting - 1)
+                    if cancel_event is not None:
+                        try:
+                            cancelled = bool(cancel_event.is_set())
+                        except Exception:
+                            cancelled = False
+                        if cancelled:
+                            return (False, (time.monotonic() - start) * 1000.0,
+                                    "cancelled", self._waiting - 1)
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return (False, (time.monotonic() - start) * 1000.0,
+                                "timeout", self._waiting - 1)
+                    self._cond.wait(min(remaining, 0.25))
+                self._active += 1
+                return (True, (time.monotonic() - start) * 1000.0,
+                        "admitted", self._waiting - 1)
+            finally:
+                self._waiting -= 1
+
+    def release(self) -> None:
+        with self._cond:
+            self._active = max(0, self._active - 1)
+            self._cond.notify()
+
+
 class McpServer:
     def __init__(self, name: str, version: str = "1.0.0", *, extensions: dict | None = None):
         self.name = name
@@ -990,13 +1098,15 @@ class McpServer:
         # tools/list and tools/call. Keyed by tool name.
         self._introspect_cache: dict[str, tuple] = {}
         self._schema_cache: dict[str, dict] = {}
-        # Concurrency gate: IDA tools run serialized on the main thread,
-        # so a second concurrent tools/call would only extend the UI
-        # freeze. Fail fast with a retryable isError instead of piling up
-        # execute_sync waiters. tools/list and ping stay ungated (no IDA).
-        # Set max_concurrent_tools to 0/None to disable (unbounded, legacy);
-        # assigning N > 0 rebuilds the gate with N slots (see the property).
-        self._tool_gate: threading.Semaphore | None = None
+        # Concurrency admission: IDA tools run serialized on the main thread,
+        # so parallel tools/call requests wait in a bounded queue instead of
+        # each extending the UI freeze. A full queue or expired wait returns a
+        # retryable isError. tools/list and ping stay ungated (no IDA).
+        # max_concurrent_tools=0/None disables admission entirely; assigning
+        # N > 0 resizes the gate without invalidating in-flight releases.
+        self.tool_queue_depth = _env_int("IDA_MCP_TOOL_QUEUE", 8)
+        self.tool_queue_wait_sec = _env_float("IDA_MCP_TOOL_QUEUE_WAIT_SEC", 15.0)
+        self._tool_gate: _ToolAdmission | None = None
         self._max_concurrent_tools: int | None = None
         self.max_concurrent_tools = 1
         # Transport limits (plan 15, item 15.3). max_connections caps how many
@@ -1012,6 +1122,10 @@ class McpServer:
         self._stats: dict[str, dict] = {}
         self._stats_totals = {"calls": 0, "errors": 0, "busy": 0}
         self._stats_started = time.monotonic()
+        self._queue_lock = threading.Lock()
+        self._queue_wait_ms: deque = deque(maxlen=200)
+        self._queue_stats = {"waits": 0, "timeouts": 0, "full": 0,
+                             "cancelled": 0}
         # Optional audit trail of mutating (unsafe/ext) tool calls (item 08).
         # IDA_MCP_AUDIT=<path> appends JSONL; unset = disabled (default).
         self.audit_path: str | None = (os.environ.get("IDA_MCP_AUDIT", "").strip() or None)
@@ -1047,20 +1161,37 @@ class McpServer:
 
     @max_concurrent_tools.setter
     def max_concurrent_tools(self, value: int | None) -> None:
-        # A fresh semaphore per setting: in-flight calls keep (and release)
-        # the semaphore they acquired, so resizing never corrupts a count.
         n = int(value or 0)
         self._max_concurrent_tools = value
-        self._tool_gate = threading.Semaphore(n) if n > 0 else None
+        if self._tool_gate is None:
+            self._tool_gate = _ToolAdmission(
+                n, self.tool_queue_depth, self.tool_queue_wait_sec)
+        else:
+            # In-flight callers retain the admission object they acquired;
+            # resizing only changes how many new callers it admits.
+            self._tool_gate.configure(
+                n, self.tool_queue_depth, self.tool_queue_wait_sec)
 
-    def _try_enter_gate(self) -> tuple[bool, threading.Semaphore | None]:
-        """Non-blocking gate entry: ``(admitted, semaphore_to_release)``."""
+    def _admit_tool(self, cancel_event=None, *, allow_wait: bool = True):
+        """Admit a main-thread call, optionally waiting in the bounded queue.
+
+        Returns ``(admitted, gate_to_release, waited_ms, reason, depth)``.
+        """
         gate = self._tool_gate
         if gate is None:
-            return True, None
-        if gate.acquire(blocking=False):
-            return True, gate
-        return False, None
+            return True, None, 0.0, "disabled", 0
+        gate.configure(self._max_concurrent_tools or 0,
+                       self.tool_queue_depth, self.tool_queue_wait_sec)
+        admitted, waited_ms, reason, depth = gate.acquire(
+            cancel_event, allow_wait=allow_wait)
+        self._record_queue(waited_ms, reason)
+        return admitted, (gate if admitted else None), waited_ms, reason, depth
+
+    def _try_enter_gate(self) -> tuple[bool, _ToolAdmission | None]:
+        """Non-blocking gate entry for resources (old fail-fast behavior)."""
+        admitted, gate, _waited, _reason, _depth = self._admit_tool(
+            None, allow_wait=False)
+        return admitted, gate
 
     @property
     def redact_exceptions(self) -> bool:
@@ -1248,6 +1379,23 @@ class McpServer:
             return False
 
     # ---- metrics (item 07) ----
+    def _record_queue(self, waited_ms, reason):
+        """Record queue wait/rejection counters. Never raises."""
+        try:
+            with self._queue_lock:
+                if waited_ms > 0:
+                    self._queue_wait_ms.append(float(waited_ms))
+                if reason == "admitted" and waited_ms > 0:
+                    self._queue_stats["waits"] += 1
+                elif reason == "timeout":
+                    self._queue_stats["timeouts"] += 1
+                elif reason == "full":
+                    self._queue_stats["full"] += 1
+                elif reason == "cancelled":
+                    self._queue_stats["cancelled"] += 1
+        except Exception:
+            pass
+
     def _record_call(self, name, *, errored=False, busy=False, duration_ms=None):
         """Update per-tool counters. Never raises into the dispatch path."""
         try:
@@ -1293,11 +1441,22 @@ class McpServer:
         except Exception:
             return {"error": "stats_unavailable"}
         items.sort(key=lambda x: x["calls"], reverse=True)
+        with self._queue_lock:
+            queue_waits = sorted(self._queue_wait_ms)
+            queue_stats = dict(self._queue_stats)
+        gate = self._tool_gate
         return {
             "uptime_sec": uptime,
             "total_calls": totals["calls"],
             "total_errors": totals["errors"],
             "total_busy": totals["busy"],
+            "queue_depth": gate.waiting if gate is not None else 0,
+            "queue_waits": queue_stats["waits"],
+            "queue_wait_p50_ms": _pct(queue_waits, 50),
+            "queue_wait_p95_ms": _pct(queue_waits, 95),
+            "queue_timeouts": queue_stats["timeouts"],
+            "queue_full": queue_stats["full"],
+            "queue_cancelled": queue_stats["cancelled"],
             "tools": items[:top] if top else items,
         }
 
@@ -1398,6 +1557,12 @@ class McpServer:
             "protocolVersion": protocolVersion,
             "capabilities": caps,
             "serverInfo": {"name": self.name, "version": self.version},
+            "instructions": (
+                "IDA tools share one main thread. Issue one tools/call at a "
+                "time and wait for its result; do not fan out parallel tool "
+                "calls. Concurrent calls are queued and may return a retryable "
+                "busy error when the queue is full."
+            ),
         }
 
     def _mcp_tools_list(self, _meta=None):
@@ -1597,30 +1762,54 @@ class McpServer:
             raise JsonRpcException(
                 -32602, "'arguments' must be a JSON object, got "
                         f"{type(arguments).__name__}")
-        admitted, gate = self._try_enter_gate()
-        if not admitted:
-            logger.debug("[MCP] tools/call %s rejected: server busy", name)
-            self._record_call(name, busy=True)
-            return {
-                "content": [{
-                    "type": "text",
-                    "text": (f"Server busy: another tool is running on the IDA main thread. "
-                             f"Retry '{name}' shortly (sequential calls, no parallel fan-out).")
-                }],
-                "isError": True,
-                "structuredContent": {"busy": True, "tool": name},
-            }
         request_id = get_current_request_id()
+        if request_id is not None:
+            register_pending_request(request_id)
+        try:
+            admitted, gate, waited_ms, reason, depth = self._admit_tool(
+                get_current_cancel_event())
+        except BaseException:
+            if request_id is not None:
+                try:
+                    unregister_pending_request(request_id)
+                except Exception:
+                    pass
+            raise
+        if not admitted:
+            logger.debug("[MCP] tools/call %s not admitted: %s (waited %.1fms)",
+                         name, reason, waited_ms)
+            if request_id is not None:
+                try:
+                    unregister_pending_request(request_id)
+                except Exception:
+                    pass
+            self._record_call(name, busy=True)
+            if reason == "cancelled":
+                return {
+                    "content": [{"type": "text", "text":
+                                 "Request cancelled while waiting for the IDA main thread."}],
+                    "isError": True,
+                    "structuredContent": {"cancelled": True, "tool": name},
+                }
+            return {
+                "content": [{"type": "text", "text": (
+                    f"Server busy: the IDA main-thread queue is full or the wait "
+                    f"timed out (tool '{name}', reason={reason}, "
+                    f"waited {waited_ms:.0f}ms, queue depth {depth}). "
+                    f"Retry shortly and issue one tool call at a time.")}],
+                "isError": True,
+                "structuredContent": {
+                    "busy": True, "retryable": True, "tool": name,
+                    "reason": reason, "queue_depth": depth,
+                    "queue_wait_ms": round(waited_ms, 1),
+                },
+            }
         _t0 = time.perf_counter()
         # Pessimistic defaults: an unexpected exception escaping below is
         # still recorded (and audited) as a failure.
         _errored = True
         _error_text: str | None = "internal error"
         try:
-            # Registration can raise (e.g. a malformed id key); it MUST be
-            # inside the try so the finally below releases the gate.
-            if request_id is not None:
-                register_pending_request(request_id)
             arguments = self._apply_legacy_aliases(name, arguments)
             arguments = self._coerce_tool_arguments(name, arguments)
             tool_response = self.tools.dispatch({

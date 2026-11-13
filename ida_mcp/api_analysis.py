@@ -107,15 +107,26 @@ def _as_int(value, default: int = 0) -> int:
 
 
 def clamp_int(value, default: int, hi: int) -> int:
-    """Clamp a client-supplied count to ``[1, hi]``; ``<= 0`` means default.
+    """Clamp a client-supplied size/count to ``[1, hi]``; ``<= 0`` is default.
 
-    Oversized values used to be *reset* to the default (``size=8192`` on
-    ``get_bytes`` silently read 64 bytes), which an agent cannot distinguish
-    from "the data ends here". Clamp to the documented maximum instead and
-    report the applied value, so the truncation is visible in the payload.
+    Used for non-pagination values such as ``get_bytes(size=...)``.
+    Paginated tools use :func:`clamp_limit`, where ``0`` means "no client
+    cap" rather than "fall back to the default page size".
     """
     n = _as_int(value, default)
     return default if n <= 0 else min(n, hi)
+
+
+def clamp_limit(value, default: int, hi: int) -> int:
+    """Clamp a paginated ``limit``; ``<= 0`` means the documented maximum.
+
+    A zero/negative ``limit`` is the uniform "no client-side cap" spelling:
+    tools with a hard safety cap apply ``hi``; tools without one already use
+    every row. Oversized positive values are clamped to ``hi`` and the
+    applied value is echoed in the payload.
+    """
+    n = _as_int(value, default)
+    return hi if n <= 0 else min(n, hi)
 
 
 def resolve_addr(address: str) -> tuple[int | None, str | None]:
@@ -262,7 +273,8 @@ def get_xrefs_to(address: str, limit: int = 100) -> str:
     """Get all cross-references TO the given address or symbol name.
 
     Returns a JSON array of ``{addr, type, function}`` objects.
-    ``type`` is ``"code"`` or ``"data"``.
+    ``type`` is ``"code"`` or ``"data"``. ``limit`` is clamped to
+    [1, 5000] (0/negative -> 5000).
     """
     ensure_analysis()
     try:
@@ -274,6 +286,7 @@ def get_xrefs_to(address: str, limit: int = 100) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
+    limit = clamp_limit(limit, 100, 5000)
     xrefs_list = []
     for xref in idautils.XrefsTo(ea):
         if len(xrefs_list) >= limit:
@@ -285,8 +298,10 @@ def get_xrefs_to(address: str, limit: int = 100) -> str:
             "function": ida_funcs.get_func_name(fn.start_ea) if fn else None,
         })
     if not xrefs_list:
-        return json.dumps({"xrefs": [], "message": "No cross-references to this address"})
-    return json.dumps({"xrefs": xrefs_list, "count": len(xrefs_list)}, indent=2)
+        return json.dumps({"xrefs": [], "limit": limit,
+                           "message": "No cross-references to this address"})
+    return json.dumps({"xrefs": xrefs_list, "count": len(xrefs_list),
+                       "limit": limit}, indent=2)
 
 
 @tool
@@ -297,7 +312,7 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
 
     ``direction``: ``"to"`` (references TO address), ``"from"`` (references
     FROM address), or ``"both"``.  ``xref_type``: ``"code"``, ``"data"``,
-    or ``"any"``.
+    or ``"any"``. ``limit`` is clamped to [1, 5000] (0/negative -> 5000).
     """
     ensure_analysis()
     try:
@@ -314,6 +329,7 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
     if xref_type not in ("code", "data", "any"):
         xref_type = "any"
 
+    limit = clamp_limit(limit, 200, 5000)
     rows: list[dict] = []
 
     if direction in ("to", "both"):
@@ -346,8 +362,10 @@ def xref_query(address: str, direction: str = "to", xref_type: str = "any",
             })
 
     if not rows:
-        return json.dumps({"xrefs": [], "message": "No matching cross-references"}, indent=2)
-    return json.dumps({"xrefs": rows, "count": len(rows)}, indent=2)
+        return json.dumps({"xrefs": [], "limit": limit,
+                           "message": "No matching cross-references"}, indent=2)
+    return json.dumps({"xrefs": rows, "count": len(rows),
+                       "limit": limit}, indent=2)
 
 
 @tool
@@ -525,12 +543,12 @@ def list_imports(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -
     """List all imported symbols with their module names.
 
     Supports glob-based filtering (e.g. ``"*Create*"``) with fnmatch.
-    Pagination via ``offset`` / ``limit`` (max 5000); the deprecated
+    Pagination via ``offset`` / ``limit`` (0/negative -> 5000; max 5000); the deprecated
     ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
 
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
 
     imports_list: list[dict] = []
     nimps = ida_nalt.get_import_module_qty()
@@ -574,12 +592,12 @@ def list_exports(filter_pattern: str = "*", offset: int = 0, limit: int = 100) -
     """List all exported symbols with their addresses and ordinals.
 
     Supports glob filtering (e.g. ``"*Initialize*"``).
-    Pagination via ``offset`` / ``limit`` (max 5000); the deprecated
+    Pagination via ``offset`` / ``limit`` (0/negative -> 5000; max 5000); the deprecated
     ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
 
-    limit = clamp_int(limit, 100, 5000)
+    limit = clamp_limit(limit, 100, 5000)
 
     exports_list: list[dict] = []
     for i in range(ida_entry.get_entry_qty()):
@@ -817,11 +835,11 @@ def find_bytes(pattern: str, limit: int = 100, offset: int = 0) -> str:
     hex string directly, supports ``??`` wildcards natively, and uses
     ``range_start`` / ``range_end`` semantics.
 
-    Pagination via ``offset`` / ``limit`` (max ``limit`` = 10000).
+    Pagination via ``offset`` / ``limit`` (0/negative -> 10000; max = 10000).
     """
     ensure_analysis()
 
-    limit = clamp_int(limit, 10000, 10000)
+    limit = clamp_limit(limit, 10000, 10000)
     if offset < 0:
         offset = 0
 
@@ -875,7 +893,7 @@ def disasm(address: str, limit: int = 50) -> str:
 
     Returns a JSON object with ``addr`` (the requested address), ``next_ea``
     (where the walk stopped), ``instructions`` and the applied ``limit``.
-    ``limit`` is clamped to [1, 500] (0/oversized -> the default 50); the
+    ``limit`` is clamped to [1, 500] (0/negative -> 500); the
     deprecated ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
@@ -884,7 +902,7 @@ def disasm(address: str, limit: int = 50) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    limit = clamp_int(limit, 50, 500)
+    limit = clamp_limit(limit, 50, 500)
 
     ea = start_ea
     seg = ida_segment.getseg(ea)

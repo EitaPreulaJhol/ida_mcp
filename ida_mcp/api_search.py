@@ -30,7 +30,7 @@ except ImportError:  # standalone harness without package context
 
     class IDASyncError(Exception):
         pass
-from .api_analysis import parse_addr
+from .api_analysis import clamp_limit, parse_addr
 from .compat import inf_get_max_ea, inf_get_min_ea
 from .regex_guard import compile_client_regex
 
@@ -178,10 +178,10 @@ def find_regex(
 ) -> str:
     """Search all strings in the binary by case-insensitive regex pattern.
 
-    ``limit`` caps the number of returned matches (default 30, max 500).
+    ``limit`` caps the number of returned matches (default 30, max 500; 0/negative -> 500).
     """
     ensure_analysis()
-    limit = min(max(int(limit), 1), 500)
+    limit = clamp_limit(limit, 30, 500)
 
     try:
         regex = compile_client_regex(pattern, re.IGNORECASE)
@@ -203,7 +203,8 @@ def find_regex(
     except (CancelledError, IDASyncError):
         partial = True
 
-    out: dict = {"pattern": pattern, "matches": results, "count": len(results)}
+    out: dict = {"pattern": pattern, "matches": results, "count": len(results),
+                 "limit": limit}
     if partial:
         out["partial"] = True
     return json.dumps(out, indent=2)

@@ -13,6 +13,11 @@ metadata:
 
 All tool calls below are native ida_mcp tools.
 
+> **Hard rule: one tool call at a time.** `execute_script` and every other IDA
+> tool share one main thread. Do not fan out parallel tool calls. Wait for each
+> result before issuing the next request; parallel calls are serialized or
+> queued and only return `Server busy` when the queue is full.
+
 ---
 
 ---
@@ -36,8 +41,8 @@ Task: Help the user write IDAPython scripts. You have `execute_script` which run
 ## Long-running scripts (read before writing any loop)
 
 `execute_script` runs **on IDA's main thread**. While it runs the IDA UI is
-frozen, a wait box is shown, and every other MCP call is refused with
-`Server busy`. Hard limits:
+frozen, a wait box is shown, and other MCP calls wait in a bounded queue
+(`Server busy` only when the queue is full or the wait expires). Hard limits:
 
 - **Time budget: ~60s per call** (`IDA_MCP_TOOL_TIMEOUT_SEC`). On timeout the
   script is interrupted and you get the output printed so far plus an error.

@@ -16,7 +16,7 @@ import idc
 from .rpc import tool
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import parse_addr
+from .api_analysis import clamp_limit, parse_addr
 from .compat import get_reg_name
 
 
@@ -119,7 +119,7 @@ def get_instructions(
 ) -> str:
     """Get instructions for a function or starting address.
 
-    ``limit``: maximum number of instructions to return (max 500); the
+    ``limit``: maximum number of instructions to return (max 500; 0/negative -> 500); the
     deprecated ``count`` argument is mapped to ``limit`` by the server.
     """
     ensure_analysis()
@@ -128,7 +128,7 @@ def get_instructions(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
-    limit = min(max(int(limit), 1), 500)
+    limit = clamp_limit(limit, 50, 500)
     results: list[dict] = []
 
     for _ in range(limit):
@@ -140,7 +140,8 @@ def get_instructions(
         results.append(_insn_to_dict(ea, insn))
         ea = idc.next_head(ea, idaapi.BADADDR)
 
-    return json.dumps({"instructions": results, "count": len(results)}, indent=2)
+    return json.dumps({"instructions": results, "count": len(results),
+                       "limit": limit}, indent=2)
 
 
 @tool

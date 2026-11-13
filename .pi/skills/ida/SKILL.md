@@ -9,6 +9,12 @@ metadata:
   domain: security
 ---
 
+> **Hard rule: IDA has one main thread.** Issue one tool call at a time and
+> wait for its result. Do not fan out parallel tool calls or put multiple
+> `tools/call` requests in the same turn. If your client has parallel tool use
+> enabled, turn it off for this endpoint. The server serializes concurrent
+> calls through a bounded queue; parallel requests only add queue wait.
+
 ## What I do
 
 I connect to IDA Pro lazily: verify the bridge is up, triage with a minimal
@@ -113,8 +119,8 @@ request step 4–5 "just in case" — justify each escalation in one sentence.
   the flag — explain and ask, don't work around it.
 - **Pace IDA calls — IDA has ONE main thread.** Every tool (and every
   `execute_script`) runs on it; while a call runs the IDA UI is frozen and
-  the server refuses other calls with `Server busy`. One IDA call at a time,
-  never parallel fan-out. Keep each call short (well under the 60s tool
+  the server queues other calls (bounded) and returns `Server busy` only when
+  the queue is full. One IDA call at a time, never parallel fan-out. Keep each call short (well under the 60s tool
   timeout): prefer paginated tools (`limit`/`offset`, filters) over one giant
   call, and split scripts into batches.
 - **Timeout / `Server busy` / no answer ≠ offline.** It means the previous

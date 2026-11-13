@@ -282,10 +282,10 @@ assert r["count"] == 2, r
 print("func_count uses get_func_qty OK")
 _idautils.Functions = _real_functions
 
-# --- list_funcs: limit=0 means no cap, oversized clamps to 1000 ----------
+# --- list_funcs: 0/negative means the documented maximum (1000) ----------
 _idautils.Functions = lambda: iter([0x1000, 0x2000])
 r = json.loads(mod.list_funcs(offset=0, limit=0))
-assert len(r["data"]) == 2 and r["limit"] == 0 and r["total"] == 2, r
+assert len(r["data"]) == 2 and r["limit"] == 1000 and r["total"] == 2, r
 r = json.loads(mod.list_funcs(offset=0, limit=99999))
 assert r["limit"] == 1000 and len(r["data"]) == 2, r
 print("list_funcs limit=0 / oversized OK")

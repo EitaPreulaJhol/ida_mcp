@@ -91,6 +91,11 @@ def _as_int(value, default=0):
 def clamp_int(value, default, hi):
     n = _as_int(value, default)
     return default if n <= 0 else min(n, hi)
+
+
+def clamp_limit(value, default, hi):
+    n = _as_int(value, default)
+    return hi if n <= 0 else min(n, hi)
 """
 
 

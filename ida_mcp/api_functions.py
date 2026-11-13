@@ -17,7 +17,7 @@ import idc
 from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
-from .api_analysis import _as_int, parse_addr, type_label
+from .api_analysis import _as_int, clamp_limit, parse_addr, type_label
 from .compat import (FUNC_STATIC, frame_soff, frame_udt_members, get_cc_name,
                      get_func_cc, get_func_comment, get_func_regvars,
                      get_frame_size, get_frame_tinfo, is_frame_arg)
@@ -37,16 +37,14 @@ def list_funcs(
     """List functions with pagination support.
 
     ``offset``: starting position (0-based).
-    ``limit``: number of functions to return (max 1000; ``limit=0`` means no
-    cap -- a full page means more may follow). The deprecated ``count``
-    argument is mapped to ``limit`` by the server.
+    ``limit``: number of functions to return (max 1000; 0/negative -> 1000);
+    a full page means more may follow. The deprecated ``count`` argument is
+    mapped to ``limit`` by the server.
     Returns JSON with ``{addr, name, size}`` objects, plus ``total`` and the
     applied ``limit``.
     """
     ensure_analysis()
-    limit = _as_int(limit, 100)
-    if limit > 1000:
-        limit = 1000
+    limit = clamp_limit(limit, 100, 1000)
     offset = max(_as_int(offset, 0), 0)
 
     # Single pass: the old code walked Functions() twice (page + total),
