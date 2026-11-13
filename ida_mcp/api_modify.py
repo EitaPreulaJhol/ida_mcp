@@ -18,7 +18,7 @@ from .rpc import tool, unsafe
 from .sync import idasync
 from .sync import ensure_analysis
 from .sync import check_cancelled, CancelledError, IDASyncError
-from .api_analysis import parse_addr
+from .api_analysis import _as_int, clamp_int, parse_addr
 # aliased: this module's own ``get_original_bytes`` tool would shadow it
 from .compat import get_original_bytes as _compat_original_bytes
 
@@ -114,11 +114,14 @@ _MAX_PATCH_BYTES = 64 * 1024
 def patch_bytes(
     address: str,
     data: str,
+    dry_run: bool = False,
 ) -> str:
     """Patch bytes at a memory address with hex data.
 
     ``data`` is a hex string, with or without spaces
     (e.g., ``"9090"`` or ``"90 90"``). Capped at ``_MAX_PATCH_BYTES``.
+    ``dry_run=True`` validates the address/hex/size and previews the write
+    without changing the database.
 
     **Unsafe** — requires ``?unsafe=true``.
     """
@@ -143,18 +146,19 @@ def patch_bytes(
     if not ida_bytes.is_mapped(ea):
         return json.dumps({"error": f"Address not mapped: {hex(ea)}"})
 
-    # One bulk write: the per-byte loop was O(n) Python calls on the main
-    # thread for arbitrarily large input (patch_asm already did it this way).
-    ida_bytes.patch_bytes(ea, raw)
-
-    # Invalidate caches
-    ida_bytes.del_items(ea, ida_bytes.DELIT_NOTRUNC, size)
+    if not dry_run:
+        # One bulk write: the per-byte loop was O(n) Python calls on the main
+        # thread for arbitrarily large input (patch_asm already did it this way).
+        ida_bytes.patch_bytes(ea, raw)
+        # Invalidate caches
+        ida_bytes.del_items(ea, ida_bytes.DELIT_NOTRUNC, size)
 
     return json.dumps({
         "ok": True,
         "addr": hex(ea),
         "size": size,
         "patched_hex": data,
+        "dry_run": bool(dry_run),
     }, indent=2)
 
 
@@ -164,10 +168,12 @@ def patch_bytes(
 def patch_asm(
     address: str,
     asm: str,
+    dry_run: bool = False,
 ) -> str:
     """Assemble and patch assembly instruction(s) at an address.
 
     ``asm``: assembly text (e.g., ``"nop; nop"`` or ``"mov eax, 1"``).
+    ``dry_run=True`` assembles and validates without writing.
 
     **Unsafe** — requires ``?unsafe=true``.
     """
@@ -185,13 +191,23 @@ def patch_asm(
         return json.dumps({"error": f"Failed to assemble instruction: {asm} ({data})"})
     blob = data if isinstance(data, (bytes, bytearray)) else b"".join(data)
     blob = bytes(blob)
-    ida_bytes.patch_bytes(ea, blob)
+    if len(blob) > _MAX_PATCH_BYTES:
+        return json.dumps({"addr": hex(ea), "error":
+                           f"Assembled patch too large: {len(blob)} bytes "
+                           f"(max {_MAX_PATCH_BYTES})"})
+    if not ida_bytes.is_mapped(ea):
+        return json.dumps({"error": f"Address not mapped: {hex(ea)}"})
+    if not dry_run:
+        ida_bytes.patch_bytes(ea, blob)
+        ida_bytes.del_items(ea, ida_bytes.DELIT_NOTRUNC, len(blob))
 
     return json.dumps({
         "ok": True,
         "addr": hex(ea),
         "asm": asm,
         "size": len(blob),
+        "bytes": blob.hex(),
+        "dry_run": bool(dry_run),
     }, indent=2)
 
 
@@ -284,8 +300,13 @@ def get_original_bytes(
 @unsafe
 def revert_patch(
     address: str,
+    size: int = 1,
+    dry_run: bool = False,
 ) -> str:
-    """Revert a patch at the given address, restoring the original byte.
+    """Revert a patch, restoring ``size`` original bytes.
+
+    Defaults to one byte for backwards compatibility; ``size`` is clamped to
+    ``_MAX_PATCH_BYTES``. ``dry_run=True`` previews the restore.
 
     **Unsafe** — requires ``?unsafe=true``.
     """
@@ -295,63 +316,109 @@ def revert_patch(
     except ValueError as e:
         return json.dumps({"error": str(e)})
 
+    size = clamp_int(size, 1, _MAX_PATCH_BYTES)
     if not ida_bytes.is_mapped(ea):
         return json.dumps({"error": f"Address not mapped: {hex(ea)}"})
 
-    orig = ida_bytes.get_original_byte(ea)
-    ida_bytes.patch_byte(ea, orig)
+    orig = _compat_original_bytes(ea, size)
+    if not orig or len(orig) < size:
+        return json.dumps({"error": f"Could not read {size} original byte(s) at {hex(ea)}"})
+    if not dry_run:
+        ida_bytes.patch_bytes(ea, orig)
+        ida_bytes.del_items(ea, ida_bytes.DELIT_NOTRUNC, size)
     return json.dumps({
         "ok": True,
         "addr": hex(ea),
-        "restored_byte": hex(orig),
+        "size": size,
+        "restored_byte": hex(orig[0]),
+        "restored_hex": orig.hex(),
+        "dry_run": bool(dry_run),
     }, indent=2)
 
 
 @tool
 @idasync
-def list_patches() -> str:
+def list_patches(max_scan_bytes: int = 0) -> str:
     """List patches in the database (current byte differs from original).
 
-    Scans every byte of every segment, so a patch after the first 100 KB of a
-    segment is not silently missed. Stops after 1000 patches; ``truncated`` is
-    set when that cap (or a cancellation) stopped the scan early.
+    Scans every byte of every segment in chunks, coalesces adjacent patched
+    bytes into ``ranges`` (the flat ``patches`` list is kept for
+    compatibility), and stops after 1000 patches. ``max_scan_bytes=0`` scans
+    the whole image; a positive value caps the scan and sets ``truncated``.
     """
     ensure_analysis()
     results: list[dict] = []
+    ranges: list[dict] = []
     truncated = False
     partial = False
+    scanned = 0
+    scan_cap = max(0, _as_int(max_scan_bytes, 0))
+    chunk_size = 4096
 
     for seg_ea in idautils.Segments():
         seg = ida_segment.getseg(seg_ea)
         if not seg:
             continue
-        for i, ea in enumerate(range(seg.start_ea, seg.end_ea)):
-            if i % 4096 == 0:
+        pos = int(seg.start_ea)
+        end = int(seg.end_ea)
+        while pos < end:
+            if scan_cap and scanned >= scan_cap:
+                truncated = True
+                break
+            size = min(chunk_size, end - pos)
+            if scan_cap:
+                size = min(size, scan_cap - scanned)
+            try:
+                check_cancelled()
+            except (CancelledError, IDASyncError):
+                partial = True
+                truncated = True
+                break
+            current = None
+            try:
+                current = ida_bytes.get_bytes(pos, size)
+            except Exception:
+                current = None
+            original = _compat_original_bytes(pos, size)
+            for i in range(size):
                 try:
-                    check_cancelled()
-                except (CancelledError, IDASyncError):
-                    partial = True
+                    orig = (original[i] if original and i < len(original)
+                            else ida_bytes.get_original_byte(pos + i))
+                    curr = (current[i] if current and i < len(current)
+                            else ida_bytes.get_byte(pos + i))
+                except Exception:
+                    continue
+                if orig == curr:
+                    continue
+                ea = pos + i
+                results.append({"addr": hex(ea), "original": hex(orig),
+                                "current": hex(curr)})
+                if ranges and int(ranges[-1]["end"], 16) == ea:
+                    ranges[-1]["end"] = hex(ea + 1)
+                    ranges[-1]["size"] += 1
+                else:
+                    ranges.append({"start": hex(ea), "end": hex(ea + 1),
+                                   "size": 1})
+                if len(results) >= 1000:
                     truncated = True
                     break
-            try:
-                orig = ida_bytes.get_original_byte(ea)
-                curr = ida_bytes.get_byte(ea)
-                if orig != curr:
-                    results.append({
-                        "addr": hex(ea),
-                        "original": hex(orig),
-                        "current": hex(curr),
-                    })
-                    if len(results) >= 1000:
-                        truncated = True
-                        break
-            except Exception:
-                continue
+            scanned += size
+            pos += size
+            if truncated:
+                break
         if truncated:
             break
 
-    out: dict = {"patches": results, "count": len(results),
-                 "truncated": truncated}
+    out: dict = {
+        "patches": results,
+        "ranges": ranges,
+        "count": len(results),
+        "range_count": len(ranges),
+        "scanned_bytes": scanned,
+        "truncated": truncated,
+    }
     if partial:
         out["partial"] = True
+    if scan_cap:
+        out["max_scan_bytes"] = scan_cap
     return json.dumps(out, indent=2)

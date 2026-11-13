@@ -29,6 +29,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `search_strings`, `get_string_count` and the fallback in `get_string_at`
   poll cancellation and return `partial`/`iterated_cap_reached` instead of
   freezing the IDA main thread until the full string table is walked.
+- Patch management: `patch_bytes`/`patch_asm` accept `dry_run`;
+  `revert_patch` restores a configurable `size` (default 1) and also supports
+  `dry_run`; `list_patches` scans in chunks, returns coalesced `ranges`, a
+  `scanned_bytes` count and an optional `max_scan_bytes` cap (with
+  `truncated`), while keeping the flat `patches` list compatible.
 
 ## [0.3.0] - 2026-11-13
 

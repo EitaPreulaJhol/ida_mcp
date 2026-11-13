@@ -80,7 +80,7 @@ sys.modules["idautils"] = idautils
 # Load api_modify.py
 # =========================================================================
 
-from _harness import RPC_STUB, SYNC_STUB, load  # noqa: E402
+from _harness import API_ANALYSIS_HELPERS, RPC_STUB, SYNC_STUB, load  # noqa: E402
 
 mod = load("api_modify", {
     "rpc": RPC_STUB,
@@ -89,10 +89,11 @@ mod = load("api_modify", {
     "    s = str(s).strip()\n"
     "    if s.startswith('0x'): return int(s, 16)\n"
     "    try: return int(s)\n"
-    "    except ValueError: raise ValueError(f'Unknown: {s}')",
+    "    except ValueError: raise ValueError(f'Unknown: {s}')" + API_ANALYSIS_HELPERS,
     "compat": "def get_original_bytes(ea, size):\n"
-    "    return bytes(size)",
-}, alias="modify_test")
+    "    return bytes(_ORIGINAL_BYTES.get(ea + i, 0x41) for i in range(size))",
+}, alias="modify_test",
+   stub_globals={"_ORIGINAL_BYTES": _ORIGINAL_BYTES, "_CURRENT_BYTES": _CURRENT_BYTES})
 
 # =========================================================================
 # make_data: every scalar type must pass `length` to create_* (14.2)
@@ -161,6 +162,21 @@ r = json.loads(mod.patch_bytes("0x1000", "zz"))
 assert "error" in r, r
 print("patch_bytes invalid hex OK")
 
+_PATCHED.clear()
+r = json.loads(mod.patch_bytes("0x1000", "90 90", dry_run=True))
+assert r["dry_run"] is True and r["size"] == 2, r
+assert _PATCHED == [], _PATCHED
+print("patch_bytes dry_run OK")
+
+# revert_patch defaults to one byte and supports a range + dry_run
+_PATCHED.clear()
+r = json.loads(mod.revert_patch("0x1000", size=2, dry_run=True))
+assert r["dry_run"] is True and r["size"] == 2 and r["restored_hex"] == "4141", r
+assert _PATCHED == [], _PATCHED
+r = json.loads(mod.revert_patch("0x1000", size=2))
+assert _PATCHED == [(0x1000, b"\x41\x41")], _PATCHED
+print("revert_patch range + dry_run OK")
+
 # list_patches used to scan only the first 100 KB of each segment.  The
 # patched byte below is 100001 bytes into .text, so the old code reported
 # zero patches.
@@ -168,9 +184,15 @@ _PATCHED.clear()
 _target = _SEG.start_ea + 100001
 _ORIGINAL_BYTES[_target] = 0x41
 _CURRENT_BYTES[_target] = 0x90
+_CURRENT_BYTES[_target + 1] = 0x91
 r = json.loads(mod.list_patches())
 assert any(int(p["addr"], 16) == _target for p in r["patches"]), r
-assert r["count"] >= 1 and r["truncated"] is False, r
-print("list_patches scans past the first 100 KB OK")
+assert r["count"] >= 2 and r["truncated"] is False, r
+assert any(ra["start"] == hex(_target) and ra["end"] == hex(_target + 2)
+           for ra in r["ranges"]), r
+assert r["scanned_bytes"] == _SEG.end_ea - _SEG.start_ea, r
+r = json.loads(mod.list_patches(max_scan_bytes=1000))
+assert r["scanned_bytes"] == 1000 and r["truncated"] is True, r
+print("list_patches scans past the first 100 KB / ranges / cap OK")
 
 print("ALL MODIFY TESTS PASSED")
