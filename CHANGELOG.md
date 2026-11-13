@@ -6,6 +6,59 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-11-13
+
+### Fixed
+- Multi-byte reads are correct on IDA 9.5 again: `get_bytes_and_mask()`
+  returns a **bit-packed** mask (one bit per byte), but `read_bytes_bss_safe()`
+  indexed it as one mask byte per data byte. `get_bytes`, `get_word`,
+  `get_dword`, `get_qword`, `get_int`, `get_float`, `get_double`,
+  `get_global_value` and every SigMaker signature were reading zeros for all
+  bytes after the first `ceil(size/8)`. Unmapped addresses (masked-out but not
+  mapped) are now rejected with `is_mapped()` instead of being returned as a
+  valid zero-filled block.
+- `find_xref_signatures` keeps data xrefs from code (`iscode=False`); it used
+  to filter exactly the string/global references it exists to signature.
+- `_IdbTracer.cmt_changed` uses IDA 9.5's `(ea, repeatable_cmt)` signature;
+  the old three-argument form raised `TypeError` on every comment change.
+- `int_convert` auto-sizes positive values unsigned and negatives signed, so
+  `128`, `255`, `-129` and similar values no longer report "too big".
+- `get_microcode` maps `mba_maturity_t` to the real IDA 9.x names
+  (`MMAT_LVARS`/`MMAT_GLBOPT*`), not the obsolete pre-9 enum.
+- `list_patches` scans every byte of every segment (with cancellation and a
+  1000-result cap); the old first-100 KB-per-segment limit silently missed
+  patches further into large `.text` segments.
+- `survey_binary` counts all strings in `statistics.total_strings`; the value
+  used to be capped at 5000 by the interesting-string cache.
+- `analyze_component` includes BSS globals (`is_mapped`, not `is_loaded`), and
+  `trace_data_flow` labels uninitialized/BSS nodes as data instead of code.
+- `_run_code` prefers an explicit `result`/`__result__` over a trailing
+  expression, preserves a result of `0`/`False`, and reports the last real
+  assignment (including reassignments and loop variables).
+- A malformed non-scalar JSON-RPC `id` is rejected with `-32600` and cannot
+  leak the tools/call gate; pending-request cleanup is also guarded in the
+  `finally` path.
+- SSE streams (`GET /mcp`, legacy `/sse`) send `Connection: close` and set
+  `close_connection`, so clients receive EOF after `stop()`/`close_instance`
+  instead of hanging on a kept-alive socket. Oversized/malformed request
+  bodies also close the connection instead of leaving unread bytes for a
+  pipelined request.
+- `close_instance` marshals the deferred stop onto the GUI main thread via
+  `execute_sync`; idalib (no message pump) keeps the direct path.
+- `discovery` validates instance files (pid/port/host types) and skips a
+  corrupt entry instead of aborting the whole scan; malformed `pid` values no
+  longer reach `os.kill`.
+- `delete_bookmark` prefers the address interpretation for low numeric values
+  (`0x10`, `16`, ...) and accepts an explicit `slot:N`, so firmware/low-address
+  bookmarks are deletable.
+- `get_callees` reports `indirect` for `o_mem` call operands (GOT slots) rather
+  than presenting the pointer slot as a resolved callee.
+- `get_unicode_strings` covers the Pascal/LEN2/LEN4 16/32-bit string types.
+- `get_strings_in_range`, `search_strings` and `get_heads` no longer report
+  `truncated: true` when the result count is exactly `limit`.
+- FLIRT listings unpack IDA's `(name, libs, matches)` tuples instead of
+  stringifying them.
+
 ## [0.2.3] - 2026-11-13
 
 ### Added
