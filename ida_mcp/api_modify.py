@@ -21,6 +21,7 @@ from .sync import ensure_analysis
 from .sync import check_cancelled, CancelledError, IDASyncError
 from .api_analysis import _as_int, clamp_int, parse_addr
 # aliased: this module's own ``get_original_bytes`` tool would shadow it
+from .compat import del_name as _compat_del_name
 from .compat import get_original_bytes as _compat_original_bytes
 
 
@@ -180,6 +181,135 @@ def apply_annotations(
     out: dict = {
         "dry_run": bool(dry_run),
         "results": results,
+        "count": len(results),
+        "valid": valid,
+        "applied": 0 if dry_run else valid,
+        "failed": failed,
+        "stopped": stopped,
+    }
+    if cancelled:
+        out["cancelled"] = True
+        out["partial"] = True
+    return json.dumps(out, indent=2)
+
+
+# ===========================================================================
+# Pipelines
+# ===========================================================================
+
+_PIPELINE_ACTIONS = {
+    "delete_name", "make_name_public", "make_name_non_public",
+}
+
+
+def _pipeline_apply_step(step: dict, dry_run: bool) -> dict:
+    """Validate/apply one pipeline step without calling another @idasync tool."""
+    if not isinstance(step, dict):
+        return {"ok": False, "error": "step must be a JSON object"}
+    action = str(step.get("op", step.get("action", ""))).strip().lower()
+    if action in ("rename", "set_name", "name", "comment", "set_comment",
+                  "type", "set_type"):
+        item = dict(step)
+        item["action"] = action
+        result = _batch_apply_item(item, dry_run)
+        result["op"] = action
+        return result
+    if action not in _PIPELINE_ACTIONS:
+        return {"ok": False, "op": action,
+                "error": (f"Unknown pipeline op {action!r}; use rename/comment/"
+                          "type/delete_name/make_name_public/"
+                          "make_name_non_public")}
+    address = step.get("address")
+    if address is None:
+        return {"ok": False, "op": action, "error": "missing 'address'"}
+    try:
+        ea = parse_addr(address)
+    except ValueError as e:
+        return {"ok": False, "op": action, "address": address,
+                "error": str(e)}
+    if not ida_bytes.is_mapped(ea):
+        return {"ok": False, "op": action, "address": hex(ea),
+                "error": f"Address not mapped: {hex(ea)}"}
+    old_name = ida_name.get_ea_name(ea) or None
+    if dry_run:
+        return {"ok": True, "op": action, "address": hex(ea), "dry_run": True,
+                "old_name": old_name}
+    try:
+        if action == "delete_name":
+            ok = bool(_compat_del_name(ea))
+        else:
+            fn = getattr(ida_name, action, None)
+            if not callable(fn):
+                return {"ok": False, "op": action, "address": hex(ea),
+                        "error": f"{action} is not available on this IDA version"}
+            result = fn(ea)
+            # IDA's visibility setters may return None on success and older
+            # tools ignore the return value; only an explicit False is a fail.
+            ok = result is not False
+    except Exception as e:
+        return {"ok": False, "op": action, "address": hex(ea),
+                "error": str(e)}
+    if not ok:
+        return {"ok": False, "op": action, "address": hex(ea),
+                "error": f"Failed to {action} at {hex(ea)}"}
+    return {"ok": True, "op": action, "address": hex(ea),
+            "old_name": old_name,
+            "current_name": ida_name.get_ea_name(ea) or None}
+
+
+@tool
+@idasync
+@unsafe
+def apply_pipeline(
+    steps: str,
+    dry_run: bool = False,
+    stop_on_error: bool = False,
+) -> str:
+    """Apply a short sequence of annotation/name operations in one call.
+
+    ``steps`` is a JSON array of objects; each step uses ``op`` (``action`` is
+    accepted as an alias). Supported ops: ``rename``/``set_name``,
+    ``comment``/``set_comment``, ``type``/``set_type``, ``delete_name``,
+    ``make_name_public`` and ``make_name_non_public``. ``dry_run`` validates
+    every step without changing the IDB; ``stop_on_error`` stops after the
+    first failed step. At most 1000 steps are accepted.
+
+    This is deliberately an operation pipeline, not a way to nest MCP tool
+    calls: the steps run directly inside one synchronized tool body.
+
+    **Unsafe** — requires ``?unsafe=true``.
+    """
+    ensure_analysis()
+    try:
+        parsed = json.loads(steps) if isinstance(steps, str) else steps
+    except (TypeError, ValueError) as e:
+        return json.dumps({"error": f"Invalid steps JSON: {e}"})
+    if not isinstance(parsed, list):
+        return json.dumps({"error": "steps must be a JSON array"})
+    if len(parsed) > _MAX_BATCH_ITEMS:
+        return json.dumps({"error": f"Too many steps ({len(parsed)} > {_MAX_BATCH_ITEMS})"})
+
+    results: list[dict] = []
+    stopped = False
+    cancelled = False
+    for i, step in enumerate(parsed):
+        try:
+            check_cancelled()
+        except (CancelledError, IDASyncError):
+            cancelled = True
+            break
+        result = _pipeline_apply_step(step, bool(dry_run))
+        result["index"] = i
+        results.append(result)
+        if not result.get("ok") and stop_on_error:
+            stopped = True
+            break
+
+    failed = sum(1 for r in results if not r.get("ok"))
+    valid = len(results) - failed
+    out: dict = {
+        "dry_run": bool(dry_run),
+        "steps": results,
         "count": len(results),
         "valid": valid,
         "applied": 0 if dry_run else valid,

@@ -65,6 +65,7 @@ read_struct
 patch_bytes
 patch_asm
 apply_annotations
+apply_pipeline
 set_comment
 set_name
 set_type

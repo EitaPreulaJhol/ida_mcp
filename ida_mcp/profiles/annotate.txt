@@ -48,6 +48,7 @@ set_function_comment
 set_type
 declare_type
 apply_annotations
+apply_pipeline
 diff_before_after
 idb_save
 execute_script

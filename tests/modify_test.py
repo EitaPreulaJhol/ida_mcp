@@ -60,6 +60,7 @@ ida_bytes.DELIT_SIMPLE = 0
 sys.modules["ida_bytes"] = ida_bytes
 
 _NAME_CALLS: list[tuple] = []
+_NAME_EVENTS: list[tuple] = []
 _NAME_BY_EA: dict[int, str] = {}
 ida_name = types.ModuleType("ida_name")
 ida_name.SN_NOWARN = 0
@@ -67,6 +68,13 @@ ida_name.set_name = lambda ea, name, flags=0: (
     _NAME_CALLS.append((ea, name)) or _NAME_BY_EA.__setitem__(ea, name) or True)
 ida_name.force_name = lambda ea, name: ida_name.set_name(ea, name)
 ida_name.get_ea_name = lambda ea: _NAME_BY_EA.get(ea, f"old_{ea:x}")
+ida_name.make_name_public = lambda ea: (
+    _NAME_EVENTS.append(("public", ea)) or True)
+ida_name.make_name_non_public = lambda ea: (
+    _NAME_EVENTS.append(("nonpublic", ea)) or True)
+ida_name.del_global_name = lambda ea: (
+    _NAME_EVENTS.append(("delete", ea)) or _NAME_BY_EA.pop(ea, None) is not None)
+ida_name.del_local_name = lambda ea: False
 sys.modules["ida_name"] = ida_name
 
 _CMT_CALLS: list[tuple] = []
@@ -117,9 +125,13 @@ mod = load("api_modify", {
     "    try: return int(s)\n"
     "    except ValueError: raise ValueError(f'Unknown: {s}')" + API_ANALYSIS_HELPERS,
     "compat": "def get_original_bytes(ea, size):\n"
-    "    return bytes(_ORIGINAL_BYTES.get(ea + i, 0x41) for i in range(size))",
+    "    return bytes(_ORIGINAL_BYTES.get(ea + i, 0x41) for i in range(size))\n"
+    "def del_name(ea):\n"
+    "    _NAME_EVENTS.append(('delete', ea))\n"
+    "    return _NAME_BY_EA.pop(ea, None) is not None",
 }, alias="modify_test",
-   stub_globals={"_ORIGINAL_BYTES": _ORIGINAL_BYTES, "_CURRENT_BYTES": _CURRENT_BYTES})
+   stub_globals={"_ORIGINAL_BYTES": _ORIGINAL_BYTES, "_CURRENT_BYTES": _CURRENT_BYTES,
+                  "_NAME_BY_EA": _NAME_BY_EA, "_NAME_EVENTS": _NAME_EVENTS})
 
 # =========================================================================
 # make_data: every scalar type must pass `length` to create_* (14.2)
@@ -236,6 +248,47 @@ assert r["failed"] == 1 and r["applied"] == 0 and r["stopped"] is True and r["co
 r = json.loads(mod.apply_annotations("{not json"))
 assert "error" in r, r
 print("apply_annotations errors/stop_on_error OK")
+
+# --- pipelines: operation dispatch without nested @idasync calls ---
+_NAME_CALLS.clear()
+_NAME_EVENTS.clear()
+_NAME_BY_EA.clear()
+_NAME_BY_EA[0x2000] = "victim"
+pipeline = json.dumps([
+    {"op": "rename", "address": "0x1000", "name": "pipeline_name"},
+    {"op": "comment", "address": "0x1004", "comment": "pipeline note"},
+    {"op": "type", "address": "0x1008", "type": "probe_t"},
+    {"op": "make_name_public", "address": "0x2000"},
+    {"op": "delete_name", "address": "0x2000"},
+])
+r = json.loads(mod.apply_pipeline(pipeline, dry_run=True))
+assert r["dry_run"] is True and r["valid"] == 5 and r["applied"] == 0, r
+assert not _NAME_CALLS and not _NAME_EVENTS and _NAME_BY_EA.get(0x2000) == "victim", (
+    _NAME_CALLS, _NAME_EVENTS, _NAME_BY_EA)
+r = json.loads(mod.apply_pipeline(pipeline))
+assert r["applied"] == 5 and r["failed"] == 0, r
+assert _NAME_CALLS == [(0x1000, "pipeline_name")], _NAME_CALLS
+assert _NAME_EVENTS == [("public", 0x2000), ("delete", 0x2000)], _NAME_EVENTS
+assert _NAME_BY_EA.get(0x2000) is None, _NAME_BY_EA
+r = json.loads(mod.apply_pipeline(json.dumps([
+    {"op": "unknown", "address": "0x1000"},
+])))
+assert r["failed"] == 1 and "Unknown pipeline op" in r["steps"][0]["error"], r
+r = json.loads(mod.apply_pipeline("{not json"))
+assert "error" in r, r
+print("apply_pipeline dry-run/apply/errors OK")
+
+_NAME_CALLS.clear()
+steps = json.dumps([
+    {"op": "rename", "address": "0xBAD", "name": "bad"},
+    {"op": "comment", "address": "0x1000", "comment": "still runs"},
+])
+r = json.loads(mod.apply_pipeline(steps))
+assert r["failed"] == 1 and r["applied"] == 1 and r["count"] == 2, r
+assert _CMT_CALLS[-1] == (0x1000, "still runs", False), _CMT_CALLS
+r = json.loads(mod.apply_pipeline(steps, stop_on_error=True))
+assert r["failed"] == 1 and r["applied"] == 0 and r["stopped"] is True, r
+print("apply_pipeline stop_on_error OK")
 
 # list_patches used to scan only the first 100 KB of each segment.  The
 # patched byte below is 100001 bytes into .text, so the old code reported

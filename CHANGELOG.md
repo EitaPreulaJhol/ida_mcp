@@ -31,6 +31,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `apply_annotations(items, dry_run, stop_on_error)`: one unsafe call for
   batch rename/comment/type operations, with per-item results, dry-run
   previews and optional stop-at-first-error.
+- `apply_pipeline(steps, dry_run, stop_on_error)`: executes a short sequence
+  of annotation/name operations (rename/comment/type/delete/public/non-public)
+  inside one synchronized call, without nesting MCP tool calls; supports
+  dry-run, cancellation and per-step errors.
 - Focus profiles `malware`, `ctf`, `annotate` and `debug`, selected with
   `?profile=`. They narrow the visible tool set; unsafe/extension entries
   still require `?unsafe=true` / `?ext=`.

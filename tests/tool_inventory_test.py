@@ -202,6 +202,7 @@ EXPECTED = {
     ],
     "api_modify": [
         "apply_annotations",
+        "apply_pipeline",
         "get_original_bytes",
         "list_patches",
         "make_data",
