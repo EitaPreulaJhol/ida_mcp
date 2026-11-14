@@ -701,6 +701,14 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             # re-initialize instead of accepting a stream nobody will route to.
             self._send_unknown_session(session_id)
             return
+        # Register the queue *before* announcing the stream. The client may
+        # send a tools/call immediately after reading ": connected"; if the
+        # tool reports progress in that window, registering afterwards would
+        # drop the notification (observed as a flaky progress_test timeout).
+        stream = None
+        if session_id:
+            stream = _McpHttpStream()
+            self.mcp_server.register_http_stream(session_id, stream)
         try:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -711,12 +719,10 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b": connected\n\n")
             self.wfile.flush()
         except _DISCONNECT_ERRORS:
+            if stream is not None and session_id:
+                self.mcp_server.unregister_http_stream(session_id, stream)
             logger.debug("[MCP] GET /mcp headers suppressed (client gone)")
             return
-        stream = None
-        if session_id:
-            stream = _McpHttpStream()
-            self.mcp_server.register_http_stream(session_id, stream)
         sock = self.connection
         last_ping = time.monotonic()
         try:
