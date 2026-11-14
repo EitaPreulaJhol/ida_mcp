@@ -10,7 +10,7 @@ Architecture (aligned with ida-pro-mcp / idalib-mcp):
 - plugin.py: IDA plugin entry point
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 # SIGPIPE is ignored only while the HTTP server runs (`server.start_server`),
 # not at package import: importing ida_mcp should not change the signal

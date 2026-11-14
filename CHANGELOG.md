@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-13
+
 ### Added
 - Bounded `tools/call` admission queue (`IDA_MCP_TOOL_QUEUE`, default 8;
   `IDA_MCP_TOOL_QUEUE_WAIT_SEC`, default 15) so agents that fan out parallel

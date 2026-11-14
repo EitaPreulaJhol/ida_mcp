@@ -2,7 +2,7 @@
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "ida-mcp-bridge",
-    "version": "0.3.0",
+    "version": "0.4.0",
     "entryPoint": "ida_mcp_loader.py",
     "description": "Expose a running IDA Pro session to AI coding agents over the Model Context Protocol (MCP).",
     "license": "MIT",

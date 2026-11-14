@@ -14,7 +14,7 @@ Version is read from ``ida_mcp/__init__.py`` without importing the package
 
 Usage:
     python scripts/package.py
-    python scripts/package.py --expect-version 0.3.0   # release: tag guard
+    python scripts/package.py --expect-version 0.4.0   # release: tag guard
 """
 import argparse
 import ast
