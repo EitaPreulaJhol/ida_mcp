@@ -2,12 +2,14 @@
 # tools (ruff/mypy/coverage) that you install with: pip install -e ".[dev]"
 PYTHON ?= python3
 
-.PHONY: help test inventory skills lint fmt typecheck crosscheck idalib idalib-matrix coverage package clean
+.PHONY: help test inventory docs docs-check skills lint fmt typecheck crosscheck idalib idalib-matrix coverage package clean
 
 help:
 	@echo "Targets:"
 	@echo "  test       - run the standalone test suite (no IDA needed)"
 	@echo "  inventory  - registry <-> README <-> profiles drift guard"
+	@echo "  docs       - regenerate the README tool inventory"
+	@echo "  docs-check - fail if the generated inventory is stale"
 	@echo "  skills     - mirror skills/ (source of truth) into .pi/skills/"
 	@echo "  lint       - ruff check ."
 	@echo "  fmt        - ruff check --fix ."
@@ -24,6 +26,12 @@ test:
 
 inventory:
 	$(PYTHON) tests/tool_inventory_test.py
+
+docs:
+	$(PYTHON) scripts/generate_docs.py
+
+docs-check:
+	$(PYTHON) scripts/generate_docs.py --check
 
 # skills/ is canonical; .pi/skills/ is a byte-for-byte mirror for Pi
 # (tests/skills_sync_test.py fails when they drift).

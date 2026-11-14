@@ -57,6 +57,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Plugin metadata polish: a 16:9 `logo.png` is referenced by `logoPath`,
   shipped in both ZIP layouts, and validated by the manifest/package tests.
   CI also runs an optional `hcli plugin lint` job on the modern ZIP.
+- Generated tool documentation: `scripts/generate_docs.py` renders the README
+  inventory (module counts and names) from the `@tool` AST; `--check` and
+  `tool_inventory_test.py` fail when the block is stale. `make docs` / `make
+  docs-check` wrap the generator.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

@@ -75,10 +75,11 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
    until the timeout. Tools that only report state must not wait at all.
 2. **Register**: make sure `server.py` imports the module (`from . import
    api_x  # noqa: F401`) so the `@tool` side effect runs.
-3. **Document** it in `README.md` (backtick-quoted, e.g. `` `my_tool` ``) and
-   bump the per-module count header (`### \`api_x\` (N)`).
+3. **Document** it: run `python scripts/generate_docs.py` (or `make docs`)
+   to regenerate the README tool inventory from `@tool`; do not hand-edit
+   the generated module/count block.
 4. **Inventory**: add the name to `EXPECTED` in
-   `tests/tool_inventory_test.py`.
+   `tests/tool_inventory_test.py` (the independent drift guard).
 5. **Profiles**: if it is read-safe and broadly useful, add it to
    `ida_mcp/profiles/readonly.txt` (and `triage.txt` for core triage tools).
    Triage must stay a strict subset of readonly, both privilege-free.
@@ -93,6 +94,7 @@ The suite guards registry ↔ docs ↔ profiles drift. To add a tool:
 
 - Per-module tool counts match `EXPECTED`.
 - Every tool is documented in README and has a non-empty docstring.
+- The README inventory block matches the generated registry block.
 - `server.py` imports every `api_*` module.
 - Profiles reference only real tools, stay privilege-free, and triage ⊂ readonly.
 - A tool calling a write sink (patch/rename/define/…) must be `@unsafe`/ext-gated.

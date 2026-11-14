@@ -144,6 +144,7 @@ All addresses accept hex (`0x401000`), decimal, or symbol names. `get_callees` m
 
 ## Tool inventory
 
+<!-- BEGIN GENERATED TOOL INVENTORY -->
 Every registered tool, grouped by module (names match `tools/list` exactly).
 
 ### `api_analysis` (15)
@@ -206,6 +207,10 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 
 `entity_query`, `func_query`, `get_local_variable_by_name`, `get_local_variable_references`, `imports_query`, `list_globals`
 
+### `api_sigmaker` (6)
+
+`apply_flirt_signatures`, `find_xref_signatures`, `list_flirt_signatures`, `make_signature`, `make_signature_for_function`, `make_signature_for_range`
+
 ### `api_search` (7)
 
 `find_bytes_between`, `find_immediate_between`, `find_regex`, `find_text_between`, `search_bytes`, `search_immediate_value`, `search_text`
@@ -214,11 +219,7 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 
 `get_code_segments`, `get_data_segments`, `get_segment_at`, `get_segment_bitness`, `get_segment_by_name`, `get_segment_class`, `get_segment_comment`, `get_segment_count`, `get_segment_end`, `get_segment_permissions`, `get_segment_size`, `get_segment_start`, `get_segments`
 
-### `api_sigmaker` (6)
-
-`apply_flirt_signatures`, `find_xref_signatures`, `list_flirt_signatures`, `make_signature`, `make_signature_for_function`, `make_signature_for_range`
-
-### `api_strings` (9)
+### `api_strings` (8)
 
 `get_ascii_strings`, `get_string_at`, `get_string_count`, `get_strings_by_length`, `get_strings_in_range`, `get_unicode_strings`, `list_strings`, `search_strings`
 
@@ -235,6 +236,7 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 `close_instance`, `decompile_function`, `execute_script`, `get_disassembly`, `get_functions`, `get_instance_info`, `list_instances`, `server_health`, `server_warmup`
 
 <!-- total: 243 tools -->
+<!-- END GENERATED TOOL INVENTORY -->
 
 ## How it works
 ```
@@ -274,6 +276,7 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 | `ida_mcp/rpc.py` | `@tool` / `@unsafe` decorators and registry |
 | `ida_mcp/sync.py` | `@idasync` main-thread bridge |
 | `ida_mcp/profiles.py` + `profiles/` | Lazy-loading tool allowlists (`triage`, `readonly`, `malware`, `ctf`, `annotate`, `debug`) |
+| `scripts/generate_docs.py` | Regenerates the README tool inventory from the `@tool` registry (`--check` for CI) |
 | `ida_mcp/compat.py` | IDA 8.3 to 9.x API shims |
 | `ida_mcp/regex_guard.py` | Rejects ReDoS-prone client regexes before compiling |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |

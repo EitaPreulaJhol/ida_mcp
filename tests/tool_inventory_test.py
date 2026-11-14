@@ -384,6 +384,35 @@ def main() -> int:
     else:
         print(f"README.md documents all {actual_total} tools OK")
 
+    # 2a) The README inventory block is generated from the same AST registry.
+    #     This catches stale module counts and entries that were hand-edited
+    #     or forgotten after adding a tool.
+    import importlib.util as _docs_ilu
+    docs_path = os.path.join(ROOT, "scripts", "generate_docs.py")
+    docs_spec = _docs_ilu.spec_from_file_location("docs_generator", docs_path)
+    docs_mod = _docs_ilu.module_from_spec(docs_spec)
+    docs_spec.loader.exec_module(docs_mod)
+    generated_tools = docs_mod.collect_tools()
+    if set(generated_tools) != set(EXPECTED):
+        failures.append(
+            "registry modules missing from EXPECTED: "
+            f"{sorted(set(generated_tools) - set(EXPECTED))}; "
+            "stale EXPECTED entries: "
+            f"{sorted(set(EXPECTED) - set(generated_tools))}")
+    generated = docs_mod.render_inventory()
+    begin = docs_mod.BEGIN
+    end = docs_mod.END
+    if begin not in readme or end not in readme:
+        failures.append("README.md missing generated inventory markers")
+    else:
+        actual_block = readme.split(begin, 1)[1].split(end, 1)[0].strip("\n")
+        if actual_block != generated:
+            failures.append(
+                "README.md tool inventory is stale; run "
+                "`python scripts/generate_docs.py`")
+        else:
+            print(f"README generated inventory OK ({actual_total} tools)")
+
     # 2b) Every @tool must carry a non-empty docstring. Agents (especially
     #     small models) pick tools from the description surfaced by
     #     tools/list, which is the function __doc__; a blank one is a UX bug.
