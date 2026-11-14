@@ -79,6 +79,34 @@ jobs:
       - name: Type-check pure modules
         run: mypy
 
+  hcli-lint:
+    name: hcli plugin lint (optional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Optional: uvx may need the network to fetch ida-hcli, and the plugin
+    # index may be unavailable. Warnings/recommendations should be visible
+    # without blocking a merge.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Build modern plugin ZIP
+        run: python scripts/package.py
+      - name: Install uv (optional)
+        run: python -m pip install uv
+      - name: Lint manifest/ZIP (skip when uvx/network is unavailable)
+        run: |
+          if ! command -v uvx >/dev/null 2>&1; then
+            echo "::warning::uvx unavailable; skipping hcli plugin lint"
+            exit 0
+          fi
+          if ! uvx --from ida-hcli hcli plugin lint dist/ida_mcp-*.zip; then
+            echo "::warning::hcli plugin lint reported a failure (optional job)"
+            exit 1
+          fi
+
   coverage:
     name: coverage (informational)
     runs-on: ubuntu-latest

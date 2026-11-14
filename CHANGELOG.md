@@ -54,6 +54,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   license or install.
 - Entry-point test harness (`tests/entries_test.py`) covers all eight
   `api_entries` tools, including pagination, forwarders and add/rename paths.
+- Plugin metadata polish: a 16:9 `logo.png` is referenced by `logoPath`,
+  shipped in both ZIP layouts, and validated by the manifest/package tests.
+  CI also runs an optional `hcli plugin lint` job on the modern ZIP.
 
 ### Changed
 - Paginated tools now share one `limit` contract: `limit=0` (or negative)

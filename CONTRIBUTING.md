@@ -145,7 +145,8 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
    - `dist/ida-mcp-legacy-X.Y.Z.zip` — root layout for IDA 8.3/8.4.
    - `dist/SHA256SUMS` — checksums for both ZIPs.
    Optionally validate the modern ZIP with
-   `hcli plugin lint dist/ida_mcp-X.Y.Z.zip`.
+   `hcli plugin lint dist/ida_mcp-X.Y.Z.zip`; CI has an optional
+   `hcli-lint` job for the same check (logo and manifest included).
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. `release.yml` runs the suite, builds both ZIPs via
    `scripts/package.py --expect-version X.Y.Z` (which fails if the tag,

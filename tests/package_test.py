@@ -33,7 +33,7 @@ os.makedirs(os.path.join(root, "ida_mcp", "__pycache__"))
 with open(os.path.join(root, "ida_mcp", "__init__.py"), "w") as f:
     f.write('__version__ = "1.2.3"\n')
 for rel in ("ida_mcp/profiles/triage.txt", "ida_mcp/__pycache__/x.cpython-311.pyc",
-            "ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE"):
+            "ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE", "logo.png"):
     with open(os.path.join(root, rel), "w") as f:
         f.write("x\n")
 with open(os.path.join(root, "ida-plugin.json"), "w", encoding="utf-8") as f:
@@ -68,11 +68,11 @@ modern_names = set(zipfile.ZipFile(modern).namelist()) if os.path.isfile(modern)
 legacy_names = set(zipfile.ZipFile(legacy).namelist()) if os.path.isfile(legacy) else set()
 check({"ida-mcp-bridge/ida-plugin.json", "ida-mcp-bridge/ida_mcp_loader.py",
        "ida-mcp-bridge/ida_mcp/__init__.py", "ida-mcp-bridge/ida_mcp/profiles/triage.txt",
-       "ida-mcp-bridge/LICENSE"} <= modern_names,
+       "ida-mcp-bridge/LICENSE", "ida-mcp-bridge/logo.png"} <= modern_names,
       "modern zip is one ida-mcp-bridge/ folder with manifest, loader, package and docs")
 check("ida_mcp_loader.py" not in modern_names, "modern zip has no root loader")
 check({"ida_mcp/__init__.py", "ida_mcp/profiles/triage.txt",
-       "ida_mcp_loader.py", "LICENSE"} <= legacy_names,
+       "ida_mcp_loader.py", "LICENSE", "logo.png"} <= legacy_names,
       "legacy zip keeps the IDA 8.3/8.4 root layout")
 check("ida-plugin.json" not in legacy_names, "legacy zip carries no manifest")
 check(not any("__pycache__" in n or n.endswith(".pyc")

@@ -30,7 +30,7 @@ PLUGIN_NAME = "ida-mcp-bridge"
 MANIFEST_NAME = "ida-plugin.json"
 PACKAGE_DIR = "ida_mcp"
 # Shipped next to the package in both layouts.
-EXTRA_FILES = ["ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE"]
+EXTRA_FILES = ["ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE", "logo.png"]
 EXCLUDE_DIR_NAMES = {"__pycache__"}
 EXCLUDE_SUFFIXES = (".pyc", ".pyo")
 

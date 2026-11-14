@@ -7,6 +7,7 @@ modern single-folder ZIP.
 import ast
 import json
 import os
+import struct
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -54,6 +55,15 @@ check(plugin.get("entryPoint") == "ida_mcp_loader.py",
       "entryPoint is the top-level loader")
 check(os.path.isfile(os.path.join(ROOT, plugin["entryPoint"])),
       "entryPoint file exists")
+logo = plugin.get("logoPath")
+check(isinstance(logo, str) and logo and os.path.isfile(os.path.join(ROOT, logo)),
+      "logoPath points at a shipped image")
+if isinstance(logo, str) and logo:
+    with open(os.path.join(ROOT, logo), "rb") as f:
+        header = f.read(24)
+    check(header[:8] == b"\x89PNG\r\n\x1a\n", "logo is a PNG")
+    width, height = struct.unpack(">II", header[16:24])
+    check(width * 9 == height * 16, f"logo is 16:9 ({width}x{height})")
 check(isinstance(plugin.get("description"), str) and plugin["description"].strip(),
       "description is present")
 check(plugin.get("license") == "MIT", "license is MIT")
