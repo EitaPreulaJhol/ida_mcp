@@ -761,7 +761,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 ConnectionAbortedError, OSError):
             pass
         finally:
-            if stream is not None:
+            if stream is not None and session_id:
                 self.mcp_server.unregister_http_stream(session_id, stream)
         try:
             self.wfile.flush()

@@ -171,7 +171,8 @@ try:
     out = json.loads(mod.export_fingerprints(path))
     assert out == {"ok": True, "path": os.path.abspath(path),
                    "function_count": 2, "algorithm": "ida_mcp_fp_v1"}, out
-    assert os.stat(path).st_mode & 0o777 == 0o600
+    if os.name == "posix":
+        assert os.stat(path).st_mode & 0o777 == 0o600
     data = json.load(open(path, encoding="utf-8"))
     assert data["schema"] == "ida-mcp-fingerprints"
     assert data["schema_version"] == 1
