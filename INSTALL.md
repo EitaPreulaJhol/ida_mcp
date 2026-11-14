@@ -1,13 +1,13 @@
 # INSTALL - ida_mcp: IDA Pro MCP Server for AI Agents
 
 Connects an AI coding agent to IDA Pro through the Model Context Protocol
-(244 tools: static analysis, decompilation, search, annotation, debugging,
+(247 tools: static analysis, decompilation, search, annotation, debugging,
 signatures). Installation has two halves:
 
 - **A. IDA side** - copy the plugin, restart IDA.
 - **B. Agent side** - register the MCP endpoint.
 
-> The server exposes 244 tools, but your agent should not
+> The server exposes 247 tools, but your agent should not
 > load them all: most MCP clients cap tool slots (often 40–128), and a huge
 > tool list burns context and confuses small models. This guide wires the
 > agent with the **`/ida` orchestrator skill** (`skills/ida/SKILL.md` for generic agents,
@@ -131,15 +131,15 @@ the skill (part C) drives escalation from there.
 | Step | URL | Tools |
 |---|---|---|
 | 1 - triage (default) | `http://127.0.0.1:13337/mcp?profile=triage` | 16: health, survey, list, decompile, xrefs |
-| 2 - readonly | `http://127.0.0.1:13337/mcp?profile=readonly` | 185: all safe reads |
-| 3 - full (safe) | `http://127.0.0.1:13337/mcp` | 185: same safe set, no profile filter |
-| 4 - unsafe | `http://127.0.0.1:13337/mcp?unsafe=true` | 225: + renames, comments, types, batch annotations, pipelines, patches, scripts, hooks, FLIRT apply |
-| 5 - debugger | `http://127.0.0.1:13337/mcp?unsafe=true&ext=dbg` | 244: + 19 `dbg_*` tools |
+| 2 - readonly | `http://127.0.0.1:13337/mcp?profile=readonly` | 187: all safe reads |
+| 3 - full (safe) | `http://127.0.0.1:13337/mcp` | 187: same safe set, no profile filter |
+| 4 - unsafe | `http://127.0.0.1:13337/mcp?unsafe=true` | 226: + renames, comments, types, batch annotations, pipelines, fingerprints, patches, scripts, hooks, FLIRT apply |
+| 5 - debugger | `http://127.0.0.1:13337/mcp?unsafe=true&ext=dbg` | 247: + 19 `dbg_*` tools |
 
-Steps 2 and 3 expose the same 185 safe tools. `readonly` is just the
+Steps 2 and 3 expose the same 187 safe tools. `readonly` is just the
 explicit allowlist, while bare `/mcp` is the unfiltered safe set. Step 4
-unhides the 40 non-debugger write tools (total 225); step 5 adds the 19
-debugger tools (total 244, the full registry).
+unhides the 40 non-debugger write tools (total 226); step 5 adds the 19
+debugger tools (total 247, the full registry).
 
 ### Focus profiles
 
@@ -149,8 +149,8 @@ and/or `?ext=<group>`:
 
 | Profile | Tools | What it is for |
 |---|---|---|
-| `malware` | 97 | imports, strings, xrefs, signatures, passive hooks |
-| `ctf` | 68 | decompiler, search, signatures, patching, annotations |
+| `malware` | 100 | imports, strings, xrefs, signatures, passive hooks |
+| `ctf` | 71 | decompiler, search, signatures, patching, annotations |
 | `annotate` | 47 | rename/comment/type/batch writes + context to verify them |
 | `debug` | 36 | `dbg_*` group + paused-target inspection (needs `ext=dbg`) |
 
@@ -299,7 +299,7 @@ Any client speaking Streamable HTTP works:
 ## C. Install the skills (lazy loading)
 
 The `/ida` orchestrator skill teaches the agent the connect -> triage -> escalate loop so the
-244 tools never flood its context, and `ida-scripting` carries the IDAPython API reference. Two mirrored trees ship with this repo -
+247 tools never flood its context, and `ida-scripting` carries the IDAPython API reference. Two mirrored trees ship with this repo -
 same methodology and skill bodies, different frontmatter/trigger word:
 
 | Agent | Files | Install as |
@@ -333,7 +333,7 @@ After installing, type **`/ida`** or just "analyze the binary open in IDA" and t
 (Optional) run the offline test suite - no IDA needed, IDA modules are stubbed:
 
 ```bash
-python3 tests/run_all.py              # all 48 harnesses
+python3 tests/run_all.py              # all 49 harnesses
 python3 tests/tool_inventory_test.py  # registry <-> README <-> profiles drift guard
 # Optional, licensed IDA installs: safe-tool sweep + folder loader per version
 IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib-matrix
@@ -346,7 +346,7 @@ IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib-matrix
 | Symptom | Cause -> Fix |
 |---|---|
 | `curl` connection refused | IDA not running, or plugin not loaded. Re-check part A; look for load errors in IDA's Output window at startup. |
-| `All 244 tools loaded` / client complains about tool limits | Endpoint missing `?profile=triage`. Reconnect with the triage URL (ladder step 1). |
+| `All 247 tools loaded` / client complains about tool limits | Endpoint missing `?profile=triage`. Reconnect with the triage URL (ladder step 1). |
 | `requires unsafe mode` error | Endpoint lacks `?unsafe=true`. Reconnect with step 4 URL (writes) - confirm with the user first. |
 | `requires a valid auth token` error | Unsafe/debugger call without the startup token. Pass `X-IDA-MCP-Token` (or `?token=`) using the token line in IDA's Output window, pin it with `IDA_MCP_TOKEN`, or set `IDA_MCP_NO_AUTH=1` on a trusted box. |
 | `requires extension 'dbg'` error | Endpoint lacks `?ext=dbg` (debugger tools also need `?unsafe=true`). Reconnect with step 5 URL - debugger must also be configured in IDA. |
@@ -386,10 +386,10 @@ IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib-matrix
 
 ## Further reading
 
-- [`README.md`](README.md) - full tool reference (244 tools), design, safety model, Agent skills, layout.
+- [`README.md`](README.md) - full tool reference (247 tools), design, safety model, Agent skills, layout.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) - architecture, drift-guard invariants, add-a-tool flow, release steps.
 - [`skills/ida/SKILL.md`](skills/ida/SKILL.md) - generic `/ida` orchestrator skill; [`skills/ida-scripting/SKILL.md`](skills/ida-scripting/SKILL.md) - IDAPython scripting skill.
 - [`.pi/skills/ida/SKILL.md`](.pi/skills/ida/SKILL.md) - Pi `/ida` skill; [`.pi/skills/ida-scripting/SKILL.md`](.pi/skills/ida-scripting/SKILL.md) - Pi IDAPython scripting skill.
 - [`.pi/extensions/ida-mcp.ts`](.pi/extensions/ida-mcp.ts) - Pi extension (bridge, `/ida` command, footer indicator, `IDA_MCP_URL` override).
-- [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/185-tool built-in allowlists; `malware.txt`, `ctf.txt`, `annotate.txt` and `debug.txt` are the focus profiles.
+- [`ida_mcp/profiles/triage.txt`](ida_mcp/profiles/triage.txt) / [`readonly.txt`](ida_mcp/profiles/readonly.txt) - the 16/187-tool built-in allowlists; `malware.txt`, `ctf.txt`, `annotate.txt` and `debug.txt` are the focus profiles.
 - [`tests/`](tests/) - (Almost) complete test suite (`run_all.py`, `tool_inventory_test.py` guards registry <-> docs drift).

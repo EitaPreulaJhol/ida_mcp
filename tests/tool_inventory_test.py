@@ -104,6 +104,11 @@ EXPECTED = {
         "get_flowchart",
         "get_microcode",
     ],
+    "api_fingerprint": [
+        "diff_fingerprints",
+        "export_fingerprints",
+        "fingerprint_function",
+    ],
     "api_entries": [
         "add_entry_point",
         "get_entry_forwarders",

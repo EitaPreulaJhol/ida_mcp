@@ -33,6 +33,7 @@ END = "<!-- END GENERATED TOOL INVENTORY -->"
 # User-facing order; unknown/new modules are appended alphabetically.
 MODULE_ORDER = [
     "api_analysis", "api_comments", "api_composite", "api_debug",
+    "api_fingerprint",
     "api_entries", "api_functions", "api_hexrays", "api_hooks", "api_info",
     "api_instructions", "api_memory", "api_modify", "api_names",
     "api_python", "api_query", "api_sigmaker", "api_search", "api_segments",

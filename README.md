@@ -118,7 +118,7 @@ By default the server is **read-only**. Mutating tools (renames, comments, type 
 **Bind address.** The server binds `127.0.0.1`. A host persisted in the IDB is honored only when it is loopback (an IDB may come from someone else and must not silently move the server onto the network); a non-loopback value is ignored with a warning. To bind elsewhere, set `IDA_MCP_HOST` in IDA's environment; every request then needs the token, and traffic is plain HTTP, so use a trusted network or a tunnel. Client regexes (`find_regex`, `func_query`, `entity_query`, `/re/` filters) reject nested quantifiers such as `(a+)+`, which backtrack exponentially on the IDA main thread where the tool timeout cannot interrupt them; use a possessive `++` or atomic `(?>...)` group instead.
 
 ## Tool surface
-The plugin exposes 244 tools across 22 modules:
+The plugin exposes 247 tools across 23 modules:
 
 | Area | Examples |
 |------|----------|
@@ -126,6 +126,7 @@ The plugin exposes 244 tools across 22 modules:
 | Composite | `survey_binary`, `analyze_function`, `analyze_component`, `trace_data_flow`, `callgraph`, `func_profile` |
 | Queries | `func_query`, `entity_query`, `imports_query`, `list_globals` |
 | Xrefs & graphs | `get_xrefs_to`, `xref_query`, `get_callers`, `get_callees`, directional reads/writes/calls/jumps |
+| Fingerprints / diff | `fingerprint_function`, `export_fingerprints`, `diff_fingerprints` |
 | Memory & data | `get_bytes`, `get_string`, scalar readers (`get_byte`…`get_qword`, floats), `get_heads`, BSS-safe reads |
 | Strings / imports / exports | paginated listing, search, counts, range queries |
 | Types | `type_query`, `type_inspect`, `read_struct`, `declare_type`, `enum_upsert` |
@@ -136,7 +137,7 @@ The plugin exposes 244 tools across 22 modules:
 | Signatures | `make_signature*`, `find_xref_signatures`, FLIRT apply/list |
 | Entries | listing, ordinal/name/address lookup, add/rename |
 | Server | `server_health`, `server_warmup`, `list_instances` |
-| Unsafe (opt-in) | `apply_annotations`, `apply_pipeline`, `set_name`, `set_comment`, `patch_bytes`, `patch_asm`, `execute_script`, `py_eval` |
+| Unsafe (opt-in) | `apply_annotations`, `apply_pipeline`, `export_fingerprints`, `set_name`, `set_comment`, `patch_bytes`, `patch_asm`, `execute_script`, `py_eval` |
 | Debugger (opt-in) | `dbg_start`, `dbg_continue`, `dbg_step_into/over`, breakpoints, `dbg_regs`, `dbg_stacktrace`, `dbg_read/write` |
 | Hooks (tracers) | `install_hook`, `install_hexrays_hook`, `install_idb_hook`, `get_hook_info` |
 
@@ -162,6 +163,10 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 ### `api_debug` (19)
 
 `dbg_add_bp`, `dbg_bps`, `dbg_continue`, `dbg_delete_bp`, `dbg_exit`, `dbg_get_threads`, `dbg_gpregs`, `dbg_read`, `dbg_regs`, `dbg_regs_named`, `dbg_run_to`, `dbg_set_bp_condition`, `dbg_stacktrace`, `dbg_start`, `dbg_status`, `dbg_step_into`, `dbg_step_over`, `dbg_toggle_bp`, `dbg_write`
+
+### `api_fingerprint` (3)
+
+`diff_fingerprints`, `export_fingerprints`, `fingerprint_function`
 
 ### `api_entries` (8)
 
@@ -235,7 +240,7 @@ Every registered tool, grouped by module (names match `tools/list` exactly).
 
 `close_instance`, `decompile_function`, `execute_script`, `get_disassembly`, `get_functions`, `get_instance_info`, `list_instances`, `server_health`, `server_warmup`
 
-<!-- total: 244 tools -->
+<!-- total: 247 tools -->
 <!-- END GENERATED TOOL INVENTORY -->
 
 ## How it works
@@ -292,7 +297,7 @@ This repo includes a ready-to-use skill and extension for the [Pi Agent](https:/
 
 | Path | What it provides |
 |------|------------------|
-| `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (185) -> full (185, unfiltered) -> unsafe (225) -> dbg (244)` only as needed |
+| `.pi/skills/ida/SKILL.md` | `/ida` skill: verify the bridge (`server_health`), triage with `survey_binary()`, then escalate `triage (16 tools) -> readonly (187) -> full (187, unfiltered) -> unsafe (226) -> dbg (247)` only as needed |
 | `.pi/skills/ida-scripting/` | IDAPython scripting skill with the full API reference |
 | `.pi/extensions/ida-mcp.ts` | Extension bridge: proxies the plugin's Streamable-HTTP server (`http://127.0.0.1:13337/mcp`) into pi tools with lazy loading, `/ida [status\|triage\|readonly\|full\|unsafe\|dbg\|tools]` command, `ida_profile` / `ida_status` management tools, and a live `IDA:online/offline` footer indicator (polling + session-event refresh) |
 

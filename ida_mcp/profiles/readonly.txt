@@ -10,6 +10,8 @@
 
 analyze_component
 analyze_function
+fingerprint_function
+diff_fingerprints
 basic_blocks
 breaks_flow
 callgraph

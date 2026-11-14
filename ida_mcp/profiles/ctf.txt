@@ -20,6 +20,9 @@ get_function_signature
 get_local_variables
 decompile_function
 analyze_function
+export_fingerprints
+fingerprint_function
+diff_fingerprints
 disasm
 get_instructions
 get_operand_info

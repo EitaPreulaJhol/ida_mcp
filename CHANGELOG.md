@@ -35,6 +35,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   of annotation/name operations (rename/comment/type/delete/public/non-public)
   inside one synchronized call, without nesting MCP tool calls; supports
   dry-run, cancellation and per-step errors.
+- Function fingerprints and portable snapshots: `fingerprint_function` returns
+  exact/shape hashes and CFG statistics; `export_fingerprints` writes a JSON
+  snapshot for offline comparison (one IDB per process; no second database is
+  opened inside the live IDA session); `diff_fingerprints` matches a snapshot
+  against the current IDB by exact location/hash, unique shape, then unique
+  name, with bounded added/removed/modified/ambiguous result lists.
 - Focus profiles `malware`, `ctf`, `annotate` and `debug`, selected with
   `?profile=`. They narrow the visible tool set; unsafe/extension entries
   still require `?unsafe=true` / `?ext=`.

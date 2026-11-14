@@ -43,6 +43,7 @@ from . import api_modify     # noqa: F401
 from . import api_entries    # noqa: F401
 from . import api_names      # noqa: F401
 from . import api_composite  # noqa: F401
+from . import api_fingerprint  # noqa: F401
 from . import api_query      # noqa: F401
 from . import api_memory     # noqa: F401
 from . import api_xrefs      # noqa: F401
