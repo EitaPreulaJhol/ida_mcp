@@ -143,12 +143,13 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
    and add a `CHANGELOG.md` entry under a new `## [X.Y.Z]` heading.
 2. Run `make package`. It builds both layouts:
    - `dist/ida_mcp-X.Y.Z.zip` — `ida-mcp-bridge/` folder with `ida-plugin.json`
-     (IDA 8.5+ / HCLI);
-   - `dist/ida-mcp-legacy-X.Y.Z.zip` — root layout for IDA 8.3/8.4.
+     and the `skills/` tree (IDA 8.5+ / HCLI);
+   - `dist/ida-mcp-legacy-X.Y.Z.zip` — root layout for IDA 8.3/8.4, also with
+     the `skills/` tree.
    - `dist/SHA256SUMS` — checksums for both ZIPs.
    Optionally validate the modern ZIP with
    `hcli plugin lint dist/ida_mcp-X.Y.Z.zip`; CI has an optional
-   `hcli-lint` job for the same check (logo and manifest included).
+   `hcli-lint` job for the same check (manifest included).
 3. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. `release.yml` runs the suite, builds both ZIPs via
    `scripts/package.py --expect-version X.Y.Z` (which fails if the tag,

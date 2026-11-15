@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- Both release ZIPs now ship the `skills/` tree (`ida-mcp-bridge/skills/` in
+  the modern layout, `skills/` in the legacy layout), so the `/ida` orchestrator
+  and `ida-scripting` skills can be installed straight from the plugin archive.
+
+### Removed
+- The generated `logo.png` and its `logoPath` manifest entry. The plugin ships
+  without a logo; the manifest, packaging and tests no longer reference it.
+
 ## [0.4.0] - 2026-11-13
 
 ### Added

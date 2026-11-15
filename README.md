@@ -262,7 +262,9 @@ MCP client -> HTTP POST /mcp -> request handler
 The handler parses `?unsafe=` / `?profile=` / `?ext=` per request (thread-local, no races), dispatches JSON-RPC `tools/list` and `tools/call` against the registry, and marshals IDA-touching calls onto the main thread with a timeout that can cancel stuck operations.
 
 ## Agent skills
-Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skills/` (Pi Agent):
+Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skills/` (Pi Agent),
+and both release ZIPs carry the `skills/` tree at the archive root (`ida-mcp-bridge/skills/`
+in the modern ZIP, `skills/` in the legacy ZIP):
 
 | Skill | What it does |
 |-------|--------------|
@@ -272,8 +274,7 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 ## Layout
 | Path | Purpose |
 |------|---------|
-| `ida-plugin.json` | IDA 8.5+ plugin metadata (folder layout, `entryPoint`, `logoPath`) |
-| `logo.png` | 16:9 plugin-index logo referenced by `logoPath` |
+| `ida-plugin.json` | IDA 8.5+ plugin metadata (folder layout, `entryPoint`) |
 | `ida_mcp_loader.py` | Thin IDA entry point: adds the install folder to `sys.path` and re-exports `ida_mcp/plugin.py` |
 | `ida_mcp/server.py` | Core tools, server lifecycle, module wiring |
 | `ida_mcp/api_*.py` | Tool modules (analysis, functions, xrefs, memory, strings, types, segments, instructions, info, comments, names, composite, query, hexrays, debug, hooks, sigmaker, search, modify, entries) |
@@ -286,7 +287,7 @@ Two skills ship in both `skills/` (Claude Code / Cursor / Copilot) and `.pi/skil
 | `ida_mcp/regex_guard.py` | Rejects ReDoS-prone client regexes before compiling |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |
 | `ida_mcp/zeromcp/` | Vendored stdlib MCP transport |
-| `skills/ida/`, `skills/ida-scripting/` | Generic agent skills (Claude Code/Cursor/Copilot): `/ida` orchestrator (connect -> triage -> escalate) + IDAPython scripting |
+| `skills/ida/`, `skills/ida-scripting/` | Generic agent skills (Claude Code/Cursor/Copilot), also shipped in both release ZIPs: `/ida` orchestrator (connect -> triage -> escalate) + IDAPython scripting |
 | `.pi/skills/ida/SKILL.md`, `.pi/skills/ida-scripting/` | Same skills for the Pi Agent (pi-formatted frontmatter), auto-loaded by pi |
 | `.pi/extensions/ida-mcp.ts` | Pi Agent extension: MCP bridge, `/ida` command, `ida_profile` / `ida_status` tools, footer status indicator |
 | `tests/` | Standalone test scripts (run outside IDA with stubbed IDA modules) |

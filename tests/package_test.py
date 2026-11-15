@@ -30,10 +30,15 @@ def check(cond, msg):
 root = tempfile.mkdtemp(prefix="idamcp_pkg_")
 os.makedirs(os.path.join(root, "ida_mcp", "profiles"))
 os.makedirs(os.path.join(root, "ida_mcp", "__pycache__"))
+os.makedirs(os.path.join(root, "skills", "ida"))
+os.makedirs(os.path.join(root, "skills", "ida-scripting", "references"))
 with open(os.path.join(root, "ida_mcp", "__init__.py"), "w") as f:
     f.write('__version__ = "1.2.3"\n')
 for rel in ("ida_mcp/profiles/triage.txt", "ida_mcp/__pycache__/x.cpython-311.pyc",
-            "ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE", "logo.png"):
+            "ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE",
+            "skills/ida/SKILL.md",
+            "skills/ida-scripting/SKILL.md",
+            "skills/ida-scripting/references/api-reference.md"):
     with open(os.path.join(root, rel), "w") as f:
         f.write("x\n")
 with open(os.path.join(root, "ida-plugin.json"), "w", encoding="utf-8") as f:
@@ -68,12 +73,17 @@ modern_names = set(zipfile.ZipFile(modern).namelist()) if os.path.isfile(modern)
 legacy_names = set(zipfile.ZipFile(legacy).namelist()) if os.path.isfile(legacy) else set()
 check({"ida-mcp-bridge/ida-plugin.json", "ida-mcp-bridge/ida_mcp_loader.py",
        "ida-mcp-bridge/ida_mcp/__init__.py", "ida-mcp-bridge/ida_mcp/profiles/triage.txt",
-       "ida-mcp-bridge/LICENSE", "ida-mcp-bridge/logo.png"} <= modern_names,
-      "modern zip is one ida-mcp-bridge/ folder with manifest, loader, package and docs")
+       "ida-mcp-bridge/LICENSE", "ida-mcp-bridge/skills/ida/SKILL.md",
+       "ida-mcp-bridge/skills/ida-scripting/SKILL.md",
+       "ida-mcp-bridge/skills/ida-scripting/references/api-reference.md"} <= modern_names,
+      "modern zip is one ida-mcp-bridge/ folder with manifest, loader, package, docs and skills")
 check("ida_mcp_loader.py" not in modern_names, "modern zip has no root loader")
 check({"ida_mcp/__init__.py", "ida_mcp/profiles/triage.txt",
-       "ida_mcp_loader.py", "LICENSE", "logo.png"} <= legacy_names,
-      "legacy zip keeps the IDA 8.3/8.4 root layout")
+       "ida_mcp_loader.py", "LICENSE", "skills/ida/SKILL.md",
+       "skills/ida-scripting/references/api-reference.md"} <= legacy_names,
+      "legacy zip keeps the IDA 8.3/8.4 root layout and ships the skills tree")
+check(not any(n.endswith("logo.png") for n in modern_names | legacy_names),
+      "both zips ship no logo")
 check("ida-plugin.json" not in legacy_names, "legacy zip carries no manifest")
 check(not any("__pycache__" in n or n.endswith(".pyc")
               for n in modern_names | legacy_names), "both zips exclude caches")
@@ -109,6 +119,14 @@ with open(os.path.join(root, "ida-plugin.json"), "w", encoding="utf-8") as f:
         "urls": {"repository": "https://example.invalid/repo"},
         "authors": [{"email": "test@example.invalid"}]}}, f)
 check(package.main([]) == 0, "plain build still works without the flag")
+
+# a missing skills/ tree is a hard error: the release ZIP must carry the skills
+os.rename(os.path.join(root, "skills"), os.path.join(root, "skills_away"))
+try:
+    package.main([])
+    check(False, "missing skills/ must exit")
+except SystemExit as e:
+    check("missing skills/" in str(e.code), "missing skills/ explains itself")
 
 print("\n" + "=" * 50)
 if failures:

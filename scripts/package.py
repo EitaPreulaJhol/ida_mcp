@@ -29,8 +29,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PLUGIN_NAME = "ida-mcp-bridge"
 MANIFEST_NAME = "ida-plugin.json"
 PACKAGE_DIR = "ida_mcp"
+# Agent skills (source of truth) shipped in both layouts so a ZIP download is
+# enough to install the /ida orchestrator and the ida-scripting skill.
+SKILLS_DIR = "skills"
 # Shipped next to the package in both layouts.
-EXTRA_FILES = ["ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE", "logo.png"]
+EXTRA_FILES = ["ida_mcp_loader.py", "README.md", "INSTALL.md", "LICENSE"]
 EXCLUDE_DIR_NAMES = {"__pycache__"}
 EXCLUDE_SUFFIXES = (".pyc", ".pyo")
 
@@ -86,8 +89,7 @@ def read_manifest(version):
     return manifest
 
 
-def iter_package_files():
-    base = os.path.join(ROOT, PACKAGE_DIR)
+def iter_tree(base):
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIR_NAMES]
         for fn in filenames:
@@ -97,11 +99,22 @@ def iter_package_files():
             yield full, os.path.relpath(full, ROOT)
 
 
+def iter_package_files():
+    return iter_tree(os.path.join(ROOT, PACKAGE_DIR))
+
+
+def iter_skill_files():
+    return iter_tree(os.path.join(ROOT, SKILLS_DIR))
+
+
 def _write_zip(out, prefix, include_manifest):
     """Write one archive; every entry is under ``prefix``."""
     count = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for full, rel in iter_package_files():
+            z.write(full, prefix + rel)
+            count += 1
+        for full, rel in iter_skill_files():
             z.write(full, prefix + rel)
             count += 1
         for rel in EXTRA_FILES:
@@ -128,6 +141,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     version = read_version()
     read_manifest(version)
+    if not os.path.isdir(os.path.join(ROOT, SKILLS_DIR)):
+        raise SystemExit(f"missing {SKILLS_DIR}/ at the repository root")
     if args.expect_version is not None and args.expect_version != version:
         raise SystemExit(
             f"version mismatch: tag says {args.expect_version!r} but "

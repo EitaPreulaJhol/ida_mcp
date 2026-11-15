@@ -56,9 +56,11 @@ check(plugin.get("entryPoint") == "ida_mcp_loader.py",
 check(os.path.isfile(os.path.join(ROOT, plugin["entryPoint"])),
       "entryPoint file exists")
 logo = plugin.get("logoPath")
-check(isinstance(logo, str) and logo and os.path.isfile(os.path.join(ROOT, logo)),
-      "logoPath points at a shipped image")
-if isinstance(logo, str) and logo:
+if logo is not None:
+    # Optional: when present it must point at a shipped 16:9 PNG.
+    check(isinstance(logo, str) and logo and
+          os.path.isfile(os.path.join(ROOT, logo)),
+          "logoPath points at a shipped image")
     with open(os.path.join(ROOT, logo), "rb") as f:
         header = f.read(24)
     check(header[:8] == b"\x89PNG\r\n\x1a\n", "logo is a PNG")

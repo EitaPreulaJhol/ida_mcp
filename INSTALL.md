@@ -37,8 +37,8 @@ The release ships two ZIPs:
 
 | ZIP | IDA | Layout |
 |---|---|---|
-| `ida_mcp-<version>.zip` | **8.5+** | one `ida-mcp-bridge/` folder with `ida-plugin.json` |
-| `ida-mcp-legacy-<version>.zip` | **8.3/8.4** | `ida_mcp_loader.py` + `ida_mcp/` at the plugins root |
+| `ida_mcp-<version>.zip` | **8.5+** | one `ida-mcp-bridge/` folder with `ida-plugin.json` and `skills/` |
+| `ida-mcp-legacy-<version>.zip` | **8.3/8.4** | `ida_mcp_loader.py` + `ida_mcp/` + `skills/` at the plugins root |
 
 ### A.1 IDA 8.5+ (recommended, `ida-plugin.json` layout)
 
@@ -300,7 +300,9 @@ Any client speaking Streamable HTTP works:
 
 The `/ida` orchestrator skill teaches the agent the connect -> triage -> escalate loop so the
 247 tools never flood its context, and `ida-scripting` carries the IDAPython API reference. Two mirrored trees ship with this repo -
-same methodology and skill bodies, different frontmatter/trigger word:
+same methodology and skill bodies, different frontmatter/trigger word. Both release ZIPs also
+carry the `skills/` tree (`ida-mcp-bridge/skills/` in the modern ZIP, `skills/` in the legacy
+ZIP), so a downloaded plugin archive is enough to install them from the extracted folder:
 
 | Agent | Files | Install as |
 |---|---|---|
