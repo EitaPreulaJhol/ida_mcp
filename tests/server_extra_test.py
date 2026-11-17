@@ -147,6 +147,12 @@ ensure_analysis = lambda: None
 hard_interrupt = lambda f: f
 class IDAError(Exception):
     pass
+class IDASyncError(Exception):
+    pass
+class CancelledError(Exception):
+    pass
+def check_cancelled():
+    return None
 def _run_code(code):
     return {"result": code, "stdout": "", "stderr": ""}
 def parse_addr(s):

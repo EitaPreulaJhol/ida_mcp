@@ -15,7 +15,7 @@ help:
 	@echo "  fmt        - ruff check --fix ."
 	@echo "  typecheck  - mypy on the pure (non-IDA) modules"
 	@echo "  crosscheck - IDAPython docs cross-check (needs IDAPYTHON_DOCS_DIR)"
-	@echo "  idalib     - live sweep of every safe tool (IDA_MCP_IDALIB=1 + binary)"
+	@echo "  idalib     - live tool sweep + disposable-IDB scenarios (IDA_MCP_IDALIB=1 + binary)"
 	@echo "  idalib-matrix - safe sweep + folder loader across discovered IDA installs"
 	@echo "  coverage   - run suite under coverage (informational)"
 	@echo "  package    - build the modern + legacy plugin ZIPs into dist/"
@@ -75,6 +75,7 @@ crosscheck:
 #   IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib
 idalib:
 	$(PYTHON) tests/idalib_all_tools_test.py
+	$(PYTHON) tests/idalib_scenarios_test.py
 
 # Multi-version live gate; separate subprocess per install because idalib can
 # only load one major version in a process:

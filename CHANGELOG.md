@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- The legacy `get_disassembly` tool now caps requests at 5000 instructions,
+  polls cancellation, and marks capped or partial output. `get_functions` caps
+  positive pages at 5000, retains only the requested page, polls cancellation,
+  and marks incomplete totals when interrupted.
+- The opt-in IDA matrix now runs scenario-based contract checks (including
+  name/comment write-and-read-back on a disposable IDB). Live harnesses clear
+  any auto-loaded installed `ida_mcp` package so they validate the checkout or
+  extracted fixture rather than an unrelated user install.
+
 ## [0.4.1] - 2026-11-15
 
 ### Added

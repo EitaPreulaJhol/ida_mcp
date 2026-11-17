@@ -43,8 +43,15 @@ assert plugin.get("entryPoint") == "ida_mcp_loader.py", plugin
 assert plugin.get("name") == "ida-mcp-bridge", plugin
 assert os.path.isfile(os.path.join(FOLDER, plugin["entryPoint"]))
 
+# IDA may autoload another installed copy before the fixture loader executes.
+# This process exists only for the check, so drop that package and let the
+# fixture entry point import from its extracted folder.
+for module_name in list(sys.modules):
+    if module_name == "ida_mcp" or module_name.startswith("ida_mcp."):
+        del sys.modules[module_name]
+
 # Load the entry point exactly as IDA's generated namespace does. A fresh
-# subprocess (the matrix runs one) ensures the repository copy cannot shadow it.
+# subprocess (the matrix runs one) keeps the fixture isolated from prior tests.
 ns = "__plugins__ida_mcp_bridge.ida_mcp_loader"
 spec = importlib.util.spec_from_file_location(ns, loader_path)
 loader = importlib.util.module_from_spec(spec)

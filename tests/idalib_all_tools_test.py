@@ -90,8 +90,12 @@ def main():
     except Exception as e:  # noqa: BLE001
         _skip(f"import idapro failed ({e}); idalib not available/licensed.")
 
-    # idalib prepends its own paths on import: inserting the repo afterwards
-    # makes the working tree win over an older copy in ~/.idapro/plugins.
+    # IDA may have autoloaded an installed plugin before this script runs.
+    # Drop that package in this disposable process so the sweep tests the
+    # checkout under test rather than an unrelated copy in ~/.idapro/plugins.
+    for module_name in list(sys.modules):
+        if module_name == "ida_mcp" or module_name.startswith("ida_mcp."):
+            del sys.modules[module_name]
     sys.path.insert(0, ROOT)
 
     tmp = tempfile.mkdtemp(prefix="ida_mcp_idalib_")
@@ -107,6 +111,8 @@ def main():
     import idautils  # noqa: E402
 
     import ida_mcp  # noqa: E402,F401
+    if not os.path.realpath(ida_mcp.__file__).startswith(os.path.realpath(ROOT) + os.sep):
+        raise SystemExit(f"loaded ida_mcp outside checkout: {ida_mcp.__file__}")
     from ida_mcp.compat import _SILENCED_DEPRECATIONS  # noqa: E402
     from ida_mcp.rpc import MCP_SERVER  # noqa: E402
 

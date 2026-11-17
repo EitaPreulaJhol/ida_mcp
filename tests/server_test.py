@@ -94,6 +94,12 @@ ensure_analysis = lambda: None
 hard_interrupt = lambda f: f
 class IDAError(Exception):
     pass
+class IDASyncError(Exception):
+    pass
+class CancelledError(Exception):
+    pass
+def check_cancelled():
+    return None
 def _run_code(code):
     return {"result": code, "stdout": "", "stderr": ""}
 def parse_addr(s):
@@ -148,7 +154,32 @@ assert len(page1["data"]) == 1 and page1["limit"] == 1, page1
 page2 = json.loads(mod.get_functions("*", offset=1))
 assert page2["data"] == result["data"][1:], page2
 assert page2["offset"] == 1 and page2["count"] == 1, page2
-print("get_functions OK", result)
+assert len(json.loads(mod.get_functions("*", limit=10000))["data"]) == 2
+assert json.loads(mod.get_functions("*", limit=10000))["limit"] == 5000
+_orig_functions = mod.idautils.Functions
+mod.idautils.Functions = lambda: iter(range(0x1000, 0x1000 + 5001))
+_capped_page = json.loads(mod.get_functions("*", limit=10000))
+assert len(_capped_page["data"]) == 5000 and _capped_page["total"] == 5001
+mod.idautils.Functions = _orig_functions
+assert json.loads(mod.get_functions("*", offset=99))["data"] == []
+print("get_functions pagination and cap OK", result)
+
+# Cancellation returns only the requested page and marks the count incomplete.
+_orig_functions = mod.idautils.Functions
+mod.idautils.Functions = lambda: iter(range(0x1000, 0x1000 + 300))
+_cancel_checks = [0]
+def _cancel_during_scan():
+    _cancel_checks[0] += 1
+    if _cancel_checks[0] == 2:
+        raise mod.CancelledError("cancel test")
+mod.check_cancelled = _cancel_during_scan
+_partial_functions = json.loads(mod.get_functions("*", limit=2))
+assert _partial_functions["partial"] is True, _partial_functions
+assert _partial_functions["total_complete"] is False, _partial_functions
+assert _partial_functions["count"] == 2 and _partial_functions["total"] == 256
+mod.idautils.Functions = _orig_functions
+mod.check_cancelled = lambda: None
+print("get_functions cancellation and bounded page OK")
 
 # 2) decompile_function success
 out = mod.decompile_function("0x1000")
@@ -174,7 +205,22 @@ print("decompile None OK")
 # 5) get_disassembly
 out = mod.get_disassembly("0x1000", 2)
 assert "asm_1000" in out and "asm_1001" in out, out
-print("get_disassembly OK:", out)
+assert "capped" not in out
+assert "requested instruction limit capped at 5000" in mod.get_disassembly("0x1000", 10000)
+assert "non-positive limit uses hard cap 5000" in mod.get_disassembly("0x1000", 0)
+
+# Cancellation is polled during long disassembly and preserves partial text.
+_cancel_checks = [0]
+def _cancel_disassembly():
+    _cancel_checks[0] += 1
+    if _cancel_checks[0] == 2:
+        raise mod.IDASyncError("timeout test")
+mod.check_cancelled = _cancel_disassembly
+_partial_disassembly = mod.get_disassembly("0x1000", 200)
+assert _partial_disassembly.count("asm_") == 64, _partial_disassembly.count("asm_")
+assert "partial output" in _partial_disassembly
+mod.check_cancelled = lambda: None
+print("get_disassembly caps and cancellation OK")
 
 # 6) execute_script delegates to _run_code
 out = mod.execute_script("print('hi')")

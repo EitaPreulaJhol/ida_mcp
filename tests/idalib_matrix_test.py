@@ -4,7 +4,9 @@ Discovers installed IDA trees, then runs (in separate subprocesses, because
 idalib can only load one major version per process):
 
 1. the read-only all-tools sweep (``idalib_all_tools_test.py``);
-2. the modern ``ida-mcp-bridge/`` folder-loader check
+2. scenario-based contract checks, including mutations on a disposable IDB
+   (``idalib_scenarios_test.py``);
+3. the modern ``ida-mcp-bridge/`` folder-loader check
    (``idalib_folder_loader_test.py``) against the extracted release ZIP.
 
 Opt-in. Skips green unless ``IDA_MCP_IDALIB=1``; set
@@ -29,6 +31,7 @@ import zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SWEEP = os.path.join(HERE, "idalib_all_tools_test.py")
+SCENARIOS = os.path.join(HERE, "idalib_scenarios_test.py")
 FOLDER_TEST = os.path.join(HERE, "idalib_folder_loader_test.py")
 PACKAGE = os.path.join(ROOT, "scripts", "package.py")
 TIMEOUT_SEC = 900
@@ -188,7 +191,18 @@ def main():
                 label, "safe-tool sweep",
                 [sys.executable, SWEEP], env, ROOT)
             results.append((label, "sweep", state))
+            scenarios_ok = False
             if ok:
+                env = _subprocess_env(install)
+                env["IDA_MCP_IDALIB_BINARY"] = binary
+                scenarios_ok, scenarios_state = _run(
+                    label, "scenario contracts",
+                    [sys.executable, SCENARIOS], env, ROOT)
+                results.append((label, "scenarios", scenarios_state))
+            else:
+                results.append((label, "scenarios", "not-run"))
+
+            if ok and scenarios_ok:
                 env = _subprocess_env(install)
                 env["IDA_MCP_FOLDER_ROOT"] = folder
                 ok2, state2 = _run(

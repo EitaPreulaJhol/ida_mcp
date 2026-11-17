@@ -24,7 +24,8 @@ import idc
 import idautils
 
 from .rpc import tool, unsafe, MCP_SERVER
-from .sync import idasync, IDAError, hard_interrupt
+from .sync import (idasync, IDAError, IDASyncError, CancelledError,
+                   check_cancelled, hard_interrupt)
 from .sync import ensure_analysis
 from .api_python import _run_code
 from .api_analysis import parse_addr, _cap_lines, _as_int
@@ -57,6 +58,9 @@ from . import compat         # noqa: F401
 
 _SERVER_START_TIME = time.monotonic()
 _OWN_PORT: int | None = None
+_MAX_GET_FUNCTIONS_PAGE = 5000
+_MAX_DISASSEMBLY_INSTRUCTIONS = 5000
+_SCAN_CANCEL_EVERY = 256
 
 
 def _auto_analysis_ready() -> bool | None:
@@ -119,22 +123,42 @@ def get_functions(filter_pattern: str = "*", limit: int = 1000,
     """List functions whose name matches a glob pattern (fnmatch).
 
     Paginated: returns at most ``limit`` functions starting at ``offset``
-    (``limit=0`` means no cap). A full page means more may follow — advance
-    ``offset`` to continue. Use ``filter_pattern`` to narrow instead of paging.
+    (``limit<=0`` means no cap; positive limits are capped at 5000). A full
+    page means more may follow — advance ``offset`` to continue. Use
+    ``filter_pattern`` to narrow instead of paging. The scan polls cancellation
+    and retains only the requested page. On cancellation/timeout, ``total`` is
+    the number seen so far and ``partial`` is true.
     Returns ``{data, total, offset, count, limit}``, the same pagination shape
     as the other listing tools.
     """
     ensure_analysis()
     limit = _as_int(limit, 1000)
+    if limit > 0:
+        limit = min(limit, _MAX_GET_FUNCTIONS_PAGE)
+    else:
+        limit = 0  # Preserve the documented no-cap spelling.
     offset = max(_as_int(offset, 0), 0)
-    funcs = []
-    for ea in idautils.Functions():
+    page = []
+    total = 0
+    partial = False
+    for i, ea in enumerate(idautils.Functions()):
+        if i % _SCAN_CANCEL_EVERY == 0:
+            try:
+                check_cancelled()
+            except (CancelledError, IDASyncError):
+                partial = True
+                break
         name = ida_funcs.get_func_name(ea)
         if fnmatch.fnmatch(name, filter_pattern):
-            funcs.append({"address": hex(ea), "name": name})
-    page = funcs[offset:] if limit <= 0 else funcs[offset:offset + limit]
-    return json.dumps({"data": page, "total": len(funcs), "offset": offset,
-                       "count": len(page), "limit": limit}, indent=2)
+            if total >= offset and (limit <= 0 or len(page) < limit):
+                page.append({"address": hex(ea), "name": name})
+            total += 1
+    result = {"data": page, "total": total, "offset": offset,
+              "count": len(page), "limit": limit}
+    if partial:
+        result["partial"] = True
+        result["total_complete"] = False
+    return json.dumps(result, indent=2)
 
 
 @tool
@@ -168,20 +192,41 @@ def decompile_function(address: str) -> str:
 def get_disassembly(address: str, limit: int = 20) -> str:
     """Get disassembly starting at the given address or name.
 
-    ``limit``: maximum number of instructions to return; the deprecated
-    ``count`` argument is mapped to ``limit`` by the server.
+    ``limit``: maximum number of instructions to return (hard cap 5000; zero
+    or negative selects that hard cap). The deprecated ``count`` argument is
+    mapped to ``limit`` by the server. Polls cancellation while disassembling;
+    partial output is marked with a final status line.
     """
     ensure_analysis()
     try:
         ea = parse_addr(address)
     except ValueError as e:
         raise IDAError(str(e)) from None
+    requested_limit = _as_int(limit, 20)
+    applied_limit = (_MAX_DISASSEMBLY_INSTRUCTIONS if requested_limit <= 0
+                     else min(requested_limit, _MAX_DISASSEMBLY_INSTRUCTIONS))
     lines = []
-    for _ in range(limit):
+    partial = False
+    for i in range(applied_limit):
+        if i % 64 == 0:
+            try:
+                check_cancelled()
+            except (CancelledError, IDASyncError):
+                partial = True
+                break
         if ea == idaapi.BADADDR:
             break
         lines.append(f"{hex(ea)}: {ida_lines.generate_disasm_line(ea, 0)}")
-        ea = idc.next_head(ea)
+        next_ea = idc.next_head(ea)
+        if next_ea == idaapi.BADADDR or next_ea <= ea:
+            break
+        ea = next_ea
+    if requested_limit > _MAX_DISASSEMBLY_INSTRUCTIONS:
+        lines.append(f"... [requested instruction limit capped at {applied_limit}]")
+    elif requested_limit <= 0:
+        lines.append(f"... [non-positive limit uses hard cap {applied_limit}]")
+    if partial:
+        lines.append("... [partial output: cancelled or timed out]")
     return "\n".join(lines)
 
 
