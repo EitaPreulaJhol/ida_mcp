@@ -15,6 +15,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   name/comment write-and-read-back on a disposable IDB). Live harnesses clear
   any auto-loaded installed `ida_mcp` package so they validate the checkout or
   extracted fixture rather than an unrelated user install.
+- Coverage is now a blocking CI gate at a measured 67% floor, with the same
+  `make coverage` command locally and in CI; test, data-combine, and report
+  failures are propagated instead of being masked.
+- Mypy now checks function bodies in the vendored protocol/transport, RPC
+  registration, discovery, profile and regex modules. RPC decorator contracts
+  are typed, and CI pins the tested mypy release.
 
 ## [0.4.1] - 2026-11-15
 

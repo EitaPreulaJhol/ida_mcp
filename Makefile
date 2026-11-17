@@ -17,7 +17,7 @@ help:
 	@echo "  crosscheck - IDAPython docs cross-check (needs IDAPYTHON_DOCS_DIR)"
 	@echo "  idalib     - live tool sweep + disposable-IDB scenarios (IDA_MCP_IDALIB=1 + binary)"
 	@echo "  idalib-matrix - safe sweep + folder loader across discovered IDA installs"
-	@echo "  coverage   - run suite under coverage (informational)"
+	@echo "  coverage   - run suite under coverage and enforce the configured floor"
 	@echo "  package    - build the modern + legacy plugin ZIPs into dist/"
 	@echo "  clean      - remove caches and dist/"
 
@@ -86,19 +86,20 @@ idalib-matrix:
 
 coverage:
 	@if [ -n "$(COVERAGE)" ]; then \
+		set -e; \
 		hook="$$(mktemp -d)"; \
 		trap 'rm -rf "$$hook"' EXIT HUP INT TERM; \
 		printf 'import coverage; coverage.process_startup()\n' > "$$hook/sitecustomize.py"; \
 		py="$(COVERAGE_PYTHON)"; \
 		if [ -z "$$py" ]; then py="$(PYTHON)"; fi; \
 		$(COVERAGE) erase; \
-		COVERAGE_PROCESS_START="$(CURDIR)/pyproject.toml" \
-			PYTHONPATH="$$hook$${PYTHONPATH:+:$$PYTHONPATH}" "$$py" tests/run_all.py; \
-		test_rc=$$?; \
-		$(COVERAGE) combine 2>/dev/null || true; \
-		$(COVERAGE) report; \
-		report_rc=$$?; \
+		if COVERAGE_PROCESS_START="$(CURDIR)/pyproject.toml" \
+			PYTHONPATH="$$hook$${PYTHONPATH:+:$$PYTHONPATH}" "$$py" tests/run_all.py; then \
+			test_rc=0; else test_rc=$$?; fi; \
+		if $(COVERAGE) combine; then combine_rc=0; else combine_rc=$$?; fi; \
+		if $(COVERAGE) report; then report_rc=0; else report_rc=$$?; fi; \
 		if [ $$test_rc -ne 0 ]; then exit $$test_rc; fi; \
+		if [ $$combine_rc -ne 0 ]; then exit $$combine_rc; fi; \
 		exit $$report_rc; \
 	else echo "coverage not installed (pip install -e '.[dev]')"; exit 1; fi
 

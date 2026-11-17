@@ -826,7 +826,8 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             parsed = urlparse(self.path)
             if parsed.path == "/sse":
                 query = parse_qs(parsed.query)
-                session_id = query.get("session", [None])[0]
+                session_values = query.get("session")
+                session_id = session_values[0] if session_values else None
                 if session_id is not None:
                     with self.mcp_server._sse_lock:
                         conn = self.mcp_server._sse_connections.pop(session_id, None)
@@ -1796,10 +1797,11 @@ class McpServer:
             hints = get_type_hints(func, include_extras=True)
         except Exception:
             hints = {}
+        parameters: dict[str, inspect.Parameter] = {}
         try:
-            parameters = inspect.signature(func).parameters
+            parameters = dict(inspect.signature(func).parameters)
         except (TypeError, ValueError):
-            parameters = {}
+            pass
         self._introspect_cache[func_name] = (hints, parameters)
         return hints, parameters
 

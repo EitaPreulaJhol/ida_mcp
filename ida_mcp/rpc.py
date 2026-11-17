@@ -1,5 +1,10 @@
 """MCP tool registration (ported from ida-pro-mcp rpc.py, trimmed)."""
+from typing import Any, Callable, TypeVar, cast
+
 from .zeromcp import McpServer, McpToolError
+
+
+_F = TypeVar("_F", bound=Callable[..., Any])
 
 MCP_SERVER = McpServer("ida-mcp")
 MCP_UNSAFE: set[str] = set()
@@ -9,21 +14,25 @@ MCP_UNSAFE: set[str] = set()
 MCP_SERVER.unsafe_tools = MCP_UNSAFE
 
 
-def tool(func):
-    return MCP_SERVER.tool(func)
+def tool(func: _F) -> _F:
+    return cast(_F, MCP_SERVER.tool(func))
 
 
-def unsafe(func):
+def unsafe(func: _F) -> _F:
     MCP_UNSAFE.add(func.__name__)
     return func
 
 
-def report_progress(progress, total=None, message=None) -> bool:
+def report_progress(
+    progress: int | float,
+    total: int | float | None = None,
+    message: str | None = None,
+) -> bool:
     """Publish MCP progress for the current tool call (no-op without a token)."""
     return MCP_SERVER.report_progress(progress, total=total, message=message)
 
 
-def ext(group: str):
+def ext(group: str) -> Callable[[_F], _F]:
     """Mark a tool as belonging to an extension group (e.g. ``"dbg"``).
 
     Extension tools are hidden from ``tools/list`` and refused by
@@ -32,7 +41,7 @@ def ext(group: str):
     debugger tools need ``?unsafe=true&ext=dbg``.
     """
 
-    def decorator(func):
+    def decorator(func: _F) -> _F:
         MCP_SERVER._extensions_registry.setdefault(group, set()).add(func.__name__)
         return func
 
