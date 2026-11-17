@@ -287,6 +287,7 @@ in the modern ZIP, `skills/` in the legacy ZIP):
 | `ida_mcp/regex_guard.py` | Rejects ReDoS-prone client regexes before compiling |
 | `ida_mcp/discovery.py` | Multi-instance registration/discovery |
 | `ida_mcp/zeromcp/` | Vendored stdlib MCP transport |
+| `ida_mcp/zeromcp/metrics.py` | Bounded per-tool and admission-queue metrics |
 | `skills/ida/`, `skills/ida-scripting/` | Generic agent skills (Claude Code/Cursor/Copilot), also shipped in both release ZIPs: `/ida` orchestrator (connect -> triage -> escalate) + IDAPython scripting |
 | `.pi/skills/ida/SKILL.md`, `.pi/skills/ida-scripting/` | Same skills for the Pi Agent (pi-formatted frontmatter), auto-loaded by pi |
 | `.pi/extensions/ida-mcp.ts` | Pi Agent extension: MCP bridge, `/ida` command, `ida_profile` / `ida_status` tools, footer status indicator |

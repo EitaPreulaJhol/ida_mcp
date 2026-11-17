@@ -37,7 +37,8 @@ pre-commit install        # optional: run lint + inventory on every commit
 | Path | Responsibility |
 |------|----------------|
 | `ida_mcp_loader.py` | Thin IDA entry shim; re-exports `IdaMcp`/`PLUGIN_ENTRY` from `ida_mcp/plugin.py` |
-| `ida_mcp/zeromcp/` | Vendored MCP transport (HTTP + JSON-RPC). No IDA imports. |
+| `ida_mcp/zeromcp/` | Vendored MCP transport (HTTP + JSON-RPC). No IDA imports. See [`docs/transport-architecture.md`](docs/transport-architecture.md) for request flow and lock ownership. |
+| `ida_mcp/zeromcp/metrics.py` | Bounded, thread-safe per-tool and admission-queue metrics. |
 | `ida_mcp/rpc.py` | `@tool` / `@unsafe` / `@ext` decorators + `MCP_SERVER` registry |
 | `ida_mcp/plugin.py` | `IdaMcp`, `MCPUIHooks`, netnode-backed host/port/autostart |
 | `ida_mcp/sync.py` | `@idasync` main-thread marshal, timeouts, cancellation |
@@ -106,17 +107,20 @@ Edit the skills only under `skills/` (the source of truth), then run
 mirror drifts or a frontmatter value is neither double-quoted nor a plain
 identifier (Cline and the `skills` CLI use a strict YAML parser).
 
-## Local-only checks (not in CI)
+## CI checks and local equivalents
 
-- **Lint**: `ruff check .` (CI enforces `F`, `E`, `W`, `C4`; see `[tool.ruff.lint]`).
-- **Coverage**: `make coverage` (or `coverage report`) uses the pyproject
-  `fail_under = 69` floor. The Makefile creates a temporary `sitecustomize.py`
-  so each harness subprocess records its lines; keep that hook when changing
-  the target. The coverage job in CI stays informational (it reports a breach
-  without blocking a merge).
-- **Types** (optional): `mypy` on the pure modules (zeromcp, discovery,
-  profiles, regex_guard) — see `[tool.mypy]`. Verified clean, so CI enforces
-  it; run `mypy` before pushing changes to those modules.
+- **Tests**: `python tests/run_all.py` (50 standalone harnesses; the CI matrix
+  runs the suite on Python 3.11/3.12 and Windows).
+- **Lint**: `ruff check .` (CI enforces `F`, `E`, `W`, `C4`; see
+  `[tool.ruff.lint]`).
+- **Coverage**: `make coverage` enforces the pyproject `fail_under = 69` floor
+  and is a blocking CI job. It creates a temporary `sitecustomize.py` so each
+  harness subprocess records its lines; it propagates test, combine and report
+  failures.
+- **Types**: `python -m mypy` checks the vendored transport, RPC registration,
+  discovery, profiles and regex guard, including bodies of untyped functions.
+  The same config is used locally and in the blocking CI job; see
+  `[tool.mypy]`.
 - **idalib integration** (`tests/idalib_integration_test.py`): needs a licensed
   IDA. Run with `IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/path/to/bin`. Catches
   real API drift the stubbed suite can't (how `idc.Assemble` /
@@ -129,8 +133,9 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
 - **idalib version matrix** (`tests/idalib_matrix_test.py`, `make idalib-matrix`):
   discovers installations with `idalib/python` (override with
   `IDA_MCP_IDALIB_MATRIX=/opt/ida-8.5:/opt/ida-9.5`), then runs the safe-tool
-  sweep and the extracted modern `ida-mcp-bridge/` folder-loader check in a
-  separate subprocess per version. Use this before a release when 8.5, 9.0,
+  sweep, disposable-IDB scenario checks and the extracted modern
+  `ida-mcp-bridge/` folder-loader check in a separate subprocess per version.
+  Use this before a release when 8.5, 9.0,
   9.5 and 10.0 trees are installed; one process per version avoids idalib
   cross-version initialization.
 - **IDAPython docs cross-check** (`tests/idadocs_crosscheck_test.py`): point

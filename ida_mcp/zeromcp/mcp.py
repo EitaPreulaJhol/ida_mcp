@@ -19,7 +19,6 @@ import threading
 import time
 import uuid
 import zlib
-from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer, HTTPServer
 from typing import Any, Callable
 from urllib.parse import urlparse, parse_qs
@@ -31,6 +30,7 @@ try:  # Python 3.10+: ``X | None`` annotations have this origin.
 except ImportError:  # pragma: no cover - older runtimes only expose typing.Union
     _UnionType = None  # type: ignore[assignment,misc]
 
+from .metrics import McpMetrics
 from .jsonrpc import (
     JsonRpcRegistry,
     JsonRpcException,
@@ -1188,18 +1188,10 @@ class McpServer:
         # idle_timeout_sec closes a connection that sends no request (0 = off).
         self.max_connections = 64
         self.idle_timeout_sec = 30.0
-        # Per-tool metrics (item 07): call/error/busy counts + a bounded window
-        # of recent durations for percentiles. Pure Python, no IDA; surfaced
-        # via server_health. Updates happen in a tiny locked critical section
-        # and never raise into the dispatch path.
-        self._stats_lock = threading.Lock()
-        self._stats: dict[str, dict] = {}
-        self._stats_totals = {"calls": 0, "errors": 0, "busy": 0}
-        self._stats_started = time.monotonic()
-        self._queue_lock = threading.Lock()
-        self._queue_wait_ms: deque = deque(maxlen=200)
-        self._queue_stats = {"waits": 0, "timeouts": 0, "full": 0,
-                             "cancelled": 0}
+        # Metrics own their own short-lived locks and bounded samples. Keep
+        # them separate from transport/session state and never hold their locks
+        # while dispatching tools or writing audit records.
+        self._metrics = McpMetrics()
         # Optional audit trail of mutating (unsafe/ext) tool calls (item 08).
         # IDA_MCP_AUDIT=<path> appends JSONL; unset = disabled (default).
         self.audit_path: str | None = (os.environ.get("IDA_MCP_AUDIT", "").strip() or None)
@@ -1528,85 +1520,19 @@ class McpServer:
 
     # ---- metrics (item 07) ----
     def _record_queue(self, waited_ms, reason):
-        """Record queue wait/rejection counters. Never raises."""
-        try:
-            with self._queue_lock:
-                if waited_ms > 0:
-                    self._queue_wait_ms.append(float(waited_ms))
-                if reason == "admitted" and waited_ms > 0:
-                    self._queue_stats["waits"] += 1
-                elif reason == "timeout":
-                    self._queue_stats["timeouts"] += 1
-                elif reason == "full":
-                    self._queue_stats["full"] += 1
-                elif reason == "cancelled":
-                    self._queue_stats["cancelled"] += 1
-        except Exception:
-            pass
+        """Record admission-queue metrics without holding server locks."""
+        self._metrics.record_queue(waited_ms, reason)
 
     def _record_call(self, name, *, errored=False, busy=False, duration_ms=None):
-        """Update per-tool counters. Never raises into the dispatch path."""
-        try:
-            with self._stats_lock:
-                s = self._stats.get(name)
-                if s is None:
-                    s = {"calls": 0, "errors": 0, "busy": 0,
-                         "durations": deque(maxlen=200)}
-                    self._stats[name] = s
-                if busy:
-                    s["busy"] += 1
-                    self._stats_totals["busy"] += 1
-                    return
-                s["calls"] += 1
-                self._stats_totals["calls"] += 1
-                if errored:
-                    s["errors"] += 1
-                    self._stats_totals["errors"] += 1
-                if duration_ms is not None:
-                    s["durations"].append(duration_ms)
-        except Exception:
-            pass
+        """Record tool-call metrics without interrupting dispatch."""
+        self._metrics.record_call(name, errored=errored, busy=busy,
+                                  duration_ms=duration_ms)
 
     def get_stats(self, top: int = 25) -> dict:
         """Bounded, JSON-able per-tool metrics snapshot (for server_health)."""
-        def _pct(sorted_ds, p):
-            if not sorted_ds:
-                return None
-            k = min(len(sorted_ds) - 1, int(round((p / 100.0) * (len(sorted_ds) - 1))))
-            return round(sorted_ds[k], 1)
-        try:
-            with self._stats_lock:
-                items = []
-                for name, s in self._stats.items():
-                    ds = sorted(s["durations"])
-                    items.append({
-                        "name": name, "calls": s["calls"], "errors": s["errors"],
-                        "busy": s["busy"], "p50_ms": _pct(ds, 50), "p95_ms": _pct(ds, 95),
-                        "max_ms": round(ds[-1], 1) if ds else None,
-                    })
-                totals = dict(self._stats_totals)
-                uptime = round(time.monotonic() - self._stats_started, 1)
-        except Exception:
-            return {"error": "stats_unavailable"}
-        items.sort(key=lambda x: x["calls"], reverse=True)
-        with self._queue_lock:
-            queue_waits = sorted(self._queue_wait_ms)
-            queue_stats = dict(self._queue_stats)
         gate = self._tool_gate
-        return {
-            "uptime_sec": uptime,
-            "total_calls": totals["calls"],
-            "total_errors": totals["errors"],
-            "total_busy": totals["busy"],
-            "queue_depth": gate.waiting if gate is not None else 0,
-            "queue_waits": queue_stats["waits"],
-            "queue_wait_p50_ms": _pct(queue_waits, 50),
-            "queue_wait_p95_ms": _pct(queue_waits, 95),
-            "queue_timeouts": queue_stats["timeouts"],
-            "queue_full": queue_stats["full"],
-            "queue_cancelled": queue_stats["cancelled"],
-            "tools": items[:top] if top else items,
-        }
+        queue_depth = gate.waiting if gate is not None else 0
+        return self._metrics.snapshot(top=top, queue_depth=queue_depth)
 
     # ---- audit (item 08) ----
     def _append_audit_line(self, path: str, line: str) -> None:
