@@ -33,7 +33,7 @@ if idaapi is not None:
 if idaapi is not None and hasattr(idaapi, "plugin_t"):
     _PluginBase = idaapi.plugin_t
 else:
-    class _PluginBase:
+    class _PluginBase:  # type: ignore[no-redef]
         pass
 
 
@@ -231,7 +231,7 @@ if ida_kernwin is not None:
                         pass
             self.unhook()
 else:
-    class MCPUIHooks:
+    class MCPUIHooks:  # type: ignore[no-redef]
         def __init__(self, plugin):
             self.plugin = plugin
 
@@ -294,7 +294,7 @@ def _get_mcp_server():
 # Main plugin class — defined at module level with all required attributes.
 # ---------------------------------------------------------------------------
 
-class IdaMcp(_PluginBase):
+class IdaMcp(_PluginBase):  # type: ignore[misc,valid-type]
     """IDA Pro MCP plugin."""
 
     flags = _PLUGIN_KEEP

@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- The client regex guard now also rejects ambiguous alternation inside an
+  unbounded repeat (`(a|aa)+`, `(foo|foobar)+`, `(a|ab\d)+`), including
+  alternatives that can match empty. These backtrack exponentially on the IDA
+  main thread where the tool timeout cannot interrupt them.
+- The legacy `?token=` query parameter is deprecated: it is accepted only on
+  loopback binds (with a one-time warning) and rejected off-loopback, where the
+  `X-IDA-MCP-Token` header is required. This keeps the secret out of URLs that
+  leak into proxy/browser history.
+- Mypy now also checks the package lifecycle modules (`__init__`, `sync`,
+  `plugin`), compatibility shims and script execution, in addition to the
+  transport, RPC registration, discovery, profiles and regex guard.
 - The legacy `get_disassembly` tool now caps requests at 5000 instructions,
   polls cancellation, and marks capped or partial output. `get_functions` caps
   positive pages at 5000, retains only the requested page, polls cancellation,

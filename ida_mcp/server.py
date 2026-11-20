@@ -576,8 +576,9 @@ def start_server(host: str = "127.0.0.1", port: int = 13337) -> int:
     if token:
         ida_kernwin.msg(
             f"[ida-mcp] auth token for unsafe/debugger tools: {token}\n"
-            f"[ida-mcp]   pass it as the X-IDA-MCP-Token header or ?token=<token>\n"
-            f"[ida-mcp]   (read-only tools need no token; set IDA_MCP_NO_AUTH=1 to disable)\n"
+            f"[ida-mcp]   pass it as the X-IDA-MCP-Token header (preferred)\n"
+            f"[ida-mcp]   (?token=<token> is loopback-only and deprecated; "
+            f"read-only tools need no token; set IDA_MCP_NO_AUTH=1 to disable)\n"
         )
     else:
         ida_kernwin.msg(

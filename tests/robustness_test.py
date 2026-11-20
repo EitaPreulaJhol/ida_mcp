@@ -381,7 +381,11 @@ try:
           "off-loopback: wrong token -> 401")
     check(status_of(headers={"X-IDA-MCP-Token": "s3cret"})[0] == 200,
           "off-loopback: header token accepted")
-    check(status_of(query="?token=s3cret")[0] == 200, "off-loopback: ?token= accepted")
+    check(status_of(query="?token=s3cret")[0] == 401,
+          "off-loopback: ?token= rejected (header required)")
+    check(status_of(query="?token=s3cret",
+                    headers={"X-IDA-MCP-Token": "wrong"})[0] == 401,
+          "off-loopback: header wins over a valid ?token=")
     code, hdrs = status_of("OPTIONS", headers={"Origin": "http://localhost:5173"})
     check(code == 204, "off-loopback: CORS preflight needs no token")
     allow = hdrs.get("Access-Control-Allow-Headers", "")

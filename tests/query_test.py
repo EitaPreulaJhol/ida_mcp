@@ -232,8 +232,19 @@ for bad in (r"(a+)+b", r"(\w*\s?)*$", r"(?:x|y+){2,}", r"((ab)*c)+"):
         raise AssertionError(f"should reject {bad!r}")
     except re.error as e:
         assert "nested quantifiers" in str(e), (bad, e)
+# Ambiguous alternation inside an unbounded repeat is exponential too, even
+# without nested quantifiers. The parser often factors the common prefix and
+# leaves an empty alternative behind: (a|aa)+ -> "a" + branch("", "a").
+for bad in (r"(a|aa)+", r"(foo|foobar)+", r"(a|ab\d)+", r"(?:a?|b)+",
+            r"(a|b|ab)+", r"(foo|foobar|baz)+"):
+    try:
+        _rg.compile_client_regex(bad)
+        raise AssertionError(f"should reject ambiguous alternation {bad!r}")
+    except re.error as e:
+        assert "alternation" in str(e), (bad, e)
 for good in (r"^sub_[0-9a-f]+$", r"(\d{1,3}\.){3}\d{1,3}", r"crypt|aes", r"(ab)+",
-             r"(?:a?)+", r"x{2}(y{3}){4}"):
+             r"(?:a?)+", r"x{2}(y{3}){4}", r"(ab|cd)+", r"(foo|bar)+",
+             r"(ab|ac)+"):
     _rg.compile_client_regex(good)
 if sys.version_info >= (3, 11):
     _rg.compile_client_regex(r"(?>a+)+b")

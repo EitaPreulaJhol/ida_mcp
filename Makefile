@@ -13,7 +13,7 @@ help:
 	@echo "  skills     - mirror skills/ (source of truth) into .pi/skills/"
 	@echo "  lint       - ruff check ."
 	@echo "  fmt        - ruff check --fix ."
-	@echo "  typecheck  - mypy on the pure (non-IDA) modules"
+	@echo "  typecheck  - mypy on the selected core/transport modules"
 	@echo "  crosscheck - IDAPython docs cross-check (needs IDAPYTHON_DOCS_DIR)"
 	@echo "  idalib     - live tool sweep + disposable-IDB scenarios (IDA_MCP_IDALIB=1 + binary)"
 	@echo "  idalib-matrix - safe sweep + folder loader across discovered IDA installs"

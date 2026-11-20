@@ -9,7 +9,9 @@ behavioral contract.
 ## Request path
 
 1. `McpHttpRequestHandler` reads and bounds HTTP bodies, parses route/query
-   flags, validates origin/token requirements, then dispatches JSON-RPC.
+   flags, validates origin/token requirements, then dispatches JSON-RPC. The
+   auth token is read from `X-IDA-MCP-Token`; the legacy `?token=` spelling is
+   accepted only on loopback binds and is refused off-loopback.
 2. Request-scoped state (`unsafe`, profile, extension groups, auth token,
    progress token) is stored in thread-local slots for that handler thread.
    `jsonrpc.py` separately scopes request IDs and cancellation events by MCP

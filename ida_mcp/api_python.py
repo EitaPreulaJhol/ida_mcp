@@ -60,7 +60,7 @@ def _install_ida_imports_shim() -> None:
     shim.__doc__ = ("ida_mcp compatibility shim: there is no real `ida_imports` "
                     "module. Import enumeration lives in `ida_nalt`; attribute "
                     "access is forwarded there.")
-    shim.__ida_mcp_shim__ = True
+    shim.__ida_mcp_shim__ = True  # type: ignore[attr-defined]
     for _fn in ("get_import_module_qty", "get_import_module_name",
                 "enum_import_names"):
         if hasattr(ida_nalt, _fn):
@@ -75,7 +75,7 @@ def _install_ida_imports_shim() -> None:
                 f"attribute {name!r}; imports use get_import_module_qty / "
                 f"get_import_module_name / enum_import_names") from None
 
-    shim.__getattr__ = _forward  # PEP 562 module-level __getattr__
+    shim.__getattr__ = _forward  # type: ignore[assignment]  # PEP 562 module-level __getattr__
     sys.modules["ida_imports"] = shim
 
 

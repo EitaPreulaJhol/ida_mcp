@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 try:
     from .zeromcp.jsonrpc import RequestCancelledError
 except ImportError:  # standalone test harness execs this file without package context
-    RequestCancelledError = Exception
+    RequestCancelledError = Exception  # type: ignore[assignment,misc]
 
 try:
     from .zeromcp.mcp import McpToolError
 except ImportError:  # same harness caveat (clean -32000 mapping when available)
-    McpToolError = Exception
+    McpToolError = Exception  # type: ignore[assignment,misc]
 
 _TOOL_TIMEOUT_ENV = "IDA_MCP_TOOL_TIMEOUT_SEC"
 _DEFAULT_TOOL_TIMEOUT_SEC = 60.0
@@ -136,7 +136,7 @@ def get_pre_call_batch() -> int | None:
 # on the IDA main thread. A nested @idasync call (tool calling another tool)
 # raises IDASyncError with a clear message instead of deadlocking inside a
 # re-entrant idaapi.execute_sync.
-call_stack = queue.LifoQueue()
+call_stack: queue.LifoQueue[str] = queue.LifoQueue()
 
 # Thread-local: while a synchronized tool body is running, holds the monotonic
 # deadline (or None if no timeout). Tools can poll get_tool_deadline() to
@@ -458,7 +458,7 @@ def _sync_wrapper(ff, keep_batch: bool = False, mode=None):
     Uses a result container so the callable can never raise out of
     ``execute_sync`` (which would deadlock the main thread).
     """
-    res_container = queue.Queue()
+    res_container: queue.Queue = queue.Queue()
     # Handshake with the waiter below: once the waiter gives up on a request
     # IDA never started, a late start must not run the tool body (its result
     # would be dropped and its side effects unexpected).
@@ -706,7 +706,7 @@ def _idasync_with_mode(f, mode):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         ff = functools.partial(f, *args, **kwargs)
-        ff.__name__ = f.__name__
+        ff.__name__ = f.__name__  # type: ignore[attr-defined]
         timeout_override = _normalize_timeout(getattr(f, "__ida_mcp_timeout_sec__", None))
         keep_batch = bool(getattr(f, "__ida_mcp_keep_batch__", False))
         hard = bool(getattr(f, "__ida_mcp_hard_interrupt__", False))

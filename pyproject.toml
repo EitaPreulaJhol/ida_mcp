@@ -82,8 +82,9 @@ ignore = [
 "ida_mcp/__init__.py" = ["F401"]
 
 [tool.mypy]
-# Type-check the IDA-independent protocol/configuration modules and the vendored
-# transport. IDA SDK-facing API modules stay outside this scope until stable
+# Type-check the IDA-independent protocol/configuration modules, the vendored
+# transport, and the core lifecycle modules (sync, plugin, script execution).
+# The remaining IDA SDK-facing tool modules stay outside this scope until stable
 # SDK stubs are available. Bodies of untyped functions in the selected modules
 # are checked as well, making this an incremental but meaningful CI gate.
 python_version = "3.11"
@@ -98,10 +99,15 @@ check_untyped_defs = true
 follow_imports = "silent"
 files = [
     "ida_mcp/zeromcp",
+    "ida_mcp/__init__.py",
     "ida_mcp/rpc.py",
+    "ida_mcp/sync.py",
     "ida_mcp/discovery.py",
     "ida_mcp/profiles.py",
     "ida_mcp/regex_guard.py",
+    "ida_mcp/compat.py",
+    "ida_mcp/api_python.py",
+    "ida_mcp/plugin.py",
 ]
 
 [tool.coverage.run]
@@ -118,7 +124,7 @@ omit = ["ida_mcp/__init__.py"]
 show_missing = true
 skip_covered = false
 # Floor for `coverage report` (CI + `make coverage`). Freshly measured at
-# 70.38% with 49 harnesses (coverage 7.17.3, Python 3.11, branch coverage).
-# A 69% floor leaves about 1.4 percentage points of headroom while making
+# 70.32% with 50 harnesses (coverage 7.17.3, Python 3.11, branch coverage).
+# A 69% floor leaves about 1.3 percentage points of headroom while making
 # meaningful regressions blocking. Raise after adding coverage and re-measuring.
 fail_under = 69

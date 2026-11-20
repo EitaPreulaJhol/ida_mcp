@@ -180,9 +180,12 @@ _unsafe_per_thread = threading.local()
 # ?ext= (e.g. ?ext=dbg). Empty/absent means no extension tools are visible.
 _request_extensions = threading.local()
 
-# Thread-local per-request auth token, parsed from the X-IDA-MCP-Token header
-# or ?token= query param. Checked against McpServer.auth_token before any
-# unsafe/extension tool is listed or called (see McpServer._auth_ok).
+# Thread-local per-request auth token, parsed from the X-IDA-MCP-Token header.
+# The legacy ?token= query param is accepted only on loopback binds and logs a
+# deprecation warning; off-loopback it is refused so the secret cannot leak
+# through URLs (proxy logs, browser history, reverse-proxy access logs).
+# Checked against McpServer.auth_token before any unsafe/extension tool is
+# listed or called (see McpServer._auth_ok).
 _request_auth = threading.local()
 
 # Current tools/call progress token (from params._meta.progressToken).  It is
@@ -389,9 +392,20 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
                 "X-IDA-MCP-Token",
             )
 
-    def _request_token(self) -> str | None:
-        token = (self.headers.get("X-IDA-MCP-Token", "")
-                 or self._get_query_param(self.path, "token", "")).strip()
+    def _request_token(self, *, allow_query: bool = True) -> str | None:
+        """Auth token for this request, preferring the header.
+
+        ``?token=`` is legacy: it is accepted only when ``allow_query`` is
+        true (loopback binds) and records a one-time deprecation warning.
+        """
+        token = self.headers.get("X-IDA-MCP-Token", "").strip()
+        if token:
+            return token
+        if not allow_query:
+            return None
+        token = self._get_query_param(self.path, "token", "").strip()
+        if token:
+            self.mcp_server._note_query_token()
         return token or None
 
     def _check_api_request(self, *, preflight: bool = False) -> bool:
@@ -408,6 +422,7 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
         them, and they reach no tool.
         """
         bound_host = str(self.server.server_address[0])  # type: ignore[index]
+        loopback = _is_loopback_host(bound_host)
         if not _host_header_allowed_for_bind(bound_host, self.headers.get("Host")):
             self._safe_send_error(403, "Invalid Host")
             return False
@@ -416,16 +431,22 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self._safe_send_error(403, "Invalid Origin")
             return False
         if (not preflight
-                and (not _is_loopback_host(bound_host)
-                     or self.mcp_server.require_token)
-                and not self.mcp_server._token_matches(self._request_token())):
-            where = ("bound off-loopback"
-                     if not _is_loopback_host(bound_host)
+                and (not loopback or self.mcp_server.require_token)
+                and not self.mcp_server._token_matches(
+                    self._request_token(allow_query=loopback))):
+            where = ("bound off-loopback" if not loopback
                      else "running with IDA_MCP_REQUIRE_TOKEN")
+            if not loopback and self._get_query_param(self.path, "token", ""):
+                detail = ("query-string tokens are not accepted off-loopback "
+                          "(URLs leak into logs and history); send the token "
+                          "as the X-IDA-MCP-Token header")
+            else:
+                detail = ("send the token printed in IDA's Output window as "
+                          "the X-IDA-MCP-Token header (?token= is loopback-only "
+                          "and deprecated)")
             self._safe_send_error(
                 401, "Auth token required",
-                f"This server is {where}: send the token printed in IDA's Output "
-                f"window as the X-IDA-MCP-Token header (or ?token=).")
+                f"This server is {where}: {detail}.")
             return False
         return True
 
@@ -451,7 +472,9 @@ class McpHttpRequestHandler(BaseHTTPRequestHandler):
             self._get_query_param(self.path, "unsafe", "false").strip().lower() == "true"
         )
         _request_extensions.groups = self._parse_extensions(self.path)
-        _request_auth.token = self._request_token()
+        bound_host = str(self.server.server_address[0])  # type: ignore[index]
+        _request_auth.token = self._request_token(
+            allow_query=_is_loopback_host(bound_host))
         profile_name = self._get_query_param(self.path, "profile", "").strip().lower()
         profile_set = None
         if profile_name and _get_profile_fn is not None:
@@ -1153,10 +1176,13 @@ class McpServer:
         self.unsafe_tools: set[str] = set()
         # Auth token gating the dangerous surface (unsafe + extension tools).
         # None = auth disabled (loopback-only, legacy/open); when set, a request
-        # must present the matching token (X-IDA-MCP-Token header or ?token=)
-        # for unsafe/ext tools to be listed or callable. Read-only tools are
-        # unaffected. Set by the host (see server.start_server).
+        # must present the matching token (X-IDA-MCP-Token header; legacy
+        # ?token= only on loopback) for unsafe/ext tools to be listed or
+        # callable. Read-only tools are unaffected. Set by the host (see
+        # server.start_server).
         self.auth_token: str | None = None
+        # One-time warning for the legacy ?token= spelling (loopback only).
+        self._query_token_warned = False
         # When True, EVERY request needs the token, loopback included (read-only
         # tools too), not just the unsafe/extension surface. Off by default:
         # the loopback read-only surface is open by design (see README).
@@ -1498,11 +1524,21 @@ class McpServer:
             while len(self._http_sessions) > self.http_session_max_count:
                 self._http_sessions.pop(next(iter(self._http_sessions)), None)
 
+    def _note_query_token(self) -> None:
+        """Warn once when a client uses the legacy ?token= spelling."""
+        if self._query_token_warned:
+            return
+        self._query_token_warned = True
+        logger.warning(
+            "[MCP] ?token= query authentication is deprecated and accepted "
+            "only on loopback binds; use the X-IDA-MCP-Token header instead")
+
     def _auth_ok(self) -> bool:
         """True if the current request may access the unsafe/extension surface.
 
         Returns True when auth is disabled (``auth_token is None``). Otherwise
-        the per-request token (header/query) must match in constant time.
+        the per-request token (header, or loopback-only query) must match in
+        constant time.
         """
         return self._token_matches(getattr(_request_auth, "token", None))
 
@@ -1849,7 +1885,8 @@ class McpServer:
         if unknown is not None:
             return _unknown_profile_error(unknown)
         token_hint = (f"Tool '{name}' requires a valid auth token. Pass it as the "
-                      f"X-IDA-MCP-Token header or ?token= (printed to IDA on startup).")
+                      f"X-IDA-MCP-Token header (preferred; ?token= is "
+                      f"loopback-only and deprecated); it is printed to IDA on startup.")
         unsafe_requested = getattr(_unsafe_per_thread, "allowed", False)
         if name in self.unsafe_tools and not (unsafe_requested and auth_ok):
             if unsafe_requested and not auth_ok:

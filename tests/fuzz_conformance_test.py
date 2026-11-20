@@ -164,9 +164,21 @@ for pattern in bad_shapes:
     except re.error as exc:
         assert "nested quantifiers" in str(exc), (pattern, exc)
 
+ambiguous_shapes = (
+    r"(a|aa)+", r"(foo|foobar)+", r"(a|ab\d)+", r"(?:a?|b)+",
+    r"(a|b|ab)+", r"(foo|foobar|baz)+",
+)
+for pattern in ambiguous_shapes:
+    try:
+        regex_guard.compile_client_regex(pattern)
+        raise AssertionError(f"ambiguous alternation accepted: {pattern!r}")
+    except re.error as exc:
+        assert "alternation" in str(exc), (pattern, exc)
+
 good_shapes = (
     r"a+b", r"(ab)+", r"(a|b)+", r"(a{2}){3}", r"[a-z]+",
     r"(a+)++b", r"(?>a+)+b", r"(?:\d{1,3}\.){3}\d{1,3}",
+    r"(ab|ac)+", r"(foo|bar)+",
 )
 for pattern in good_shapes:
     regex_guard.compile_client_regex(pattern)

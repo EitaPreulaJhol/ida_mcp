@@ -117,10 +117,11 @@ identifier (Cline and the `skills` CLI use a strict YAML parser).
   and is a blocking CI job. It creates a temporary `sitecustomize.py` so each
   harness subprocess records its lines; it propagates test, combine and report
   failures.
-- **Types**: `python -m mypy` checks the vendored transport, RPC registration,
-  discovery, profiles and regex guard, including bodies of untyped functions.
-  The same config is used locally and in the blocking CI job; see
-  `[tool.mypy]`.
+- **Types**: `python -m mypy` checks the vendored transport, package
+  lifecycle/registration (`__init__`, `rpc`, `sync`, `plugin`), discovery,
+  profiles, the regex guard, compatibility shims and script execution,
+  including bodies of untyped functions. The same config is used locally and
+  in the blocking CI job; see `[tool.mypy]`.
 - **idalib integration** (`tests/idalib_integration_test.py`): needs a licensed
   IDA. Run with `IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/path/to/bin`. Catches
   real API drift the stubbed suite can't (how `idc.Assemble` /

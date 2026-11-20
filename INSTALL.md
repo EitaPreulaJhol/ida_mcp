@@ -160,9 +160,12 @@ patch tools; `?profile=debug&unsafe=true&ext=dbg` exposes the debugger group.
 > **Auth token (steps 4-5 only).** The unsafe and debugger tools additionally
 > require a secret token the server prints to IDA's Output window on startup
 > (loopback binding alone does not stop another local process). Pass it as the
-> `X-IDA-MCP-Token` header or append `&token=<token>` to the URL; read-only
-> steps 1-3 need no token on loopback (off-loopback, every request does). Pin a stable token with `IDA_MCP_TOKEN`, or set
-> `IDA_MCP_NO_AUTH=1` to disable auth on a trusted single-user box.
+> `X-IDA-MCP-Token` header (preferred). The legacy `&token=<token>` query
+> parameter is accepted only on loopback binds, logs a deprecation warning, and
+> is rejected off-loopback; read-only steps 1-3 need no token on loopback
+> (off-loopback, every request does). Pin a stable token with
+> `IDA_MCP_TOKEN`, or set `IDA_MCP_NO_AUTH=1` to disable auth on a trusted
+> single-user box.
 >
 > On a shared or potentially compromised machine, `IDA_MCP_REQUIRE_TOKEN=1`
 > requires the token on every request (read-only tools included) without
@@ -350,7 +353,7 @@ IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib-matrix
 | `curl` connection refused | IDA not running, or plugin not loaded. Re-check part A; look for load errors in IDA's Output window at startup. |
 | `All 247 tools loaded` / client complains about tool limits | Endpoint missing `?profile=triage`. Reconnect with the triage URL (ladder step 1). |
 | `requires unsafe mode` error | Endpoint lacks `?unsafe=true`. Reconnect with step 4 URL (writes) - confirm with the user first. |
-| `requires a valid auth token` error | Unsafe/debugger call without the startup token. Pass `X-IDA-MCP-Token` (or `?token=`) using the token line in IDA's Output window, pin it with `IDA_MCP_TOKEN`, or set `IDA_MCP_NO_AUTH=1` on a trusted box. |
+| `requires a valid auth token` error | Unsafe/debugger call without the startup token. Pass `X-IDA-MCP-Token` using the token line in IDA's Output window, pin it with `IDA_MCP_TOKEN`, or set `IDA_MCP_NO_AUTH=1` on a trusted box. `?token=` still works on loopback but is deprecated. |
 | `requires extension 'dbg'` error | Endpoint lacks `?ext=dbg` (debugger tools also need `?unsafe=true`). Reconnect with step 5 URL - debugger must also be configured in IDA. |
 | `is not in profile 'triage'` error | Normal lazy-loading signal: the tool exists but triage hides it. Reconnect with `?profile=readonly` (or drop the profile). |
 | `Auth token required` (401) | The server is bound off-loopback (`IDA_MCP_HOST`), so every request needs the token: send `X-IDA-MCP-Token` (pi: set `IDA_MCP_TOKEN`). |
@@ -367,11 +370,11 @@ IDA_MCP_IDALIB=1 IDA_MCP_IDALIB_BINARY=/bin/ls make idalib-matrix
 - The server binds loopback only. Read-only tools need no auth; treat them
   like IDA itself (anyone who can run code on your machine can read the IDB).
 - The unsafe and debugger surface is gated by a secret token the server
-  prints to IDA's Output window on startup (pass it via `X-IDA-MCP-Token` or
-  `?token=`), because loopback binding does not stop another local process
-  or user. Pin it with `IDA_MCP_TOKEN`, or disable auth with
-  `IDA_MCP_NO_AUTH=1` on a trusted single-user box. The token is never
-  written to the discovery file.
+  prints to IDA's Output window on startup (pass it via `X-IDA-MCP-Token`;
+  the legacy `?token=` spelling is loopback-only and deprecated), because
+  loopback binding does not stop another local process or user. Pin it with
+  `IDA_MCP_TOKEN`, or disable auth with `IDA_MCP_NO_AUTH=1` on a trusted
+  single-user box. The token is never written to the discovery file.
 - `?unsafe=true` (with the token) enables function renames, comment/type
   changes, byte patching, and **arbitrary IDAPython execution**
   (`execute_script`). Only enable it for sessions you supervise.

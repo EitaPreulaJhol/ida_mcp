@@ -125,7 +125,7 @@ class IdaTimeoutError extends Error {
 
 function endpoint(level: Level = currentLevel): string {
 	const suffix = LADDER[level].suffix;
-	// IDA_MCP_URL may already carry a query (e.g. ?token=...): join with "&".
+	// IDA_MCP_URL may already carry a query (e.g. ?profile=...): join with "&".
 	if (suffix && BASE_URL.includes("?")) return `${BASE_URL}&${suffix.slice(1)}`;
 	return `${BASE_URL}${suffix}`;
 }
